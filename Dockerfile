@@ -134,6 +134,7 @@ COPY extractors/browser-utils ./extractors/browser-utils
 FROM build-sources AS docs-build
 
 WORKDIR /app/docs-site
+ENV NODE_OPTIONS=--max-old-space-size=1536
 RUN npm run build
 
 FROM build-sources AS client-build
