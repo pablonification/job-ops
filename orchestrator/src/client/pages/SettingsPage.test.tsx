@@ -73,6 +73,11 @@ vi.mock("../api", () => ({
   createWorkspaceUser: vi.fn(),
   setWorkspaceUserDisabled: vi.fn(),
   resetWorkspaceUserPassword: vi.fn(),
+  changeOwnPassword: vi.fn(),
+  getSsoProviders: vi.fn().mockResolvedValue([]),
+  listSsoIdentities: vi.fn().mockResolvedValue([]),
+  startSsoLink: vi.fn(),
+  unlinkSsoIdentity: vi.fn(),
 }));
 
 vi.mock("sonner", () => ({
@@ -390,9 +395,7 @@ describe("SettingsPage", () => {
 
     // Should see error message
     expect(
-      await screen.findByText(
-        /String must contain at most 200 character\(s\)/i,
-      ),
+      await screen.findByText(/(?:at most 200|<=200)/i),
     ).toBeInTheDocument();
 
     // Save button should be disabled due to validation error (isValid will be false)
@@ -870,6 +873,36 @@ describe("SettingsPage", () => {
     );
   });
 
+  it("saves the PDF paper size from the Reactive Resume section", async () => {
+    vi.mocked(api.getSettings).mockResolvedValue(baseSettings);
+    vi.mocked(api.updateSettings).mockResolvedValue(
+      createAppSettings({
+        pdfPaperSize: { value: "letter", default: "auto", override: "letter" },
+      }),
+    );
+
+    renderPage();
+    await openReactiveResumeSection();
+
+    const paperSizeSelect = screen.getByRole("combobox", {
+      name: /paper size/i,
+    });
+    await waitFor(() => expect(paperSizeSelect).toBeEnabled());
+    expect(paperSizeSelect).toHaveTextContent("Renderer default");
+
+    fireEvent.click(paperSizeSelect);
+    fireEvent.click(await screen.findByText("US Letter"));
+
+    const saveButton = getSaveButton();
+    await waitFor(() => expect(saveButton).toBeEnabled());
+    fireEvent.click(saveButton);
+
+    await waitFor(() => expect(api.updateSettings).toHaveBeenCalled());
+    expect(api.updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ pdfPaperSize: "letter" }),
+    );
+  });
+
   it("blocks save and renders an inline alert when the v5 API key is invalid", async () => {
     vi.mocked(api.getSettings).mockResolvedValue(baseSettings);
 
@@ -1124,6 +1157,21 @@ describe("SettingsPage", () => {
     await openEnvironmentSection();
     expect(screen.queryByLabelText(/enable authentication/i)).toBeNull();
     expect(screen.queryByPlaceholderText("username")).toBeNull();
+  });
+
+  it("finds workspace access by searching for single sign-on", async () => {
+    vi.mocked(api.getSettings).mockResolvedValue(baseSettings);
+    renderPage();
+
+    const search = await screen.findByLabelText(/search settings/i);
+    fireEvent.change(search, { target: { value: "single sign-on" } });
+
+    expect(
+      await screen.findAllByRole("button", { name: /workspace access/i }),
+    ).not.toHaveLength(0);
+    expect(
+      screen.queryAllByRole("button", { name: /display preferences/i }),
+    ).toHaveLength(0);
   });
 
   it("saves blocked company keywords from scoring settings", async () => {

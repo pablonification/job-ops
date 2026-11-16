@@ -1,4 +1,3 @@
-import { join } from "node:path";
 import {
   AppError,
   badRequest,
@@ -10,14 +9,15 @@ import {
 import { fail, ok, okWithMeta } from "@infra/http";
 import { logger } from "@infra/logger";
 import { runWithRequestContext } from "@infra/request-context";
+import { sanitizeUnknown } from "@infra/sanitize";
 import { setupSse, startSseHeartbeat, writeSseData } from "@infra/sse";
-import { getDataDir } from "@server/config/dataDir";
 import { isDemoMode } from "@server/config/demo";
 import {
   type ExtractorRegistry,
   getExtractorRegistry,
 } from "@server/extractors/registry";
 import {
+  beginPipelineChallengeSolve,
   getPendingChallenges,
   getPipelineStatus,
   getProgress,
@@ -25,6 +25,7 @@ import {
   resolvePipelineChallenge,
   resumePipelineScoring,
   runPipeline,
+  skipPipelineChallengeSearch,
   subscribeToProgress,
 } from "@server/pipeline/index";
 import * as pipelineRepo from "@server/repositories/pipeline";
@@ -34,8 +35,15 @@ import {
   buildChallengeViewerUrl,
   createChallengeViewerSession,
   ensureChallengeViewer,
+  revokeChallengeViewerSessions,
 } from "@server/services/challenge-viewer";
 import { simulatePipelineRun } from "@server/services/demo-simulator";
+import {
+  closeHiringCafeBrowser,
+  hasHiringCafeBrowserChallenge,
+  readHiringCafeBrowserPage,
+  waitForHiringCafeBrowserChallenge,
+} from "@server/services/hiring-cafe-browser";
 import { reserveHostedUsage } from "@server/services/hosted-usage";
 import { planPipelineSearch } from "@server/services/pipeline-search-plan";
 import { ensurePipelineSearchTerms } from "@server/services/pipeline-search-terms";
@@ -43,6 +51,10 @@ import {
   resolveCountryAtPoint,
   resolveNearbyPlaceNames,
 } from "@server/services/proximity-search";
+import {
+  getPrivateCloudflareCookieStorageDir,
+  getPrivateDataScope,
+} from "@server/tenancy/private-scope";
 import { PIPELINE_EXTRACTOR_SOURCE_IDS } from "@shared/extractors";
 import {
   createLocationIntent,
@@ -690,6 +702,7 @@ pipelineRouter.post("/cancel", async (_req: Request, res: Response) => {
     if (!cancelResult.accepted) {
       return fail(res, conflict("No running pipeline to cancel"));
     }
+    await closeHiringCafeBrowser(getPrivateDataScope().scopeKey);
 
     logger.info("Pipeline cancellation requested", {
       route: "/api/pipeline/cancel",
@@ -763,12 +776,22 @@ pipelineRouter.post(
   async (_req: Request, res: Response) => {
     try {
       const status = await ensureChallengeViewer();
-      const session = status.available ? createChallengeViewerSession() : null;
+      const scopeKey = getPrivateDataScope().scopeKey;
+      const session = status.available
+        ? createChallengeViewerSession(scopeKey)
+        : null;
+      if (status.available && !session) {
+        return fail(
+          res,
+          conflict("Challenge viewer is busy with another workspace"),
+        );
+      }
       ok(res, {
-        available: status.available,
-        viewerUrl: status.available
-          ? buildChallengeViewerUrl({ token: session?.token ?? "" })
-          : null,
+        available: status.available && Boolean(session),
+        viewerUrl:
+          status.available && session
+            ? buildChallengeViewerUrl({ token: session?.token ?? "" })
+            : null,
         reason: status.available ? null : status.reason,
       });
     } catch (error) {
@@ -799,6 +822,7 @@ const solveChallengeSchema = z.object({
 });
 
 pipelineRouter.post("/solve-challenge", async (req: Request, res: Response) => {
+  let finishSolve: (() => void) | null = null;
   try {
     const body = solveChallengeSchema.parse(req.body);
 
@@ -816,6 +840,10 @@ pipelineRouter.post("/solve-challenge", async (req: Request, res: Response) => {
     // source of truth — prevents solving a different URL than the one that
     // actually triggered the challenge.
     const challengeUrl = match.url;
+    finishSolve = beginPipelineChallengeSolve(body.extractorId);
+    if (!finishSolve) {
+      return fail(res, conflict("Challenge solve already in progress"));
+    }
 
     logger.info("Launching challenge solver", {
       route: "/api/pipeline/solve-challenge",
@@ -825,19 +853,67 @@ pipelineRouter.post("/solve-challenge", async (req: Request, res: Response) => {
 
     // Cookies are runtime state, so keep them with the database/PDFs under
     // DATA_DIR rather than under extractor source directories.
-    const storageDir = join(getDataDir(), "cloudflare-cookies");
+    const storageDir = getPrivateCloudflareCookieStorageDir();
 
     // Dynamic import: browser-utils pulls in playwright which is heavy.
     // A top-level import would slow down every server startup even though
     // most pipeline runs never hit a challenge.
     await ensureChallengeViewer();
 
-    const { solveChallenge } = await import("browser-utils");
-    const result = await solveChallenge(
-      challengeUrl,
-      body.extractorId,
-      storageDir,
-    );
+    const scopeKey = getPrivateDataScope().scopeKey;
+    let result: Awaited<
+      ReturnType<typeof import("browser-utils")["solveChallenge"]>
+    >;
+    if (body.extractorId === "hiringcafe") {
+      try {
+        let challenged = hasHiringCafeBrowserChallenge(scopeKey, challengeUrl);
+        if (!challenged) {
+          const page = await readHiringCafeBrowserPage(
+            scopeKey,
+            storageDir,
+            challengeUrl,
+          );
+          challenged = page.challenged;
+        }
+        if (
+          challenged &&
+          !hasHiringCafeBrowserChallenge(scopeKey, challengeUrl)
+        ) {
+          return fail(
+            res,
+            conflict("Challenge viewer is busy with another workspace"),
+          );
+        }
+        const outcome = challenged
+          ? await waitForHiringCafeBrowserChallenge(
+              scopeKey,
+              challengeUrl,
+              5 * 60 * 1000,
+            )
+          : "clear";
+        result =
+          outcome === "clear"
+            ? { status: "solved", cookiesSaved: 0 }
+            : { status: "timeout" };
+        if (result.status === "timeout") {
+          await closeHiringCafeBrowser(scopeKey);
+        }
+      } catch (error) {
+        await closeHiringCafeBrowser(scopeKey);
+        logger.warn("Hiring Cafe browser solve failed", {
+          route: "/api/pipeline/solve-challenge",
+          extractorId: body.extractorId,
+          error: sanitizeUnknown(error),
+        });
+        result = {
+          status: "error",
+          message: "Browser solve failed",
+        };
+      }
+    } else {
+      const { solveChallenge } = await import("browser-utils");
+      result = await solveChallenge(challengeUrl, body.extractorId, storageDir);
+    }
 
     if (result.status === "solved") {
       const { remaining } = resolvePipelineChallenge(body.extractorId);
@@ -885,5 +961,49 @@ pipelineRouter.post("/solve-challenge", async (req: Request, res: Response) => {
         message: error instanceof Error ? error.message : "Unknown error",
       }),
     );
+  } finally {
+    finishSolve?.();
+    revokeChallengeViewerSessions(getPrivateDataScope().scopeKey);
   }
 });
+
+pipelineRouter.post(
+  "/skip-challenge-search",
+  async (req: Request, res: Response) => {
+    try {
+      const body = solveChallengeSchema.parse(req.body);
+      const result = skipPipelineChallengeSearch(body.extractorId);
+      if (result.status === "not_found") {
+        return fail(res, notFound("No pending challenge for this extractor"));
+      }
+      if (result.status === "busy") {
+        return fail(res, conflict("Wait for the solve attempt to finish"));
+      }
+      if (result.status === "not_allowed") {
+        return fail(
+          res,
+          conflict("Try solving this Hiring Cafe search before skipping it"),
+        );
+      }
+      await closeHiringCafeBrowser(getPrivateDataScope().scopeKey);
+      logger.info("Skipped challenged Hiring Cafe search", {
+        route: "/api/pipeline/skip-challenge-search",
+        extractorId: body.extractorId,
+        challengesRemaining: result.remaining,
+      });
+      ok(res, result);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return fail(res, badRequest(error.message, error.flatten()));
+      }
+      fail(
+        res,
+        new AppError({
+          status: 500,
+          code: "INTERNAL_ERROR",
+          message: error instanceof Error ? error.message : "Unknown error",
+        }),
+      );
+    }
+  },
+);

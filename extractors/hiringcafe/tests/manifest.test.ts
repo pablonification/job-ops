@@ -9,6 +9,76 @@ describe("hiringcafe manifest", () => {
     vi.clearAllMocks();
   });
 
+  it("passes a search checkpoint through the manifest", async () => {
+    const { manifest } = await import("../manifest");
+    const { runHiringCafe } = await import("../src/run");
+    const searchResume = {
+      locationIndex: 1,
+      termIndex: 0,
+      location: "Amsterdam",
+      searchTerm: "Backend Engineer",
+      pageNo: 2,
+      termCollected: 40,
+      searchState: '{"searchQuery":"Backend Engineer"}',
+      seenKeys: ["job-1"],
+    };
+    vi.mocked(runHiringCafe).mockResolvedValue({
+      success: true,
+      jobs: [],
+      challengeRequired: "https://hiringcafe.com/?page=2",
+      searchResume,
+    });
+
+    const result = await manifest.run({
+      source: "hiringcafe",
+      selectedSources: ["hiringcafe"],
+      settings: {},
+      searchTerms: ["Backend Engineer"],
+      selectedCountry: "Netherlands",
+      resumeState: searchResume,
+    });
+
+    expect(runHiringCafe).toHaveBeenCalledWith(
+      expect.objectContaining({ searchResume }),
+    );
+    expect(result.resumeState).toEqual(searchResume);
+  });
+
+  it("passes detail challenge warnings and listing jobs to the pipeline", async () => {
+    const { manifest } = await import("../manifest");
+    const { runHiringCafe } = await import("../src/run");
+    const job = {
+      source: "hiringcafe" as const,
+      title: "Engineer",
+      employer: "Acme",
+      jobUrl: "https://hiringcafe.com/job/req-1",
+      location: "London",
+    };
+    vi.mocked(runHiringCafe).mockResolvedValue({
+      success: true,
+      jobs: [job],
+      sourceErrors: [
+        "Hiring Cafe job detail request was challenged (HTTP 429)",
+      ],
+      challengeRequired: "https://hiringcafe.com/job/req-1",
+    });
+
+    const result = await manifest.run({
+      source: "hiringcafe",
+      selectedSources: ["hiringcafe"],
+      settings: {},
+      searchTerms: ["engineer"],
+      selectedCountry: "worldwide",
+    });
+
+    expect(result).toEqual({
+      success: true,
+      jobs: [job],
+      sourceErrors: [expect.stringContaining("HTTP 429")],
+      challengeRequired: "https://hiringcafe.com/job/req-1",
+    });
+  });
+
   it("prefers normalized source location plan over legacy city settings", async () => {
     const { manifest } = await import("../manifest");
     const { runHiringCafe } = await import("../src/run");

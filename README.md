@@ -53,6 +53,8 @@ docker compose up -d
 
 Open `http://localhost:3005` and follow the onboarding wizard. You'll be searching in under 10 minutes.
 
+Sign-in uses JobOps accounts by default, and can also use Google, GitHub, or any OpenID Connect provider — see the [SSO Setup Guide](https://jobops.dakheera47.com/docs/next/getting-started/sso-setup).
+
 ---
 
 ## How It Works
@@ -105,12 +107,15 @@ No manual updates. No spreadsheets. See the [tracking docs](https://jobops.dakhe
 JobOps works with the model provider you already use:
 
 - Atlas Cloud
+- LiteLLM (self-hosted gateway to 100+ providers: Bedrock, Azure, Vertex AI, and more)
 - Codex (local app-server in Docker, authenticated with `codex login`)
 - OpenAI
 - Claude (Anthropic)
 - GLM / Zhipu AI
 - Google Gemini
 - OpenRouter
+- Requesty
+- [API Route](https://www.api-route.com/)
 - Any OpenAI-compatible endpoint (Ollama, LM Studio, etc.)
 
 ---

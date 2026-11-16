@@ -1,7 +1,7 @@
 ---
 id: hiring-cafe
 title: Hiring Cafe Extractor
-description: Browser-backed Hiring Cafe extraction integrated into the pipeline source selector.
+description: Hiring Cafe search extraction integrated into the pipeline source selector.
 sidebar_position: 7
 ---
 
@@ -11,12 +11,13 @@ Original website: [hiring.cafe](https://hiring.cafe)
 
 Special thanks: Initial implementation inspiration came from [umur957/hiring-cafe-job-scraper](https://github.com/umur957/hiring-cafe-job-scraper).
 
-Hiring Cafe is a browser-backed extractor that queries Hiring Cafe search APIs and maps results into the orchestrator `CreateJobInput` shape.
+Hiring Cafe reads search and job detail pages and maps results into pipeline jobs.
 
 Implementation split:
 
-1. `extractors/hiringcafe/src/main.ts` builds search state, calls Hiring Cafe APIs, fetches job detail pages when search hits omit full descriptions, and writes dataset JSON.
-2. `orchestrator/src/server/services/hiring-cafe.ts` runs the extractor, streams progress events, and maps rows for pipeline import.
+1. The extractor builds search state and reads search pages.
+2. When a search hit lacks a full description, it requests the job detail page.
+3. The pipeline imports the mapped jobs and shows source warnings.
 
 ## Why it exists
 
@@ -42,6 +43,13 @@ Defaults and constraints:
 - `worldwide` and `usa/ca` run in broad mode without a strict country location filter.
 - Hiring Cafe is enabled by default in source selection.
 - Full job descriptions are loaded from Hiring Cafe detail pages when the search result payload only includes summary fields.
+- Hiring Cafe reads its search and detail pages in Firefox from the start. If headless Firefox is challenged, it opens the same URL in the visible Firefox session. A normal page there continues the search automatically, even when no clearance cookie is issued.
+- If the visible Firefox page is challenged, the extractor keeps all search results and pauses the pipeline for a human solve on that same page. After the solve, it retries the challenged detail URL without repeating completed searches, then imports jobs. A source warning includes the upstream HTTP status when available.
+- After a successful solve, the browser viewer tab shows a confirmation and closes automatically after three seconds. The Job Ops pipeline resumes in the original tab.
+- If a search page is challenged in visible Firefox, results already found are kept while the pipeline waits for a solve. After the solve, Hiring Cafe retries that page with the same term and location, then continues to later pages and searches. That search retry does not replay earlier pages. A separate job-detail challenge retries only that detail page. The challenged search page cannot supply new results until it is solved.
+- After trying **Solve** on a challenged search page, **Skip this search** appears. It keeps jobs already found, skips that search term and location, and continues with the next Hiring Cafe search. Other Hiring Cafe searches still run. The button is not offered for a challenged job detail page.
+- If another search or detail page is challenged during a retry, the pipeline shows the new challenge and pauses again. It imports the collected jobs only after Hiring Cafe finishes without another challenge. You can cancel the run while it is waiting.
+- In the pipeline progress card, searches completed before a later challenge stay complete while the challenged search waits and retries. Searches that have not started remain queued. When a detail page needs a browser check after every search is complete, the card says **Browser check needed**; it advances after that check succeeds.
 - The normalized job payload now preserves structured location evidence from the formatted workplace and city/state/country fields.
 - `HIRING_CAFE_DATE_FETCHED_PAST_N_DAYS` controls recency window when running extractor directly (default `7`).
 - In the default Map radius mode, Hiring Cafe receives the selected coordinates and radius directly (default `50` miles).
@@ -62,8 +70,9 @@ npm --workspace hiringcafe-extractor run start
 
 ### Hiring Cafe returns 429 / Vercel security checkpoint
 
-- The extractor first attempts Camoufox-backed Firefox and falls back to vanilla Firefox startup if Camoufox is unstable locally.
-- If upstream blocks continue, retry later or reduce run concurrency at the pipeline level by selecting fewer sources.
+- If a detail request is challenged in the offered browser, complete the check there. The pipeline keeps the listing results while paused, retries only the detail URL afterward, and imports the richer description when the retry succeeds. A `429` first gets automatic backoff retries; if it still needs a check, see the source warning for its HTTP status. If a detail request remains challenged, the pipeline pauses again instead of importing partial descriptions.
+- If a search page is challenged, use the offered browser. The solve succeeds when the same Firefox page loads usable Hiring Cafe data; a clearance cookie is not required. The extractor resumes at the challenged page. If that page is challenged again on retry, the pipeline pauses at the same page; earlier pages stay completed.
+- If you cannot solve a challenged search page, try **Solve** once and then select **Skip this search**. Jobs collected before the challenge remain in the run; Hiring Cafe continues with the next term or location.
 
 ### Hiring Cafe does not appear in sources
 

@@ -29,10 +29,8 @@ import {
 
 const srcDir = dirname(fileURLToPath(import.meta.url));
 const EXTRACTOR_DIR = join(srcDir, "..");
-const STORAGE_DIR = join(EXTRACTOR_DIR, "storage/datasets/default");
-const AUTH_CACHE_PATH = join(EXTRACTOR_DIR, "storage/ukvisajobs-auth.json");
 const JOBOPS_PROGRESS_PREFIX = "JOBOPS_PROGRESS ";
-let isUkVisaJobsRunning = false;
+const runningStorageDirs = new Set<string>();
 
 interface UkVisaJobsAuthSession {
   token?: string;
@@ -43,6 +41,9 @@ interface UkVisaJobsAuthSession {
 }
 
 export interface RunUkVisaJobsOptions {
+  email?: string;
+  password?: string;
+  cookieStorageDir?: string;
   maxJobs?: number;
   searchKeyword?: string;
   searchTerms?: string[];
@@ -211,9 +212,12 @@ function cleanHtml(html: string): string {
   return text;
 }
 
-async function fetchJobDescription(url: string): Promise<string | null> {
+async function fetchJobDescription(
+  url: string,
+  authCachePath: string,
+): Promise<string | null> {
   try {
-    const authSession = await loadCachedAuthSession();
+    const authSession = await loadCachedAuthSession(authCachePath);
     const cookieParts: string[] = [];
     if (authSession?.csrfToken) {
       cookieParts.push(`csrf_token=${authSession.csrfToken}`);
@@ -247,18 +251,20 @@ async function fetchJobDescription(url: string): Promise<string | null> {
   }
 }
 
-async function loadCachedAuthSession(): Promise<UkVisaJobsAuthSession | null> {
+async function loadCachedAuthSession(
+  authCachePath: string,
+): Promise<UkVisaJobsAuthSession | null> {
   try {
-    const data = await readFile(AUTH_CACHE_PATH, "utf-8");
+    const data = await readFile(authCachePath, "utf-8");
     return JSON.parse(data) as UkVisaJobsAuthSession;
   } catch {
     return null;
   }
 }
 
-async function clearStorageDataset(): Promise<void> {
+async function clearStorageDataset(storageDir: string): Promise<void> {
   try {
-    await rm(STORAGE_DIR, { recursive: true, force: true });
+    await rm(storageDir, { recursive: true, force: true });
   } catch {
     // ignore
   }
@@ -267,7 +273,25 @@ async function clearStorageDataset(): Promise<void> {
 export async function runUkVisaJobs(
   options: RunUkVisaJobsOptions = {},
 ): Promise<UkVisaJobsResult> {
-  if (isUkVisaJobsRunning) {
+  const email = (options.email ?? process.env.UKVISAJOBS_EMAIL)?.trim();
+  const password = (
+    options.password ?? process.env.UKVISAJOBS_PASSWORD
+  )?.trim();
+  if (!email || !password) {
+    return {
+      success: false,
+      jobs: [],
+      error:
+        "UK Visa Jobs requires an email and password. Configure them in Settings before running this source.",
+    };
+  }
+
+  const storageRoot = options.cookieStorageDir
+    ? join(options.cookieStorageDir, "ukvisajobs")
+    : join(EXTRACTOR_DIR, "storage");
+  const storageDir = join(storageRoot, "datasets/default");
+  const authCachePath = join(storageRoot, "ukvisajobs-auth.json");
+  if (runningStorageDirs.has(storageRoot)) {
     return {
       success: false,
       jobs: [],
@@ -275,7 +299,7 @@ export async function runUkVisaJobs(
     };
   }
 
-  isUkVisaJobsRunning = true;
+  runningStorageDirs.add(storageRoot);
   try {
     const terms: string[] = [];
     if (options.searchTerms && options.searchTerms.length > 0) {
@@ -296,8 +320,8 @@ export async function runUkVisaJobs(
       const termIndex = i + 1;
 
       try {
-        await clearStorageDataset();
-        await mkdir(STORAGE_DIR, { recursive: true });
+        await clearStorageDataset(storageDir);
+        await mkdir(storageDir, { recursive: true });
 
         await new Promise<void>((resolve, reject) => {
           const child = spawn("npx", ["tsx", "src/main.ts"], {
@@ -305,6 +329,15 @@ export async function runUkVisaJobs(
             stdio: ["ignore", "pipe", "pipe"],
             env: {
               ...process.env,
+              UKVISAJOBS_EMAIL: email,
+              UKVISAJOBS_PASSWORD: password,
+              UKVISAJOBS_STORAGE_DIR: storageRoot,
+              ...(options.cookieStorageDir
+                ? {
+                    JOBOPS_CLOUDFLARE_COOKIE_STORAGE_DIR:
+                      options.cookieStorageDir,
+                  }
+                : {}),
               JOBOPS_EMIT_PROGRESS: "1",
               UKVISAJOBS_MAX_JOBS: String(options.maxJobs ?? 50),
               UKVISAJOBS_SEARCH_KEYWORD: term,
@@ -364,7 +397,7 @@ export async function runUkVisaJobs(
           child.on("error", reject);
         });
 
-        const runJobs = await readDataset();
+        const runJobs = await readDataset(storageDir);
         let jobsFoundTerm = 0;
 
         for (const job of runJobs) {
@@ -378,7 +411,10 @@ export async function runUkVisaJobs(
             job.jobDescription.startsWith("Visa sponsorship info:");
 
           if (isPoorDescription && job.jobUrl) {
-            const enriched = await fetchJobDescription(job.jobUrl);
+            const enriched = await fetchJobDescription(
+              job.jobUrl,
+              authCachePath,
+            );
             if (enriched) {
               job.jobDescription = enriched;
             }
@@ -419,22 +455,22 @@ export async function runUkVisaJobs(
     }
     return { success: true, jobs: allJobs };
   } finally {
-    isUkVisaJobsRunning = false;
+    runningStorageDirs.delete(storageRoot);
   }
 }
 
-async function readDataset(): Promise<CreateJobInput[]> {
+async function readDataset(storageDir: string): Promise<CreateJobInput[]> {
   const jobs: CreateJobInput[] = [];
 
   try {
-    const files = await readdir(STORAGE_DIR);
+    const files = await readdir(storageDir);
     const jsonFiles = files.filter(
       (file) => file.endsWith(".json") && file !== "jobs.json",
     );
 
     for (const file of jsonFiles.sort()) {
       try {
-        const content = await readFile(join(STORAGE_DIR, file), "utf-8");
+        const content = await readFile(join(storageDir, file), "utf-8");
         const job = JSON.parse(content) as Record<string, unknown>;
 
         jobs.push({

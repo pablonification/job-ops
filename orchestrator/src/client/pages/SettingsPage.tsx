@@ -81,6 +81,7 @@ const DEFAULT_FORM_VALUES: UpdateSettingsInput = {
   resumeProjects: null,
   pdfRenderer: "rxresume",
   typstTheme: "classic",
+  pdfPaperSize: "auto",
   rxresumeBaseResumeId: null,
   showSponsorInfo: null,
   renderMarkdownInJobDescriptions: null,
@@ -195,6 +196,7 @@ const SETTINGS_NAV_GROUPS: SettingsNavGroup[] = [
           "claude",
           "claude_cli",
           "ollama",
+          "litellm",
           "codex",
         ],
       },
@@ -258,7 +260,19 @@ const SETTINGS_NAV_GROUPS: SettingsNavGroup[] = [
         id: "environment",
         label: "Workspace Access",
         description: "Service credentials and authentication protection.",
-        searchTerms: ["security", "auth", "adzuna", "ukvisajobs"],
+        searchTerms: [
+          "security",
+          "auth",
+          "adzuna",
+          "ukvisajobs",
+          "sso",
+          "single sign-on",
+          "oidc",
+          "google",
+          "github",
+          "connected accounts",
+          "password",
+        ],
       },
     ],
   },
@@ -426,6 +440,7 @@ const NULL_SETTINGS_PAYLOAD: UpdateSettingsInput = {
   resumeProjects: null,
   pdfRenderer: null,
   typstTheme: null,
+  pdfPaperSize: null,
   rxresumeBaseResumeId: null,
   showSponsorInfo: null,
   renderMarkdownInJobDescriptions: null,
@@ -493,6 +508,7 @@ const mapSettingsToForm = (data: AppSettings): UpdateSettingsInput => ({
   resumeProjects: data.resumeProjects.override,
   pdfRenderer: data.pdfRenderer.override ?? data.pdfRenderer.value,
   typstTheme: data.typstTheme.override ?? data.typstTheme.value,
+  pdfPaperSize: data.pdfPaperSize.override ?? data.pdfPaperSize.value,
   rxresumeBaseResumeId: data.rxresumeBaseResumeId,
   showSponsorInfo: data.showSponsorInfo.override,
   renderMarkdownInJobDescriptions:
@@ -658,6 +674,10 @@ const getDerivedSettings = (settings: AppSettings | null) => {
       typstTheme: {
         effective: settings?.typstTheme?.value ?? "classic",
         default: settings?.typstTheme?.default ?? "classic",
+      },
+      pdfPaperSize: {
+        effective: settings?.pdfPaperSize?.value ?? "auto",
+        default: settings?.pdfPaperSize?.default ?? "auto",
       },
     },
     display: {
@@ -1225,6 +1245,10 @@ export const SettingsPage: React.FC = () => {
         typstTheme: nullIfSame(
           data.typstTheme,
           reactiveResume.typstTheme.default,
+        ),
+        pdfPaperSize: nullIfSame(
+          data.pdfPaperSize,
+          reactiveResume.pdfPaperSize.default,
         ),
         ...(dirtyFields.rxresumeBaseResumeId
           ? { rxresumeBaseResumeId: normalizeString(data.rxresumeBaseResumeId) }

@@ -16,6 +16,7 @@ import { getPrivateDataScope } from "@server/tenancy/private-scope";
 import { createLocationIntentFromLegacyInputs } from "@shared/location-domain.js";
 import { resolveResumeProjectSelection } from "@shared/resume-projects";
 import type {
+  CreateJobInput,
   JobStatus,
   PipelineConfig,
   PipelineRunSavedDetails,
@@ -34,6 +35,7 @@ import {
   createJobPdfFingerprint,
   resolvePdfFingerprintContext,
 } from "../services/pdf-fingerprint";
+import { removeStoredJobPdf } from "../services/pdf-storage";
 import { getProfile } from "../services/profile";
 import { pickProjectIdsForJob } from "../services/projectSelection";
 import {
@@ -92,11 +94,14 @@ type TenantPipelineState = {
   activePipelineRunId: string | null;
   cancelRequestedAt: string | null;
   activeChallengeState: ChallengeState | null;
+  attemptedChallengeSearchStates: Set<string>;
+  skippedChallengeSearchStates: Set<string>;
   activeLlmConfigState: LlmConfigState | null;
 };
 
 type ChallengeState = {
   challenges: Map<string, PendingChallenge>;
+  solving: Set<string>;
   resolve: () => void;
 };
 
@@ -120,6 +125,8 @@ function getPipelineState(
       activePipelineRunId: null,
       cancelRequestedAt: null,
       activeChallengeState: null,
+      attemptedChallengeSearchStates: new Set(),
+      skippedChallengeSearchStates: new Set(),
       activeLlmConfigState: null,
     };
     pipelineStateByTenant.set(scopeKey, state);
@@ -177,6 +184,19 @@ async function resolveLocationIntent(
 // kills a running one. This is intentional: challenges happen at most once
 // per day per extractor, and the user is actively present to solve them.
 
+function hiringCafeSearchState(challenge: PendingChallenge): string | null {
+  if (challenge.extractorId !== "hiringcafe") return null;
+  try {
+    const url = new URL(challenge.url);
+    if (url.origin !== "https://hiringcafe.com" || url.pathname !== "/") {
+      return null;
+    }
+    return url.searchParams.get("searchState");
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Returns the list of challenges currently blocking the pipeline, or empty if
  * the pipeline is not paused on challenges.
@@ -185,6 +205,52 @@ export function getPendingChallenges(): PendingChallenge[] {
   const challengeState = getPipelineState().activeChallengeState;
   if (!challengeState) return [];
   return Array.from(challengeState.challenges.values());
+}
+
+/** Mark a browser solve attempt and prevent a concurrent skip. */
+export function beginPipelineChallengeSolve(
+  extractorId: string,
+): (() => void) | null {
+  const state = getPipelineState();
+  const challengeState = state.activeChallengeState;
+  const challenge = challengeState?.challenges.get(extractorId);
+  if (!challengeState || !challenge || challengeState.solving.has(extractorId))
+    return null;
+
+  challengeState.solving.add(extractorId);
+  const searchState = hiringCafeSearchState(challenge);
+  if (searchState) {
+    state.attemptedChallengeSearchStates.add(searchState);
+    challenge.solveAttempted = true;
+    progressHelpers.challengeRequired(
+      Array.from(challengeState.challenges.values()),
+    );
+  }
+
+  return () => challengeState.solving.delete(extractorId);
+}
+
+export function skipPipelineChallengeSearch(
+  extractorId: string,
+):
+  | { status: "skipped"; remaining: number }
+  | { status: "not_found" }
+  | { status: "not_allowed" }
+  | { status: "busy" } {
+  const state = getPipelineState();
+  const challengeState = state.activeChallengeState;
+  const challenge = challengeState?.challenges.get(extractorId);
+  if (!challengeState || !challenge) return { status: "not_found" };
+  if (challengeState.solving.has(extractorId)) return { status: "busy" };
+
+  const searchState = hiringCafeSearchState(challenge);
+  if (!searchState || !state.attemptedChallengeSearchStates.has(searchState)) {
+    return { status: "not_allowed" };
+  }
+
+  state.skippedChallengeSearchStates.add(searchState);
+  const { remaining } = resolvePipelineChallenge(extractorId);
+  return { status: "skipped", remaining };
 }
 
 /**
@@ -243,21 +309,34 @@ function ensureNotCancelled(scopeKey = getPipelineScopeKey()): void {
   }
 }
 
-function buildRepeatedChallengeMessage(args: {
-  challenges: PendingChallenge[];
-  sourceErrors: string[];
-}): string {
-  const extractorNames =
-    args.challenges
-      .map((challenge) => challenge.extractorName || challenge.extractorId)
-      .filter(Boolean)
-      .join(", ") || "One or more extractors";
-  const sourceDetails =
-    args.sourceErrors.length > 0
-      ? ` Details: ${args.sourceErrors.join("; ")}`
-      : "";
+function mergeRetriedJobs(
+  originalJobs: CreateJobInput[],
+  retriedJobs: CreateJobInput[],
+): CreateJobInput[] {
+  const merged = [...originalJobs];
+  for (const retried of retriedJobs) {
+    const index = merged.findIndex(
+      (original) =>
+        original.source === retried.source &&
+        ((original.sourceJobId &&
+          retried.sourceJobId &&
+          original.sourceJobId === retried.sourceJobId) ||
+          original.jobUrl === retried.jobUrl),
+    );
+    if (index < 0) {
+      merged.push(retried);
+      continue;
+    }
 
-  return `${extractorNames} still returned a Cloudflare challenge after the solve step, so the pipeline stopped instead of completing with zero jobs.${sourceDetails}`;
+    const existing = merged[index];
+    merged[index] = {
+      ...existing,
+      ...Object.fromEntries(
+        Object.entries(retried).filter(([, value]) => value != null),
+      ),
+    };
+  }
+  return merged;
 }
 
 /**
@@ -292,6 +371,8 @@ export async function runPipeline(
   tenantState.isRunning = true;
   tenantState.activePipelineRunId = "pending";
   tenantState.cancelRequestedAt = null;
+  tenantState.attemptedChallengeSearchStates.clear();
+  tenantState.skippedChallengeSearchStates.clear();
   resetProgress();
   const locationIntent = await resolveLocationIntent(config);
   const mergedConfig = { ...DEFAULT_CONFIG, ...config, locationIntent };
@@ -363,7 +444,18 @@ export async function runPipeline(
       });
 
       // ---------- Challenge pause/resume ----------
-      if (pendingChallenges.length > 0) {
+      while (pendingChallenges.length > 0) {
+        pendingChallenges = pendingChallenges.map((challenge) => {
+          const searchState = hiringCafeSearchState(challenge);
+          return searchState
+            ? {
+                ...challenge,
+                canSkipSearch: true,
+                solveAttempted:
+                  tenantState.attemptedChallengeSearchStates.has(searchState),
+              }
+            : challenge;
+        });
         pipelineLogger.info("Challenges detected, pausing pipeline", {
           challenges: pendingChallenges.map((c) => ({
             extractorId: c.extractorId,
@@ -379,12 +471,26 @@ export async function runPipeline(
         // Cancellation still works: the cancel endpoint sets cancelRequestedAt,
         // and ensureNotCancelled() fires after the Promise resolves.
         const challengedSources = pendingChallenges.flatMap((c) => c.sources);
+        const retryChallengeUrls = Object.fromEntries(
+          pendingChallenges.map((challenge) => [
+            challenge.extractorId,
+            challenge.url,
+          ]),
+        );
+        const resumeStates = Object.fromEntries(
+          pendingChallenges.flatMap((challenge) =>
+            challenge.resumeState !== undefined
+              ? [[challenge.extractorId, challenge.resumeState]]
+              : [],
+          ),
+        );
 
         await new Promise<void>((resolve) => {
           tenantState.activeChallengeState = {
             challenges: new Map(
               pendingChallenges.map((c) => [c.extractorId, c]),
             ),
+            solving: new Set(),
             resolve,
           };
         });
@@ -403,38 +509,35 @@ export async function runPipeline(
           includeWatchlist: false,
           preserveFanout: true,
           fanoutSeedJobs: discoveredJobs,
+          retryChallengeUrls,
+          resumeStates,
+          skippedChallengeSearchStates: Array.from(
+            tenantState.skippedChallengeSearchStates,
+          ),
           shouldCancel: () =>
             getPipelineState(scopeKey).cancelRequestedAt !== null,
         });
 
-        discoveredJobs = [...discoveredJobs, ...retryResult.discoveredJobs];
+        discoveredJobs = mergeRetriedJobs(
+          discoveredJobs,
+          retryResult.discoveredJobs,
+        );
         sourceErrors = [...sourceErrors, ...retryResult.sourceErrors];
+
+        // Keep the run paused until every challenged source finishes a retry
+        // without another challenge. Jobs collected so far stay in memory and
+        // are imported only after discovery is complete.
         pendingChallenges = retryResult.pendingChallenges;
-
-        // If the retry itself hits challenges again (e.g. no reusable cookie was
-        // persisted, or the cookie was rejected), keep partial results only when
-        // something useful was discovered. Otherwise stop loudly instead of
-        // presenting a successful zero-job run.
-        if (retryResult.pendingChallenges.length > 0) {
-          const message = buildRepeatedChallengeMessage({
-            challenges: retryResult.pendingChallenges,
-            sourceErrors: retryResult.sourceErrors,
-          });
-
-          if (discoveredJobs.length === 0) {
-            throw new Error(message);
-          }
-
-          pipelineLogger.warn(message, {
-            retryPendingChallenges: retryResult.pendingChallenges.map(
-              (c) => c.extractorId,
+        if (pendingChallenges.length > 0) {
+          pipelineLogger.warn("Challenge persists; pausing again", {
+            retryPendingChallenges: pendingChallenges.map(
+              (challenge) => challenge.extractorId,
             ),
-            retrySourceErrors: retryResult.sourceErrors,
           });
         }
-
-        progressHelpers.crawlingComplete(discoveredJobs.length);
       }
+
+      progressHelpers.crawlingComplete(discoveredJobs.length);
 
       ensureNotCancelled(scopeKey);
       jobsDiscovered = discoveredJobs.length;
@@ -601,6 +704,8 @@ export async function runPipeline(
       tenantState.activePipelineRunId = null;
       tenantState.cancelRequestedAt = null;
       tenantState.activeChallengeState = null;
+      tenantState.attemptedChallengeSearchStates.clear();
+      tenantState.skippedChallengeSearchStates.clear();
       tenantState.activeLlmConfigState = null;
       if (options?.hostedUsageReservationId) {
         await settleHostedUsageReservation({
@@ -854,13 +959,13 @@ export async function generateFinalPdf(
       await reservePdfUsage();
 
       // Ready jobs already have a usable PDF; keep them visible while regenerating.
-      if (job.status !== "ready") {
-        await jobsRepo.updateJob(job.id, {
-          status: "processing",
-          pdfRegenerating: true,
-        });
-      } else {
-        await jobsRepo.updateJob(job.id, { pdfRegenerating: true });
+      const claimedJob = await jobsRepo.updateJob(job.id, {
+        ...(job.status !== "ready" ? { status: "processing" } : {}),
+        pdfRegenerating: true,
+      });
+      if (!claimedJob) {
+        await settlePdfUsage(0);
+        return { success: false, error: "Job not found" };
       }
       pdfRegeneratingMarked = true;
 
@@ -919,6 +1024,13 @@ export async function generateFinalPdf(
       });
       if (!updatedJob) {
         const latestJob = await jobsRepo.getJobById(job.id);
+        if (!latestJob) {
+          await removeStoredJobPdf(job.id).catch((error) => {
+            jobLogger.warn("Failed to remove PDF generated for a deleted job", {
+              error,
+            });
+          });
+        }
         if (
           latestJob?.pdfRegenerating &&
           (latestJob.status !== expectedStatusAtCommit ||
