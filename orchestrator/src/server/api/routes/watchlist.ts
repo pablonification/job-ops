@@ -1,4 +1,9 @@
-import { badRequest, toAppError, unprocessableEntity } from "@infra/errors";
+import {
+  AppError,
+  badRequest,
+  toAppError,
+  unprocessableEntity,
+} from "@infra/errors";
 import { asyncRoute, fail, ok } from "@infra/http";
 import * as watchlistRepo from "@server/repositories/watchlist";
 import { getWatchlistSourceAdapter } from "@server/watchlist/adapters";
@@ -244,7 +249,16 @@ watchlistRouter.put(
       );
     }
 
-    ok(res, await replaceWatchlistSources(parsedBody.data.selections));
+    try {
+      ok(res, await replaceWatchlistSources(parsedBody.data.selections));
+    } catch (error) {
+      // Invalid selections (422) are expected answers, not server errors.
+      if (error instanceof AppError) {
+        fail(res, error);
+        return;
+      }
+      throw error;
+    }
   }),
 );
 

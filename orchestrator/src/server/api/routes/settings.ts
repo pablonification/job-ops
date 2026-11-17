@@ -271,10 +271,20 @@ settingsRouter.patch(
     }
 
     const input = updateSettingsSchema.parse(req.body);
-    const { settings } = await updateSettingsForCaller(input, {
-      route: "PATCH /api/settings",
-    });
-    ok(res, settings);
+    try {
+      const { settings } = await updateSettingsForCaller(input, {
+        route: "PATCH /api/settings",
+      });
+      ok(res, settings);
+    } catch (error) {
+      // Permission and validation refusals are expected answers, not
+      // server errors: reply without logging them as errors.
+      if (error instanceof AppError && error.status < 500) {
+        fail(res, error);
+        return;
+      }
+      throw error;
+    }
   }),
 );
 
