@@ -47,6 +47,7 @@ import {
   extractProjectsFromProfile,
   resolveResumeProjectsSettings,
 } from "../services/resumeProjects";
+import { queueRunDigest } from "../services/run-digest";
 import { LlmNotConfiguredError } from "../services/scorer";
 import { generateTailoring, type TailoredData } from "../services/summary";
 import {
@@ -416,6 +417,22 @@ export async function runPipeline(
     let jobsDiscovered = 0;
     let jobsProcessed = 0;
     let pipelineUsageUnits = 0;
+    // The digest tells the owner about each kind of pause once per run.
+    const pauseNoticesSent = new Set<"challenge" | "configuration">();
+    const notifyPause = (
+      reason: "challenge" | "configuration",
+      sources?: string[],
+    ) => {
+      if (pauseNoticesSent.has(reason)) return;
+      pauseNoticesSent.add(reason);
+      queueRunDigest({
+        kind: "paused",
+        pipelineRunId: pipelineRun.id,
+        trigger,
+        reason,
+        sources,
+      });
+    };
     let resultSummary =
       savedDetails?.resultSummary ?? createPipelineRunResultSummary();
     const persistResultSummary = async (
@@ -479,6 +496,16 @@ export async function runPipeline(
         });
 
         progressHelpers.challengeRequired(pendingChallenges);
+        notifyPause(
+          "challenge",
+          Array.from(
+            new Set(
+              pendingChallenges.map(
+                (challenge) => challenge.extractorName || challenge.extractorId,
+              ),
+            ),
+          ),
+        );
 
         // Block until all challenges are resolved by the solve-challenge API.
         // The Promise is resolved by `resolvePipelineChallenge()`, which is
@@ -556,9 +583,10 @@ export async function runPipeline(
 
       ensureNotCancelled(scopeKey);
       jobsDiscovered = discoveredJobs.length;
-      const { created, skipped, fuzzyMerged } = await importJobsStep({
-        discoveredJobs,
-      });
+      const { created, skipped, fuzzyMerged, createdJobIds } =
+        await importJobsStep({
+          discoveredJobs,
+        });
 
       await persistResultSummary({ stage: "import" });
       await pipelineRepo.updatePipelineRun(pipelineRun.id, {
@@ -588,6 +616,7 @@ export async function runPipeline(
           const message = error.message;
           progressHelpers.configurationRequired(message);
           pipelineLogger.warn("Pipeline paused — LLM not configured", error);
+          notifyPause("configuration");
 
           await new Promise<void>((resolve) => {
             tenantState.activeLlmConfigState = { resolve };
@@ -660,6 +689,15 @@ export async function runPipeline(
         jobsScored: scoredJobs.length,
         jobsProcessed: processedCount,
       });
+      queueRunDigest({
+        kind: "completed",
+        pipelineRunId: pipelineRun.id,
+        trigger,
+        jobsFound: jobsDiscovered,
+        newJobIds: createdJobIds ?? [],
+        jobsScored: scoredJobs.length,
+        jobsTailored: processedCount,
+      });
 
       pipelineUsageUnits = 1;
       return {
@@ -705,6 +743,12 @@ export async function runPipeline(
 
       await notifyPipelineWebhookStep("pipeline.failed", {
         pipelineRunId: pipelineRun.id,
+        error: message,
+      });
+      queueRunDigest({
+        kind: "failed",
+        pipelineRunId: pipelineRun.id,
+        trigger,
         error: message,
       });
 
