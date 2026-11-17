@@ -2,7 +2,19 @@
  * Shared building blocks for MCP tool groups. Tool modules import from here
  * (`@server/mcp/kit`) and never from each other.
  */
-export { invalidToolInput, toToolErrorResult } from "./errors";
+export {
+  invalidToolInput,
+  MAX_TOOL_MESSAGE_CHARS,
+  toToolErrorResult,
+  truncateToolMessage,
+} from "./errors";
+export {
+  assertJobIdle,
+  type CompactJobState,
+  jobIdInput,
+  loadCompactJobState,
+  toCompactJobState,
+} from "./job-state";
 export {
   type CompactJobSummary,
   type CompactJobSummarySource,
@@ -23,6 +35,7 @@ export { assertToolScope, hasScope } from "./scope";
 export {
   defineTool,
   defineToolGroup,
+  MCP_ROUTE,
   type McpToolContext,
   type McpToolDefinition,
   type McpToolGroup,

@@ -6,9 +6,20 @@ import {
   simulateProcessJob,
   simulateRescoreJob,
 } from "@server/services/demo-simulator";
+import { resolvePdfFingerprintContext } from "@server/services/pdf-fingerprint";
 import { getProfile } from "@server/services/profile";
 import { scoreJobSuitability } from "@server/services/scorer";
-import type { JobAction, JobActionResult, JobStatus } from "@shared/types";
+import { asyncPool } from "@server/utils/async-pool";
+import type {
+  JobAction,
+  JobActionResponse,
+  JobActionResult,
+  JobStatus,
+} from "@shared/types";
+import { hydrateJobPdfFreshnessWithContext } from "./common";
+
+/** How many jobs a bulk action works on at once. */
+export const JOB_ACTION_CONCURRENCY = 4;
 
 const SKIPPABLE_STATUSES: ReadonlySet<JobStatus> = new Set([
   "discovered",
@@ -174,9 +185,17 @@ export async function executeJobActionForJob(
           analyticsOrigin: options?.analyticsOrigin ?? "move_to_ready",
         });
         if (!processed.success) {
+          // A failed tailoring or render step (model not configured, renderer
+          // down, PDF already rendering) is reported with its own code so the
+          // caller sees the real reason, as the manual import does.
+          const code: AppErrorCode =
+            processed.errorCode ??
+            (processed.error === "Job not found"
+              ? "NOT_FOUND"
+              : "UPSTREAM_ERROR");
           throw new AppError({
-            status: 500,
-            code: "INTERNAL_ERROR",
+            status: STATUS_BY_APP_ERROR_CODE[code],
+            code,
             message: processed.error || "Failed to process job",
           });
         }
@@ -270,4 +289,49 @@ export function mapJobActionFailure(
     code,
     message: failure.error.message,
   });
+}
+
+/**
+ * Runs one action over many jobs (deduplicated, `JOB_ACTION_CONCURRENCY` at a
+ * time) and returns per-job results with PDF freshness applied to each job.
+ */
+export async function runJobActionBatch(input: {
+  action: JobAction;
+  jobIds: readonly string[];
+  forceMoveToReady?: boolean;
+  requestOrigin: string | null;
+}): Promise<JobActionResponse> {
+  const dedupedJobIds = Array.from(new Set(input.jobIds));
+  const executionOptions = buildJobActionExecutionOptions(input.action, {
+    forceMoveToReady: input.forceMoveToReady,
+    requestOrigin: input.requestOrigin,
+  });
+
+  const rawResults = await asyncPool({
+    items: dedupedJobIds,
+    concurrency: JOB_ACTION_CONCURRENCY,
+    task: async (jobId) =>
+      executeJobActionForJob(input.action, jobId, executionOptions),
+  });
+  const pdfFingerprintContext = await resolvePdfFingerprintContext();
+  const results = rawResults.map((result) =>
+    result.ok
+      ? {
+          ...result,
+          job: hydrateJobPdfFreshnessWithContext(
+            result.job,
+            pdfFingerprintContext,
+          ),
+        }
+      : result,
+  );
+
+  const succeeded = results.filter((result) => result.ok).length;
+  return {
+    action: input.action,
+    requested: dedupedJobIds.length,
+    succeeded,
+    failed: results.length - succeeded,
+    results,
+  };
 }

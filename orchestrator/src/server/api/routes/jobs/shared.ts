@@ -1,33 +1,13 @@
-import {
-  AppError,
-  type AppErrorCode,
-  badRequest,
-  conflict,
-  notFound,
-  toAppError,
-} from "@infra/errors";
-import { logger } from "@infra/logger";
-import * as jobsRepo from "@server/repositories/jobs";
+import { type AppError, badRequest, conflict, toAppError } from "@infra/errors";
+import type * as jobsRepo from "@server/repositories/jobs";
 import { stageEventMetadataSchema } from "@server/services/applicationTracking";
-import {
-  enqueueAutoPdfRegenerationForJob,
-  shouldEnqueueTailoringAutoPdfRegeneration,
-} from "@server/services/auto-pdf-regeneration";
-import {
-  applyJobPdfFreshness,
-  type PdfFingerprintContext,
-  resolvePdfFingerprintContext,
-} from "@server/services/pdf-fingerprint";
 import {
   APPLICATION_OUTCOMES,
   APPLICATION_STAGES,
-  type Job,
   type JobListItem,
   type JobStatus,
 } from "@shared/types";
 import { z } from "zod";
-
-export const JOB_ACTION_CONCURRENCY = 4;
 
 const tailoredSkillsPayloadSchema = z.array(
   z.object({
@@ -40,20 +20,6 @@ export const jobNoteSchema = z.object({
   title: z.string().trim().min(1).max(120),
   content: z.string().trim().min(1).max(20000),
 });
-
-export async function hydrateJobPdfFreshness<T extends Job>(
-  job: T,
-): Promise<T> {
-  const context = await resolvePdfFingerprintContext();
-  return applyJobPdfFreshness(job, context);
-}
-
-export function hydrateJobPdfFreshnessWithContext<T extends Job>(
-  job: T,
-  context: PdfFingerprintContext,
-): T {
-  return applyJobPdfFreshness(job, context);
-}
 
 export function toJobListItem(
   job: jobsRepo.JobListItemWithPdfFreshnessInput,
@@ -87,31 +53,6 @@ export function toJobListItem(
     appliedAt: job.appliedAt,
     updatedAt: job.updatedAt,
   };
-}
-
-export function queueTailoringAutoPdfRegenerationIfNeeded(
-  previousJob: Job,
-  nextJob: Job,
-  route: string,
-): void {
-  if (!shouldEnqueueTailoringAutoPdfRegeneration(previousJob, nextJob)) {
-    return;
-  }
-
-  queueMicrotask(() => {
-    void enqueueAutoPdfRegenerationForJob({
-      jobId: nextJob.id,
-      reason: "tailoring_updated",
-      requestedBy: "user",
-    }).catch((error) => {
-      logger.warn("Failed to queue auto PDF regeneration after job update", {
-        route,
-        jobId: nextJob.id,
-        reason: "tailoring_updated",
-        error,
-      });
-    });
-  });
 }
 
 export const updateJobSchema = z.object({
@@ -175,11 +116,6 @@ export const updateJobSchema = z.object({
   sponsorMatchScore: z.number().min(0).max(100).optional(),
   sponsorMatchNames: z.string().optional(),
 });
-
-export function isJobUrlConflictError(error: unknown): boolean {
-  if (!(error instanceof Error)) return false;
-  return /UNIQUE constraint failed: .*jobs\.job_url/i.test(error.message);
-}
 
 export const transitionStageSchema = z.object({
   toStage: z.enum([...APPLICATION_STAGES, "no_change"]),
@@ -254,14 +190,6 @@ export function parseStatusFilter(
   return parsed && parsed.length > 0 ? parsed : undefined;
 }
 
-export async function requireJob(jobId: string): Promise<Job> {
-  const job = await jobsRepo.getJobById(jobId);
-  if (!job) {
-    throw notFound("Job not found");
-  }
-  return job;
-}
-
 export function toJobsRouteError(
   error: unknown,
   options?: {
@@ -284,35 +212,4 @@ export function toJobsRouteError(
   }
 
   return toAppError(error);
-}
-
-const STATUS_BY_APP_ERROR_CODE: Record<AppErrorCode, number> = {
-  INVALID_REQUEST: 400,
-  UNAUTHORIZED: 401,
-  FORBIDDEN: 403,
-  NOT_FOUND: 404,
-  REQUEST_TIMEOUT: 408,
-  CONFLICT: 409,
-  UNPROCESSABLE_ENTITY: 422,
-  SERVICE_UNAVAILABLE: 503,
-  UPSTREAM_ERROR: 502,
-  INTERNAL_ERROR: 500,
-};
-
-export function appErrorFromPipelineFailure(
-  result: { error?: string; errorCode?: AppErrorCode },
-  fallbackMessage: string,
-): AppError {
-  const code =
-    result.errorCode ?? (result.error === "Job not found" ? "NOT_FOUND" : null);
-
-  if (!code) {
-    return badRequest(result.error ?? fallbackMessage);
-  }
-
-  return new AppError({
-    status: STATUS_BY_APP_ERROR_CODE[code],
-    code,
-    message: result.error ?? fallbackMessage,
-  });
 }

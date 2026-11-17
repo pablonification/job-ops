@@ -1634,6 +1634,43 @@ describe.sequential("Jobs API routes", () => {
     }
   });
 
+  it("reports a failed move_to_ready with the pipeline's own error", async () => {
+    const { createJob } = await import("@server/repositories/jobs");
+    const { processJob } = await import("@server/pipeline/index");
+    const job = await createJob({
+      source: "manual",
+      title: "Process Failure Route",
+      employer: "Acme",
+      jobUrl: "https://example.com/job/process-failure-1",
+      jobDescription: "Test description",
+    });
+
+    vi.mocked(processJob).mockResolvedValueOnce({
+      success: false,
+      error: "LLM is not configured",
+    });
+    const failed = await fetch(`${baseUrl}/api/jobs/${job.id}/process`, {
+      method: "POST",
+    });
+    const failedBody = await failed.json();
+    expect(failed.status).toBe(502);
+    expect(failedBody.error).toEqual({
+      code: "UPSTREAM_ERROR",
+      message: "LLM is not configured",
+    });
+
+    vi.mocked(processJob).mockResolvedValueOnce({
+      success: false,
+      error: "PDF regeneration is already in progress for this job.",
+      errorCode: "CONFLICT",
+    });
+    const busy = await fetch(`${baseUrl}/api/jobs/${job.id}/process`, {
+      method: "POST",
+    });
+    expect(busy.status).toBe(409);
+    expect((await busy.json()).error.code).toBe("CONFLICT");
+  });
+
   it("runs rescore action with partial failures", async () => {
     const { createJob, updateJob } = await import("@server/repositories/jobs");
     const { scoreJobSuitability } = await import("@server/services/scorer");

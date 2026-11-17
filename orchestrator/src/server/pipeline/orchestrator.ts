@@ -1124,6 +1124,7 @@ export async function processJob(
 ): Promise<{
   success: boolean;
   error?: string;
+  errorCode?: AppErrorCode;
 }> {
   try {
     // Step 0: Role CV, per the roleCvPipelineMode setting. Null means

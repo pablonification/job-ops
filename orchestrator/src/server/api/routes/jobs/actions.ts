@@ -6,68 +6,39 @@ import { resolveRequestOrigin } from "@server/infra/request-origin";
 import {
   buildJobActionExecutionOptions,
   executeJobActionForJob,
+  JOB_ACTION_CONCURRENCY,
   mapJobActionFailure,
+  runJobActionBatch,
 } from "@server/services/jobs/actions";
+import {
+  hydrateJobPdfFreshness,
+  hydrateJobPdfFreshnessWithContext,
+} from "@server/services/jobs/common";
 import { resolvePdfFingerprintContext } from "@server/services/pdf-fingerprint";
 import { asyncPool } from "@server/utils/async-pool";
 import type { JobActionResult, JobActionStreamEvent } from "@shared/types";
 import { type Request, type Response, Router } from "express";
 import { z } from "zod";
-import {
-  hydrateJobPdfFreshness,
-  hydrateJobPdfFreshnessWithContext,
-  JOB_ACTION_CONCURRENCY,
-  jobActionRequestSchema,
-} from "./shared";
+import { jobActionRequestSchema } from "./shared";
 
 export const jobsActionsRouter = Router();
 
 jobsActionsRouter.post("/actions", async (req: Request, res: Response) => {
   try {
     const parsed = jobActionRequestSchema.parse(req.body);
-    const dedupedJobIds = Array.from(new Set(parsed.jobIds));
-    const forceMoveToReady =
-      parsed.action === "move_to_ready" ? parsed.options?.force : undefined;
-    const executionOptions = buildJobActionExecutionOptions(parsed.action, {
-      forceMoveToReady,
+    const payload = await runJobActionBatch({
+      action: parsed.action,
+      jobIds: parsed.jobIds,
+      forceMoveToReady:
+        parsed.action === "move_to_ready" ? parsed.options?.force : undefined,
       requestOrigin: resolveRequestOrigin(req),
     });
-
-    const rawResults = await asyncPool({
-      items: dedupedJobIds,
-      concurrency: JOB_ACTION_CONCURRENCY,
-      task: async (jobId) =>
-        executeJobActionForJob(parsed.action, jobId, executionOptions),
-    });
-    const pdfFingerprintContext = await resolvePdfFingerprintContext();
-    const results = await Promise.all(
-      rawResults.map(async (result) =>
-        result.ok
-          ? {
-              ...result,
-              job: hydrateJobPdfFreshnessWithContext(
-                result.job,
-                pdfFingerprintContext,
-              ),
-            }
-          : result,
-      ),
-    );
-
-    const succeeded = results.filter((result) => result.ok).length;
-    const failed = results.length - succeeded;
-    const payload = {
-      action: parsed.action,
-      requested: dedupedJobIds.length,
-      succeeded,
-      failed,
-      results,
-    };
+    const { requested, succeeded, failed } = payload;
 
     logger.info("Job action completed", {
       route: "POST /api/jobs/actions",
       action: parsed.action,
-      requested: dedupedJobIds.length,
+      requested,
       succeeded,
       failed,
       concurrency: JOB_ACTION_CONCURRENCY,

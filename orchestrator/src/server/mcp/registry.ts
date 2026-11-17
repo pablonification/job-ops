@@ -29,11 +29,17 @@
  */
 import type { McpToolDefinition, McpToolGroup } from "./kit";
 import { appReadToolGroup } from "./tools/app-read";
+import { applicationsToolGroup } from "./tools/applications";
+import { jobActionsToolGroup } from "./tools/job-actions";
+import { jobNotesToolGroup } from "./tools/job-notes";
 import { jobsReadToolGroup } from "./tools/jobs-read";
 
 export const MCP_TOOL_GROUPS: readonly McpToolGroup[] = [
   jobsReadToolGroup,
   appReadToolGroup,
+  jobActionsToolGroup,
+  jobNotesToolGroup,
+  applicationsToolGroup,
 ];
 
 const TOOL_NAME_PATTERN = /^[a-z][a-z0-9_]{0,63}$/;
