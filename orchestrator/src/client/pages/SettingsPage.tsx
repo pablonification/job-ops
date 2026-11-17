@@ -28,9 +28,11 @@ import { EnvironmentSettingsSection } from "@client/pages/settings/components/En
 import { ModelSettingsSection } from "@client/pages/settings/components/ModelSettingsSection";
 import { PromptTemplatesSection } from "@client/pages/settings/components/PromptTemplatesSection";
 import { ReactiveResumeSection } from "@client/pages/settings/components/ReactiveResumeSection";
+import { ScheduleDigestSection } from "@client/pages/settings/components/ScheduleDigestSection";
 import { ScoringSettingsSection } from "@client/pages/settings/components/ScoringSettingsSection";
 import { TracerLinksSettingsSection } from "@client/pages/settings/components/TracerLinksSettingsSection";
 import { WebhooksSection } from "@client/pages/settings/components/WebhooksSection";
+import type { ScheduleValues } from "@client/pages/settings/types";
 import {
   type LlmProviderId,
   normalizeLlmProvider,
@@ -38,6 +40,7 @@ import {
 } from "@client/pages/settings/utils";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { normalizeStringArray } from "@shared/normalize-string-array.js";
+import { SCHEDULE_WEEKDAY_VALUES } from "@shared/pipeline-schedule.js";
 import {
   type UpdateSettingsInput,
   updateSettingsSchema,
@@ -118,6 +121,16 @@ const DEFAULT_FORM_VALUES: UpdateSettingsInput = {
   roleCvPromptTemplate: "",
   roleCvPipelineMode: null,
   scoringPromptTemplate: "",
+  scheduleEnabled: null,
+  scheduleTime: null,
+  scheduleTimeZone: null,
+  scheduleWeekdays: null,
+  scheduleCatchUpMinutes: null,
+  scheduleSearchPresetId: "",
+  digestMode: null,
+  digestMaxJobs: null,
+  telegramChatId: "",
+  telegramBotToken: "",
 };
 
 type LlmProviderValue = LlmProviderId | null;
@@ -146,6 +159,7 @@ type SettingsSectionId =
   | "environment"
   | "agent-access"
   | "display"
+  | "schedule"
   | "backup"
   | "danger-zone";
 
@@ -156,6 +170,7 @@ type SettingsGroupId =
   | "integrations"
   | "workspaces"
   | "display"
+  | "automation"
   | "backups"
   | "danger";
 
@@ -312,6 +327,26 @@ const SETTINGS_NAV_GROUPS: SettingsNavGroup[] = [
     ],
   },
   {
+    id: "automation",
+    label: "Automation",
+    items: [
+      {
+        id: "schedule",
+        label: "Schedule & digest",
+        description: "Daily runs on a schedule and a Telegram digest.",
+        searchTerms: [
+          "schedule",
+          "daily",
+          "cron",
+          "telegram",
+          "digest",
+          "notifications",
+          "bot",
+        ],
+      },
+    ],
+  },
+  {
     id: "backups",
     label: "Backups",
     items: [
@@ -397,6 +432,18 @@ const SECTION_FIELD_MAP: Record<
     "renderMarkdownInJobDescriptions",
     "autoTailorOnManualImport",
     "roleCvPipelineMode",
+  ],
+  schedule: [
+    "scheduleEnabled",
+    "scheduleTime",
+    "scheduleTimeZone",
+    "scheduleWeekdays",
+    "scheduleCatchUpMinutes",
+    "scheduleSearchPresetId",
+    "digestMode",
+    "digestMaxJobs",
+    "telegramChatId",
+    "telegramBotToken",
   ],
   backup: ["backupEnabled", "backupHour", "backupMaxCount"],
   "danger-zone": [],
@@ -504,6 +551,16 @@ const NULL_SETTINGS_PAYLOAD: UpdateSettingsInput = {
   roleCvPromptTemplate: null,
   roleCvPipelineMode: null,
   scoringPromptTemplate: null,
+  scheduleEnabled: null,
+  scheduleTime: null,
+  scheduleTimeZone: null,
+  scheduleWeekdays: null,
+  scheduleCatchUpMinutes: null,
+  scheduleSearchPresetId: null,
+  digestMode: null,
+  digestMaxJobs: null,
+  telegramChatId: null,
+  telegramBotToken: null,
 };
 
 function getResetSettingsPayload(
@@ -578,7 +635,72 @@ const mapSettingsToForm = (data: AppSettings): UpdateSettingsInput => ({
   roleCvPromptTemplate: data.roleCvPromptTemplate.value ?? "",
   roleCvPipelineMode: data.roleCvPipelineMode.override,
   scoringPromptTemplate: data.scoringPromptTemplate.value ?? "",
+  scheduleEnabled: data.scheduleEnabled?.value ?? false,
+  scheduleTime: data.scheduleTime?.value ?? null,
+  scheduleTimeZone: data.scheduleTimeZone?.value ?? null,
+  scheduleWeekdays: data.scheduleWeekdays?.value ?? null,
+  scheduleCatchUpMinutes: data.scheduleCatchUpMinutes?.value ?? null,
+  scheduleSearchPresetId: data.scheduleSearchPresetId?.value ?? "",
+  digestMode: data.digestMode?.value ?? null,
+  digestMaxJobs: data.digestMaxJobs?.value ?? null,
+  telegramChatId: data.telegramChatId?.value ?? "",
+  telegramBotToken: "",
 });
+
+const sameWeekdays = (left: readonly string[], right: readonly string[]) =>
+  left.length === right.length && left.every((day) => right.includes(day));
+
+/**
+ * Changed schedule and digest fields only (they are admin-only, so a save of
+ * other settings must not carry them). A value equal to the default clears
+ * the override. The bot token is handled with the other secrets.
+ */
+const buildSchedulePayload = (
+  data: UpdateSettingsInput,
+  schedule: ScheduleValues,
+): Partial<UpdateSettingsInput> => {
+  const out: Partial<UpdateSettingsInput> = {};
+  const scalar = <
+    K extends
+      | "scheduleEnabled"
+      | "scheduleTime"
+      | "scheduleTimeZone"
+      | "scheduleCatchUpMinutes"
+      | "scheduleSearchPresetId"
+      | "digestMode"
+      | "digestMaxJobs"
+      | "telegramChatId",
+  >(
+    key: K,
+    raw: UpdateSettingsInput[K],
+  ) => {
+    const value = typeof raw === "string" ? raw.trim() : raw;
+    if (value === undefined || value === null) return;
+    if (value === schedule[key].effective) return;
+    (out as Record<string, unknown>)[key] =
+      value === schedule[key].default || value === "" ? null : value;
+  };
+  scalar("scheduleEnabled", data.scheduleEnabled);
+  scalar("scheduleTime", data.scheduleTime);
+  scalar("scheduleTimeZone", data.scheduleTimeZone);
+  scalar("scheduleCatchUpMinutes", data.scheduleCatchUpMinutes);
+  scalar("scheduleSearchPresetId", data.scheduleSearchPresetId);
+  scalar("digestMode", data.digestMode);
+  scalar("digestMaxJobs", data.digestMaxJobs);
+  scalar("telegramChatId", data.telegramChatId);
+  if (
+    data.scheduleWeekdays &&
+    !sameWeekdays(data.scheduleWeekdays, schedule.scheduleWeekdays.effective)
+  ) {
+    out.scheduleWeekdays = sameWeekdays(
+      data.scheduleWeekdays,
+      schedule.scheduleWeekdays.default,
+    )
+      ? null
+      : data.scheduleWeekdays;
+  }
+  return out;
+};
 
 const normalizeString = (value: string | null | undefined) => {
   const trimmed = value?.trim();
@@ -788,6 +910,49 @@ const getDerivedSettings = (settings: AppSettings | null) => {
     profileProjects,
     maxProjectsTotal: profileProjects.length,
 
+    schedule: {
+      scheduleEnabled: {
+        effective: settings?.scheduleEnabled?.value ?? false,
+        default: settings?.scheduleEnabled?.default ?? false,
+      },
+      scheduleTime: {
+        effective: settings?.scheduleTime?.value ?? "08:00",
+        default: settings?.scheduleTime?.default ?? "08:00",
+      },
+      scheduleTimeZone: {
+        effective: settings?.scheduleTimeZone?.value ?? "UTC",
+        default: settings?.scheduleTimeZone?.default ?? "UTC",
+      },
+      scheduleWeekdays: {
+        effective: settings?.scheduleWeekdays?.value ?? [
+          ...SCHEDULE_WEEKDAY_VALUES,
+        ],
+        default: settings?.scheduleWeekdays?.default ?? [
+          ...SCHEDULE_WEEKDAY_VALUES,
+        ],
+      },
+      scheduleCatchUpMinutes: {
+        effective: settings?.scheduleCatchUpMinutes?.value ?? 15,
+        default: settings?.scheduleCatchUpMinutes?.default ?? 15,
+      },
+      scheduleSearchPresetId: {
+        effective: settings?.scheduleSearchPresetId?.value ?? "",
+        default: settings?.scheduleSearchPresetId?.default ?? "",
+      },
+      digestMode: {
+        effective: settings?.digestMode?.value ?? "scheduled",
+        default: settings?.digestMode?.default ?? "scheduled",
+      },
+      digestMaxJobs: {
+        effective: settings?.digestMaxJobs?.value ?? 5,
+        default: settings?.digestMaxJobs?.default ?? 5,
+      },
+      telegramChatId: {
+        effective: settings?.telegramChatId?.value ?? "",
+        default: settings?.telegramChatId?.default ?? "",
+      },
+    } satisfies ScheduleValues,
+    telegramBotTokenHint: settings?.telegramBotTokenHint ?? null,
     backup: {
       backupEnabled: {
         effective: settings?.backupEnabled?.value ?? false,
@@ -1038,6 +1203,8 @@ export const SettingsPage: React.FC = () => {
     defaultResumeProjects,
     profileProjects,
     backup,
+    schedule,
+    telegramBotTokenHint,
     scoring,
     promptTemplates,
   } = derived;
@@ -1247,6 +1414,13 @@ export const SettingsPage: React.FC = () => {
         if (value !== undefined) envPayload.webhookSecret = value;
       }
 
+      // Schedule and digest settings are admin-only: send only what changed.
+      const schedulePayload = buildSchedulePayload(data, schedule);
+      if (dirtyFields.telegramBotToken) {
+        const value = normalizePrivateInput(data.telegramBotToken);
+        if (value !== undefined) schedulePayload.telegramBotToken = value;
+      }
+
       const llmPayload: Partial<UpdateSettingsInput> = canEditLlmSettings
         ? {
             model: dirtyFields.llmProvider
@@ -1391,6 +1565,7 @@ export const SettingsPage: React.FC = () => {
           promptTemplates.scoringPromptTemplate.default,
         ),
         ...envPayload,
+        ...schedulePayload,
       };
 
       const shouldValidateRxResumeBeforeSave = Boolean(
@@ -1441,6 +1616,9 @@ export const SettingsPage: React.FC = () => {
       const updated = await updateSettingsMutation.mutateAsync(payload);
       setSettings(updated);
       reset(mapSettingsToForm(updated));
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.settings.scheduleStatus(),
+      });
       toast.success("Settings saved");
       if (rxResumeSaveWarningMessage) {
         toast.info(rxResumeSaveWarningMessage);
@@ -1557,6 +1735,7 @@ export const SettingsPage: React.FC = () => {
         items: group.items.filter(
           (item) =>
             (item.id !== "billing" || isHostedMode) &&
+            (item.id !== "schedule" || !isHostedMode) &&
             (canEditLlmSettings || item.id !== "model"),
         ),
       })).filter((group) => group.items.length > 0),
@@ -1698,6 +1877,10 @@ export const SettingsPage: React.FC = () => {
         return backup.backupEnabled.effective
           ? { label: "Scheduled", variant: "outline" as const }
           : { label: "Manual only", variant: "secondary" as const };
+      case "schedule":
+        return schedule.scheduleEnabled.effective
+          ? { label: "On", variant: "outline" as const }
+          : { label: "Off", variant: "secondary" as const };
       default:
         return { label: "Ready", variant: "outline" as const };
     }
@@ -1842,6 +2025,17 @@ export const SettingsPage: React.FC = () => {
           onDeleteBackup={handleDeleteBackup}
           isCreatingBackup={isCreatingBackup}
           isDeletingBackup={isDeletingBackup}
+          layoutMode="panel"
+        />
+      );
+      break;
+    case "schedule":
+      activeSectionContent = (
+        <ScheduleDigestSection
+          values={schedule}
+          telegramBotTokenHint={telegramBotTokenHint}
+          isLoading={isLoading}
+          isSaving={isSaving}
           layoutMode="panel"
         />
       );

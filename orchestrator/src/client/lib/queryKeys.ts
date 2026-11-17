@@ -30,6 +30,8 @@ export const queryKeys = {
   settings: {
     all: ["settings"] as const,
     current: () => [...queryKeys.settings.all, "current"] as const,
+    scheduleStatus: () =>
+      [...queryKeys.settings.all, "schedule-status"] as const,
   },
   profile: {
     all: ["profile"] as const,

@@ -211,4 +211,46 @@ describe("OverviewPipelineRunsSection", () => {
     expect(await screen.findByTestId("pipeline-progress")).toBeInTheDocument();
     expect(screen.getAllByText("Running").length).toBeGreaterThan(0);
   });
+
+  it("marks scheduled runs in the run list and shows the next scheduled run", async () => {
+    const scheduledRun = {
+      id: "run-scheduled",
+      startedAt: "2026-04-18T01:00:03.000Z",
+      completedAt: "2026-04-18T01:09:00.000Z",
+      status: "completed" as const,
+      jobsDiscovered: 20,
+      jobsProcessed: 2,
+      errorMessage: null,
+      trigger: "schedule" as const,
+    };
+    const manualRun = {
+      ...scheduledRun,
+      id: "run-manual",
+      startedAt: "2026-04-17T10:00:00.000Z",
+      completedAt: "2026-04-17T10:05:00.000Z",
+      trigger: "user" as const,
+    };
+    vi.mocked(api.getPipelineStatus).mockResolvedValue({
+      isRunning: false,
+      lastRun: scheduledRun,
+      nextScheduledRun: "2026-04-19T01:00:00.000Z",
+    });
+    vi.mocked(api.getPipelineRuns).mockResolvedValue([scheduledRun, manualRun]);
+    vi.mocked(api.getPipelineRunInsights).mockResolvedValue({
+      run: scheduledRun,
+      exactMetrics: { durationMs: 537000 },
+      savedDetails: null,
+      inferredMetrics: {
+        jobsCreated: { value: null, quality: "unavailable" },
+        jobsUpdated: { value: null, quality: "unavailable" },
+        jobsProcessed: { value: null, quality: "unavailable" },
+      },
+    });
+
+    renderWithQueryClient(<OverviewPipelineRunsSection />);
+
+    expect(await screen.findByText("Scheduled")).toBeInTheDocument();
+    expect(screen.queryByText("Manual")).not.toBeInTheDocument();
+    expect(screen.getByText(/Next scheduled run/)).toBeInTheDocument();
+  });
 });
