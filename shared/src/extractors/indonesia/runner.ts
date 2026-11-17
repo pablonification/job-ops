@@ -1,3 +1,4 @@
+import type { LocationWorkplaceType } from "../../location-domain";
 import {
   resolveSearchCities,
   shouldApplyStrictCityFilter,
@@ -131,6 +132,33 @@ export function resolveRequestedCities(
     list: context.sourceLocationPlan?.requestedCities,
     single: context.settings.searchCities ?? context.settings.jobspyLocation,
   }).filter((city) => shouldApplyStrictCityFilter(city, INDONESIA_COUNTRY_KEY));
+}
+
+const WORKPLACE_TYPES: readonly LocationWorkplaceType[] = [
+  "remote",
+  "hybrid",
+  "onsite",
+];
+
+/**
+ * Workplace types the run asks for, from the location intent or the saved
+ * `workplaceTypes` setting. Empty, or all three, means "any": a board should
+ * only send its own work-arrangement filter for a narrower choice.
+ */
+export function resolveWorkplaceTypes(
+  context: Pick<ExtractorRuntimeContext, "settings" | "locationIntent">,
+): LocationWorkplaceType[] {
+  let values: unknown = context.locationIntent?.workplaceTypes;
+  if (!Array.isArray(values) && context.settings.workplaceTypes) {
+    try {
+      values = JSON.parse(context.settings.workplaceTypes);
+    } catch {
+      values = [];
+    }
+  }
+  if (!Array.isArray(values)) return [];
+  const wanted = WORKPLACE_TYPES.filter((type) => values.includes(type));
+  return wanted.length === WORKPLACE_TYPES.length ? [] : wanted;
 }
 
 export interface JobBoardRunOptions {
