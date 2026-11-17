@@ -121,6 +121,26 @@ const CASES: ReadonlyArray<readonly [string, string, boolean]> = [
   ["Backend Engineer", "mobile engineer", false],
   ["React Developer", "mobile developer", false],
 
+  // Review round 2: domain words, places, early careers, exclusion list.
+  ["Backend Engineer - Order Management", "software engineer", true],
+  ["Software Engineer (Head Office)", "software engineer", true],
+  ["Data Engineer - Master Data Management", "software engineer", true],
+  ["Identity & Access Management Engineer", "software engineer", true],
+  ["IT Support - Head Office", "it support", true],
+  ["Data Analyst - Risk Management", "data analyst", true],
+  ["Early Careers Program - Software Engineering", "graduate", true],
+  ["Early Careers Program", "new grad", true],
+  ["Trust & Safety Engineer", "software engineer", true],
+  ["Production Engineer", "software engineer", true],
+  ["SAP ABAP Developer", "software engineer", true],
+  ["SAP Technical Engineer", "developer", false],
+  ["Manager, Software Engineering", "software engineer", false],
+  ["Senior Manager - Platform", "platform", false],
+  ["Head of Engineering", "software engineer", false],
+  ["Director of Engineering", "software engineer", false],
+  ["VP Engineering", "software engineer", false],
+  ["Head of Engineering", "head of engineering", true],
+
   // Management is its own family.
   ["Engineering Manager", "engineering manager", true],
   ["Product Manager", "product manager", true],

@@ -83,6 +83,7 @@ const PHRASE_SYNONYMS: ReadonlyArray<readonly [string, string, string]> = [
   ["new", "graduate", "graduate"],
   ["fresh", "graduate", "graduate"],
   ["early", "career", "graduate"],
+  ["early", "careers", "graduate"],
   ["entry", "level", "graduate"],
 ];
 
@@ -111,16 +112,31 @@ const ROLE_FAMILIES: Record<string, readonly string[]> = {
   ],
 };
 
-/** Titles with these words are management roles, a family of their own. */
+/**
+ * Titles that lead with these words are management roles, a family of their
+ * own. "Management" itself is a domain noun ("Order Management") and does
+ * not count.
+ */
 const MANAGEMENT = new Set([
   "manager",
-  "management",
   "head",
   "director",
   "vp",
   "chief",
   "cto",
 ]);
+
+/**
+ * Separators after which a title names a team, domain or place rather than
+ * the role: "Backend Engineer - Order Management", "Software Engineer (Head
+ * Office)". A hyphen inside a word ("Back-End") is not one.
+ */
+const ROLE_SEPARATOR = /\s[-–—]\s|[–—,(/|:]/;
+
+/** The role part of a title: the text before its first separator. */
+function leadingRole(title: string): string {
+  return title.split(ROLE_SEPARATOR)[0] ?? title;
+}
 
 /** Words in a search term that ask for a software role. */
 const SOFTWARE_TERM_WORDS = new Set([
@@ -168,11 +184,9 @@ const NON_SOFTWARE_FIELDS = new Set([
   "piping",
   "geotechnical",
   "environmental",
-  "safety",
   "hse",
   "commissioning",
   "building",
-  "production",
 ]);
 
 /** Words that make an engineer title a software one despite a field word. */
@@ -213,6 +227,7 @@ const SOFTWARE_QUALIFIERS = new Set([
   "rust",
   "database",
   "distributed",
+  "abap",
   ...ROLE_FAMILIES.mobile,
 ]);
 
@@ -287,10 +302,13 @@ export function isRelevantJobTitle(title: string, searchTerm: string): boolean {
   if (role.length === 0) return true;
   if (!role.every((token) => titleHas(titleTokens, token))) return false;
 
-  // "Engineering Manager" is not a "software engineer" job.
-  if (hasAny(titleTokens, MANAGEMENT) && !hasAny(role, MANAGEMENT)) {
-    return false;
-  }
+  // "Engineering Manager" is not a "software engineer" job, but "Software
+  // Engineer (Head Office)" is: only the leading role part counts.
+  const isManagementTitle = hasAny(
+    canonicalTitleTokens(leadingRole(title)),
+    MANAGEMENT,
+  );
+  if (isManagementTitle && !hasAny(role, MANAGEMENT)) return false;
 
   // "Project Engineer" is not a "software engineer" job, but "Engineer",
   // "Data Engineer" and "Security Engineer" are.
