@@ -432,7 +432,10 @@ export class ClaudeAgentSdkClient {
         value,
         expiresAtMs:
           Date.now() +
-          (value.valid ? VALIDATION_SUCCESS_TTL_MS : VALIDATION_FAILURE_TTL_MS),
+          // Only a clean success is worth trusting for the long window.
+          (value.valid && !value.message
+            ? VALIDATION_SUCCESS_TTL_MS
+            : VALIDATION_FAILURE_TTL_MS),
       });
       return value;
     });
@@ -465,11 +468,13 @@ export class ClaudeAgentSdkClient {
         kind,
         message: truncate(message, 200),
       });
-      // The token works; the plan is just exhausted or throttled right now.
-      if (kind === "usage_limit" || kind === "rate_limit") {
-        return { valid: true, message, username: null };
+      // Only a rejected token or a broken install makes the subscription
+      // unusable. Limits, timeouts and upstream errors say nothing about the
+      // token, so they must not ask the owner to reconnect.
+      if (kind === "auth" || kind === "other") {
+        return { valid: false, message, username: null };
       }
-      return { valid: false, message, username: null };
+      return { valid: true, message, username: null };
     }
   }
 

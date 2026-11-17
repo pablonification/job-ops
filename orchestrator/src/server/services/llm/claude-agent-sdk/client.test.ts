@@ -630,6 +630,22 @@ describe("ClaudeAgentSdkClient.validateCredentials", () => {
     expect(result.valid).toBe(true);
     expect(result.message).toContain("usage limit reached");
   });
+
+  it("does not report an upstream outage as a broken subscription", async () => {
+    const { queryFn } = scriptedQuery([
+      errorResult("success", { result: "API Error: 529 Overloaded" }),
+    ]);
+    const client = new ClaudeAgentSdkClient({
+      queryFn,
+      env: TOKEN_ENV,
+      limiter: newLimiter(),
+    });
+
+    const result = await client.validateCredentials();
+
+    expect(result.valid).toBe(true);
+    expect(result.message).toContain("upstream error");
+  });
 });
 
 describe("ClaudeAgentSdkClient.listModels", () => {
