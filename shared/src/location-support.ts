@@ -351,6 +351,7 @@ const SOURCE_SUPPORTED_COUNTRY_KEYS: Partial<Record<JobSource, string[]>> = {
   techinasia: ["indonesia"],
   kalibrr: ["indonesia"],
   dealls: ["indonesia"],
+  idbigtech: ["indonesia"],
 };
 
 const SOURCE_SUPPORTED_COUNTRY_KEYS_NORMALIZED: Partial<

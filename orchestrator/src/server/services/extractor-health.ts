@@ -174,6 +174,15 @@ const HEALTH_PROBE_CONFIG_BY_SOURCE: Record<
       jobspyResultsWanted: "1",
     },
   },
+  idbigtech: {
+    searchTerm: DEFAULT_HEALTH_SEARCH_TERM,
+    selectedCountry: "indonesia",
+    settings: {
+      jobspyResultsWanted: "1",
+      // One company keeps the probe to a list request plus one detail request.
+      idbigtechCompanies: JSON.stringify(["grab"]),
+    },
+  },
 };
 
 const extractorHealthCache = new Map<

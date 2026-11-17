@@ -1,0 +1,37 @@
+{
+  "jobPostingInfo": {
+    "id": "11ddf5340f7510018d271de1c2cf0000",
+    "title": "Software Engineer II (Growth, Analytics & Discovery)",
+    "jobDescription": "<p>We think you also hate when travel app is giving you a headache, right? A slight misinformation can ruin the trip.<br /><br />That is exactly what we are tackling as t-fam! Making sure that our 50&#43; million users have the best experience in crafting their own adventure.</p><p></p><h3></h3><h3><span style=\"color:#000000\"><span><b>Your main duties in flying with us</b></span></span></h3><br /><ul><li style=\"color:#000000 !important\"><span style=\"color:#000000\">Build and extend our backend code based on SOLID Principle and Clean Code</span></li><li style=\"color:#000000 !important\">",
+    "location": "Jakarta, Indonesia",
+    "postedOn": "Posted 26 Days Ago",
+    "startDate": "2026-10-21",
+    "timeType": "Full time",
+    "jobReqId": "R-3375",
+    "jobPostingId": "Software-Engineer-II---GRAND--_R-3375",
+    "jobPostingSiteId": "Tiket_Careers",
+    "country": {
+      "descriptor": "Indonesia",
+      "id": "b31234dbcdda4da9ba8fa073c5944e36"
+    },
+    "canApply": true,
+    "posted": true,
+    "includeResumeParsing": true,
+    "jobRequisitionLocation": {
+      "descriptor": "Headquarters",
+      "country": {
+        "descriptor": "Indonesia",
+        "id": "b31234dbcdda4da9ba8fa073c5944e36",
+        "alpha2Code": "ID"
+      }
+    },
+    "externalUrl": "https://tiketdotcom.wd3.myworkdayjobs.com/Tiket_Careers/job/Jakarta-Indonesia/Software-Engineer-II---GRAND--_R-3375",
+    "questionnaireId": "32d14ad762aa10012d93b6f8068a0000"
+  },
+  "hiringOrganization": {
+    "name": "GTN_IDN PT Global Tiket Network",
+    "url": ""
+  },
+  "similarJobs": [],
+  "userAuthenticated": false
+}

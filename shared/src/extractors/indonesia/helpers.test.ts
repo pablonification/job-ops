@@ -34,7 +34,7 @@ const intent = (cityLocations: string[] = []) =>
 
 describe("Indonesian places", () => {
   it("gates the Indonesian boards to Indonesia in the static country map", () => {
-    for (const source of ["techinasia", "kalibrr", "dealls"]) {
+    for (const source of ["techinasia", "kalibrr", "dealls", "idbigtech"]) {
       expect(getSourceSupportedCountryKeys(source)).toEqual(["indonesia"]);
       expect(isSourceAllowedForCountry(source, "indonesia")).toBe(true);
       expect(isSourceAllowedForCountry(source, "united kingdom")).toBe(false);

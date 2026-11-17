@@ -1,0 +1,232 @@
+{
+  "jobs": [
+    {
+      "absolute_url": "https://job-boards.greenhouse.io/xendit/jobs/8201138003",
+      "data_compliance": [
+        {
+          "type": "gdpr",
+          "requires_consent": false,
+          "requires_processing_consent": false,
+          "requires_retention_consent": false,
+          "retention_period": null,
+          "demographic_data_consent_applies": false
+        }
+      ],
+      "education": "education_required",
+      "internal_job_id": 6055663003,
+      "location": {
+        "name": "Jakarta, Indonesia; Kuala Lumpur, Malaysia"
+      },
+      "metadata": null,
+      "id": 8201138003,
+      "updated_at": "2026-11-12T22:26:25-05:00",
+      "requisition_id": "1411",
+      "title": "Customer Success Manager (ID/MY)",
+      "company_name": "Xendit",
+      "first_published": "2026-11-12T04:29:34-05:00",
+      "language": "en",
+      "application_deadline": null,
+      "content": "&lt;div class=&quot;content-intro&quot;&gt;&lt;p&gt;&lt;a href=&quot;https://www.xendit.co/en/&quot;&gt;Xendit&lt;/a&gt; is an enterprise payments platform powering complex financial operations across Southeast Asia and global markets. We provide a unified API layer combining payment processing, global payouts, localized FX, identity compliance, and fraud protection. As a trusted financial partner backed by top-tier global investors, Xendit processes high-throughput transaction flows for leading global platforms including Meta, Traveloka, ByteDance, Wise, and Grab, building resilient payment infrastructure to drive regional commerce forward.&lt;/p&gt;&lt;/div&gt;&lt;h3&gt;About the Job&lt;/h3&gt;\n&lt;p&gt;At Xendit, we are looking for a &lt;strong&gt;Customer Success Manager (CSM)&lt;/strong&gt; to support our &lt;strong&gt;Indonesia/ Malaysia clients&lt;/strong&gt;",
+      "departments": [
+        {
+          "id": 4018724003,
+          "name": "Customer Success Management",
+          "child_ids": [],
+          "parent_id": null
+        }
+      ],
+      "offices": [
+        {
+          "id": 4029843003,
+          "name": "Indonesia",
+          "location": "Jakarta, Jakarta, Indonesia",
+          "child_ids": [],
+          "parent_id": null
+        },
+        {
+          "id": 4010061003,
+          "name": "Malaysia",
+          "location": "Kuala Lumpur, Kuala Lumpur, Malaysia",
+          "child_ids": [],
+          "parent_id": null
+        }
+      ],
+      "ai_disclaimer": "<p>We use Greenhouse’s AI-powered Talent Matching tool to compare your application against our job requirements.</p>",
+      "include_ai_disclaimer": true,
+      "ai_opt_out_request_url": "http://app3.greenhouse.io/ai_opt_out_request/job_post/8201138003/ai_opt_out"
+    },
+    {
+      "absolute_url": "https://job-boards.greenhouse.io/xendit/jobs/8034310003",
+      "data_compliance": [
+        {
+          "type": "gdpr",
+          "requires_consent": false,
+          "requires_processing_consent": false,
+          "requires_retention_consent": false,
+          "retention_period": null,
+          "demographic_data_consent_applies": false
+        }
+      ],
+      "internal_job_id": 5903480003,
+      "location": {
+        "name": "Bangkok, Thailand; India; Jakarta, Indonesia; Kuala Lumpur, Malaysia; Manila, Philippines"
+      },
+      "metadata": null,
+      "id": 8034310003,
+      "updated_at": "2026-11-12T21:59:36-05:00",
+      "requisition_id": "1402",
+      "title": "FinOps Recons Associate",
+      "company_name": "Xendit",
+      "first_published": "2026-10-20T04:18:58-04:00",
+      "language": "en",
+      "application_deadline": null,
+      "content": "&lt;div class=&quot;content-intro&quot;&gt;&lt;p&gt;&lt;a href=&quot;https://www.xendit.co/en/&quot;&gt;Xendit&lt;/a&gt; is an enterprise payments platform powering complex financial operations across Southeast Asia and global markets. We provide a unified API layer combining payment processing, global payouts, localized FX, identity compliance, and fraud protection. As a trusted financial partner backed by top-tier global investors, Xendit processes high-throughput transaction flows for leading global platforms including Meta, Traveloka, ByteDance, Wise, and Grab, building resilient payment infrastructure to drive regional commerce forward.&lt;/p&gt;&lt;/div&gt;&lt;h3&gt;About the Job&lt;/h3&gt;\n&lt;p&gt;",
+      "departments": [
+        {
+          "id": 4018726003,
+          "name": "Finance & Fin Auto",
+          "child_ids": [],
+          "parent_id": null
+        }
+      ],
+      "offices": [
+        {
+          "id": 4123819003,
+          "name": "India",
+          "location": null,
+          "child_ids": [],
+          "parent_id": null
+        },
+        {
+          "id": 4029843003,
+          "name": "Indonesia",
+          "location": "Jakarta, Jakarta, Indonesia",
+          "child_ids": [],
+          "parent_id": null
+        },
+        {
+          "id": 4010061003,
+          "name": "Malaysia",
+          "location": "Kuala Lumpur, Kuala Lumpur, Malaysia",
+          "child_ids": [],
+          "parent_id": null
+        },
+        {
+          "id": 4010057003,
+          "name": "Philippines",
+          "location": "Manila, Manila, Philippines",
+          "child_ids": [4096712003],
+          "parent_id": null
+        },
+        {
+          "id": 4021281003,
+          "name": "Thailand",
+          "location": "Bangkok, Thailand",
+          "child_ids": [],
+          "parent_id": null
+        }
+      ],
+      "ai_disclaimer": "<p>We use Greenhouse’s AI-powered Talent Matching tool to compare your application against our job requirements.</p>",
+      "include_ai_disclaimer": true,
+      "ai_opt_out_request_url": "http://app3.greenhouse.io/ai_opt_out_request/job_post/8034310003/ai_opt_out"
+    },
+    {
+      "absolute_url": "https://job-boards.greenhouse.io/xendit/jobs/8201154003",
+      "data_compliance": [
+        {
+          "type": "gdpr",
+          "requires_consent": false,
+          "requires_processing_consent": false,
+          "requires_retention_consent": false,
+          "retention_period": null,
+          "demographic_data_consent_applies": false
+        }
+      ],
+      "education": "education_required",
+      "internal_job_id": 6055673003,
+      "location": {
+        "name": "Bangkok, Thailand"
+      },
+      "metadata": null,
+      "id": 8201154003,
+      "updated_at": "2026-11-12T22:21:32-05:00",
+      "requisition_id": "1412",
+      "title": "Customer Success Manager (TH)",
+      "company_name": "Xendit",
+      "first_published": "2026-11-12T22:21:32-05:00",
+      "language": "en",
+      "application_deadline": null,
+      "content": "&lt;div class=&quot;content-intro&quot;&gt;&lt;p&gt;&lt;a href=&quot;https://www.xendit.co/en/&quot;&gt;Xendit&lt;/a&gt; is an enterprise payments platform powering complex financial operations across Southeast Asia and global markets. We provide a unified API layer combining payment processing, global payouts, localized FX, identity compliance, and fraud protection. As a trusted financial partner backed by top-tier global investors, Xendit processes high-throughput transaction flows for leading global platforms including Meta, Traveloka, ByteDance, Wise, and Grab, building resilient payment infrastructure to drive regional commerce forward.&lt;/p&gt;&lt;/div&gt;&lt;h3&gt;About the Job&lt;/h3&gt;\n&lt;p&gt;At Xendit, we are looking for a &lt;strong&gt;Customer Success Manager (CSM)&lt;/strong&gt; to support our &lt;strong&gt;Thailand clients&lt;/strong&gt;",
+      "departments": [
+        {
+          "id": 4018724003,
+          "name": "Customer Success Management",
+          "child_ids": [],
+          "parent_id": null
+        }
+      ],
+      "offices": [
+        {
+          "id": 4021281003,
+          "name": "Thailand",
+          "location": "Bangkok, Thailand",
+          "child_ids": [],
+          "parent_id": null
+        }
+      ],
+      "ai_disclaimer": "<p>We use Greenhouse’s AI-powered Talent Matching tool to compare your application against our job requirements.</p>",
+      "include_ai_disclaimer": true,
+      "ai_opt_out_request_url": "http://app3.greenhouse.io/ai_opt_out_request/job_post/8201154003/ai_opt_out"
+    },
+    {
+      "absolute_url": "https://job-boards.greenhouse.io/xendit/jobs/7992374003",
+      "data_compliance": [
+        {
+          "type": "gdpr",
+          "requires_consent": false,
+          "requires_processing_consent": false,
+          "requires_retention_consent": false,
+          "retention_period": null,
+          "demographic_data_consent_applies": false
+        }
+      ],
+      "internal_job_id": 5881762003,
+      "location": {
+        "name": "Bali, Indonesia; Bangkok, Thailand; Jakarta, Indonesia; Kuala Lumpur, Malaysia; Manila, Philippines; Singapore, Singapore"
+      },
+      "metadata": null,
+      "id": 7992374003,
+      "updated_at": "2026-11-12T21:59:36-05:00",
+      "requisition_id": "1364",
+      "title": "Product Manager - Developer Experience",
+      "company_name": "Xendit",
+      "first_published": "2026-09-11T06:36:48-04:00",
+      "language": "en",
+      "application_deadline": null,
+      "content": "&lt;div class=&quot;content-intro&quot;&gt;&lt;p&gt;&lt;a href=&quot;https://www.xendit.co/en/&quot;&gt;Xendit&lt;/a&gt; is an enterprise payments platform powering complex financial operations across Southeast Asia and global markets. We provide a unified API layer combining payment processing, global payouts, localized FX, identity compliance, and fraud protection. As a trusted financial partner backed by top-tier global investors, Xendit processes high-throughput transaction flows for leading global platforms including Meta, Traveloka, ByteDance, Wise, and Grab, building resilient payment infrastructure to drive regional commerce forward.&lt;/p&gt;&lt;/div&gt;&lt;h3&gt;Why this role exists&lt;/h3&gt;\n&lt;p&gt;",
+      "departments": [
+        {
+          "id": 4017509003,
+          "name": "Product & Design",
+          "child_ids": [],
+          "parent_id": null
+        }
+      ],
+      "offices": [
+        {
+          "id": 4029843003,
+          "name": "Indonesia",
+          "location": "Jakarta, Jakarta, Indonesia",
+          "child_ids": [],
+          "parent_id": null
+        }
+      ],
+      "ai_disclaimer": "<p>We use Greenhouse’s AI-powered Talent Matching tool to compare your application against our job requirements.</p>",
+      "include_ai_disclaimer": true,
+      "ai_opt_out_request_url": "http://app3.greenhouse.io/ai_opt_out_request/job_post/7992374003/ai_opt_out"
+    }
+  ],
+  "meta": {
+    "total": 4
+  }
+}

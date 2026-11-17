@@ -21,6 +21,7 @@ export const EXTRACTOR_SOURCE_IDS = [
   "techinasia",
   "kalibrr",
   "dealls",
+  "idbigtech",
 ] as const;
 
 export type ExtractorSourceId = (typeof EXTRACTOR_SOURCE_IDS)[number];
@@ -94,6 +95,11 @@ export const EXTRACTOR_SOURCE_METADATA: Record<
   techinasia: { label: "Tech in Asia Jobs", order: 116, category: "pipeline" },
   kalibrr: { label: "Kalibrr", order: 117, category: "pipeline" },
   dealls: { label: "Dealls", order: 118, category: "pipeline" },
+  idbigtech: {
+    label: "Indonesia Big Tech",
+    order: 121,
+    category: "pipeline",
+  },
 };
 
 export const PIPELINE_EXTRACTOR_SOURCE_IDS = EXTRACTOR_SOURCE_IDS.filter(

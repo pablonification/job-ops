@@ -150,6 +150,7 @@ describe("extractor deployment config", () => {
     "techinasia",
     "kalibrr",
     "dealls",
+    "idbigtech",
   ])("ships the %s Indonesian extractor in Docker images and compose watch", async (name) => {
     const dockerfile = await readFile(resolve(process.cwd(), "../Dockerfile"), {
       encoding: "utf8",

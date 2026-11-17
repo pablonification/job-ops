@@ -101,6 +101,9 @@ services:
         - path: ./extractors/dealls/src
           target: /app/extractors/dealls/src
           action: sync+restart
+        - path: ./extractors/idbigtech/src
+          target: /app/extractors/idbigtech/src
+          action: sync+restart
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
