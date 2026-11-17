@@ -1,15 +1,4 @@
-import {
-  badRequest,
-  conflict,
-  notFound,
-  serviceUnavailable,
-} from "@infra/errors";
-import { logger } from "@infra/logger";
-import { sanitizeUnknown } from "@infra/sanitize";
-import {
-  type ExtractorRegistry,
-  getExtractorRegistry,
-} from "@server/extractors/registry";
+import { badRequest, conflict, notFound } from "@infra/errors";
 import {
   defineTool,
   defineToolGroup,
@@ -24,10 +13,11 @@ import {
 } from "@server/pipeline/index";
 import * as pipelineRepo from "@server/repositories/pipeline";
 import * as pipelineSearchPresetsRepo from "@server/repositories/pipeline-search-presets";
-import { getEnvSettingsData } from "@server/services/envSettings";
+import { getSettingsPresence } from "@server/services/envSettings";
 import { checkExtractorHealth } from "@server/services/extractor-health";
 import {
   cancelPipelineRun,
+  loadExtractorRegistry,
   resumePipelineRunScoring,
   startPipelineRun,
   startPipelineRunSchema,
@@ -45,6 +35,7 @@ import {
   PIPELINE_EXTRACTOR_SOURCE_IDS,
 } from "@shared/extractors";
 import { normalizeLocationSourceCapabilities } from "@shared/location-domain.js";
+import type { SettingsRegistryKey } from "@shared/settings-registry";
 import type {
   PipelinePendingChallenge,
   PipelineProgressState,
@@ -91,25 +82,12 @@ function describeActionRequired(
   if (progress.step === "configuration_required") {
     return {
       kind: "llm_configuration" as const,
-      who: "human_or_agent" as const,
+      who: "human" as const,
       message:
-        "The run is paused before scoring because no AI model is configured. Configure the LLM provider and key (in Settings, or with update_settings), then call resume_pipeline_scoring. cancel_pipeline_run stops the run instead.",
+        "The run is paused before scoring because no AI model is configured. Ask the user to set the AI provider and key in the JobOps web app (Settings); agents cannot change them. Then call resume_pipeline_scoring, or cancel_pipeline_run to stop the run.",
     };
   }
   return null;
-}
-
-async function loadExtractorRegistry(): Promise<ExtractorRegistry> {
-  try {
-    return await getExtractorRegistry();
-  } catch (error) {
-    logger.warn("MCP could not load the extractor registry", {
-      error: sanitizeUnknown(error),
-    });
-    throw serviceUnavailable(
-      "Extractor registry is unavailable. Try again after fixing startup errors.",
-    );
-  }
 }
 
 const startPipelineRunTool = defineTool({
@@ -226,8 +204,10 @@ const planSearchTool = defineTool({
   name: "plan_search",
   title: "Plan a search from a request",
   description:
-    "Turn a natural-language request (e.g. 'remote backend roles in Indonesia, prefer fintech') into search settings: terms, sources, location, volume and ranking preferences. Uses the AI model; does not start a run or save anything. Pass the result's config fields to start_pipeline_run or save_search_preset.",
+    "Turn a natural-language request (e.g. 'remote backend roles in Indonesia, prefer fintech') into search settings: terms, sources, location, volume and ranking preferences. Calls the AI model (costs tokens); does not start a run or save anything. Pass the result's config fields to start_pipeline_run or save_search_preset.",
   scope: "read",
+  // Changes no data, but spends model usage, so not marked read-only.
+  readOnly: false,
   openWorld: true,
   input: z
     .object({
@@ -269,66 +249,103 @@ const planSearchTool = defineTool({
   },
 });
 
-/** Settings each credentialed source needs (mirrors the Run panel). */
+/**
+ * Settings each credentialed source needs (mirrors the Run panel). A source
+ * whose metadata says `requiresCredentials` but has no entry here reports
+ * `configured: false`, and a test fails.
+ */
 const SOURCE_CREDENTIAL_SETTINGS: Partial<
-  Record<ExtractorSourceId, readonly string[]>
+  Record<ExtractorSourceId, readonly SettingsRegistryKey[]>
 > = {
   ukvisajobs: ["ukvisajobsEmail", "ukvisajobsPassword"],
   adzuna: ["adzunaAppId", "adzunaAppKey"],
   seek: ["apifyToken"],
 };
 
+const sourcesInput = z
+  .array(pipelineSourceSchema)
+  .min(1)
+  .describe("Source ids from list_sources.");
+
 const listSourcesTool = defineTool({
   name: "list_sources",
   title: "List job sources",
   description:
-    "Job sources the pipeline can search: id, label, whether available on this server, supported countries (null = any), whether a country or city is required, and credential needs. probeHealth: true also runs a small live search per source (slow; results are cached for a while).",
+    "Job sources the pipeline can search: id, label, whether available on this server, supported countries (null = any), whether a country or city is required, and credential needs (configured or not). check_source_health runs a live test search.",
   scope: "read",
-  openWorld: true,
   input: z
     .object({
-      probeHealth: z
-        .boolean()
-        .default(false)
-        .describe("Run a live health check per source. Default false."),
-      sources: z
-        .array(pipelineSourceSchema)
-        .min(1)
+      sources: sourcesInput
         .optional()
         .describe("Only these source ids. Default: all pipeline sources."),
     })
     .strict(),
-  handler: async ({ probeHealth, sources }) => {
-    const registry = await loadExtractorRegistry();
-    const envSettings = (await getEnvSettingsData()) as Record<string, unknown>;
+  handler: async ({ sources }) => {
+    const registry = await loadExtractorRegistry("MCP list_sources");
     const selected = sources ?? [...PIPELINE_EXTRACTOR_SOURCE_IDS];
+    const presence = await getSettingsPresence([
+      ...new Set(
+        selected.flatMap((source) => SOURCE_CREDENTIAL_SETTINGS[source] ?? []),
+      ),
+    ]);
 
-    const result = [];
-    for (const source of selected) {
-      const metadata = EXTRACTOR_SOURCE_METADATA[source];
-      const capabilities = normalizeLocationSourceCapabilities(
-        registry.locationCapabilitiesBySource?.[source] ?? { source },
-      );
-      const availableAtRuntime = registry.manifestBySource.has(source);
-      const credentialSettings = SOURCE_CREDENTIAL_SETTINGS[source] ?? [];
-      const entry: Record<string, unknown> = {
+    return {
+      sources: selected.map((source) => {
+        const metadata = EXTRACTOR_SOURCE_METADATA[source];
+        const capabilities = normalizeLocationSourceCapabilities(
+          registry.locationCapabilitiesBySource?.[source] ?? { source },
+        );
+        const required = metadata.requiresCredentials === true;
+        const settings = SOURCE_CREDENTIAL_SETTINGS[source] ?? [];
+        return {
+          id: source,
+          label: metadata.label,
+          availableAtRuntime: registry.manifestBySource.has(source),
+          supportedCountries: capabilities.supportedCountryKeys,
+          requiresCountry: capabilities.requiresSelectedCountry,
+          requiresCityLocations: capabilities.requiresCityLocations,
+          credentials: {
+            required,
+            settings,
+            // Fail closed: a credentialed source without a known settings
+            // list never reports configured.
+            configured: required
+              ? settings.length > 0 &&
+                settings.every((key) => presence[key]?.set === true)
+              : true,
+          },
+        };
+      }),
+    };
+  },
+});
+
+const MAX_HEALTH_CHECK_SOURCES = 5;
+
+const checkSourceHealthTool = defineTool({
+  name: "check_source_health",
+  title: "Check job source health",
+  description:
+    "Run a small live test search on each given source to see whether it works right now. Slow, and it uses the source (some sources bill per run), so check only the sources you are about to use. Results are cached for a while.",
+  scope: "write",
+  idempotent: true,
+  openWorld: true,
+  input: z
+    .object({ sources: sourcesInput.max(MAX_HEALTH_CHECK_SOURCES) })
+    .strict(),
+  handler: async ({ sources }) => {
+    const registry = await loadExtractorRegistry("MCP check_source_health");
+    const results = [];
+    for (const source of sources) {
+      if (!registry.manifestBySource.has(source)) {
+        results.push({ id: source, availableAtRuntime: false, health: null });
+        continue;
+      }
+      const health = await checkExtractorHealth(source);
+      results.push({
         id: source,
-        label: metadata.label,
-        availableAtRuntime,
-        supportedCountries: capabilities.supportedCountryKeys,
-        requiresCountry: capabilities.requiresSelectedCountry,
-        requiresCityLocations: capabilities.requiresCityLocations,
-        credentials: {
-          required: metadata.requiresCredentials === true,
-          settings: credentialSettings,
-          configured: credentialSettings.every((key) =>
-            Boolean(envSettings[key] ?? envSettings[`${key}Hint`]),
-          ),
-        },
-      };
-      if (probeHealth && availableAtRuntime) {
-        const health = await checkExtractorHealth(source);
-        entry.health = health
+        availableAtRuntime: true,
+        health: health
           ? {
               healthy: health.healthy,
               status: health.response.status,
@@ -337,11 +354,10 @@ const listSourcesTool = defineTool({
               jobsReturned: health.response.jobsReturned,
               cached: health.response.cached,
             }
-          : null;
-      }
-      result.push(entry);
+          : null,
+      });
     }
-    return { sources: result };
+    return { sources: results };
   },
 });
 
@@ -437,6 +453,7 @@ export const pipelineToolGroup = defineToolGroup({
     getPipelineRunTool,
     planSearchTool,
     listSourcesTool,
+    checkSourceHealthTool,
     listSearchPresetsTool,
     saveSearchPresetTool,
     deleteSearchPresetTool,

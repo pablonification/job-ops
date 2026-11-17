@@ -58,12 +58,18 @@ function toSelectedSourcesValue(
     .join("|");
 }
 
-async function loadExtractorRegistry(): Promise<ExtractorRegistry> {
+/**
+ * The extractor registry, or SERVICE_UNAVAILABLE when it failed to load.
+ * `route` names the caller in the log.
+ */
+export async function loadExtractorRegistry(
+  route = "/api/pipeline/run",
+): Promise<ExtractorRegistry> {
   try {
     return await getExtractorRegistry();
   } catch (error) {
     logger.error("Extractor registry unavailable during source validation", {
-      route: "/api/pipeline/run",
+      route,
       error,
     });
     throw serviceUnavailable(
