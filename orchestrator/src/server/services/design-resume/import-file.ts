@@ -13,6 +13,7 @@ import {
   extractPdfText,
   PdfTextExtractionError,
 } from "@server/services/document-text-extraction";
+import { ClaudeAgentSdkClient } from "@server/services/llm/claude-agent-sdk/client";
 import { ClaudeCliClient } from "@server/services/llm/claude-cli/client";
 import { CodexClient } from "@server/services/llm/codex/client";
 import { GeminiCliClient } from "@server/services/llm/gemini-cli/client";
@@ -49,6 +50,7 @@ type SupportedRuntimeProvider =
   | "gemini"
   | "gemini_cli"
   | "claude_cli"
+  | "claude_agent_sdk"
   | "codex"
   | "openai_compatible"
   | "ollama"
@@ -361,6 +363,7 @@ function normalizeRuntimeProvider(
   if (mapped === "gemini") return "gemini";
   if (mapped === "gemini_cli") return "gemini_cli";
   if (mapped === "claude_cli") return "claude_cli";
+  if (mapped === "claude_agent_sdk") return "claude_agent_sdk";
   if (mapped === "codex") return "codex";
   if (mapped === "openai_compatible") return "openai_compatible";
   if (mapped === "ollama") return "ollama";
@@ -1134,7 +1137,7 @@ function parseReactiveResumeJsonFile(content: string): DesignResumeJson {
 }
 
 function buildCapabilityErrorMessage(provider: string): string {
-  return `Resume file import is not available for the current AI provider (${provider}). Connect OpenAI, Anthropic, OpenRouter, OrcaRouter, Gemini, Gemini (CLI), Codex, OpenAI-compatible, Ollama, or LM Studio to import resumes. PDF and DOCX files can be converted to plain text locally before extraction when native file upload is unavailable.`;
+  return `Resume file import is not available for the current AI provider (${provider}). Connect OpenAI, Anthropic, OpenRouter, OrcaRouter, Gemini, Gemini (CLI), Claude (subscription), Codex, OpenAI-compatible, Ollama, or LM Studio to import resumes. PDF and DOCX files can be converted to plain text locally before extraction when native file upload is unavailable.`;
 }
 
 function isFileCapabilityError(message: string): boolean {
@@ -1220,6 +1223,7 @@ async function extractInitialDocumentText(input: {
     input.mediaType === "application/pdf" &&
     (input.provider === "gemini_cli" ||
       input.provider === "claude_cli" ||
+      input.provider === "claude_agent_sdk" ||
       isTextOnlyImportProvider(input.provider))
   ) {
     return extractResumePdfText(input.decoded);
@@ -1238,6 +1242,7 @@ function shouldFallbackToExtractedPdfText(input: {
     input.documentText ||
     input.provider === "gemini_cli" ||
     input.provider === "claude_cli" ||
+    input.provider === "claude_agent_sdk" ||
     isTextOnlyImportProvider(input.provider)
   ) {
     return false;
@@ -1791,6 +1796,54 @@ async function extractWithClaudeCli(args: {
   }
 }
 
+async function extractWithClaudeAgentSdk(args: {
+  model: string;
+  mediaType: SupportedImportMediaType;
+  fileName: string;
+  documentText: string;
+  requestId: string | undefined;
+}): Promise<string> {
+  const source: "DOCX" | "PDF" =
+    args.mediaType === "application/pdf" ? "PDF" : "DOCX";
+  const userContent = buildTextExtractPrompt(
+    args.documentText,
+    args.fileName,
+    source,
+  );
+  const client = new ClaudeAgentSdkClient();
+  try {
+    const { text } = await client.callJson({
+      model: args.model,
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT },
+        { role: "user", content: userContent },
+      ],
+      jsonSchema: DESIGN_RESUME_IMPORT_CLI_JSON_SCHEMA,
+    });
+    if (!text?.trim()) {
+      throw upstreamError(
+        "Claude (subscription) returned an empty response for resume import.",
+      );
+    }
+    return text;
+  } catch (error) {
+    if (error instanceof AppError) {
+      throw error;
+    }
+    const message = error instanceof Error ? error.message : String(error);
+    throw upstreamError(
+      truncate(message, 500),
+      args.requestId
+        ? {
+            provider: "claude_agent_sdk",
+            model: args.model,
+            requestId: args.requestId,
+          }
+        : { provider: "claude_agent_sdk", model: args.model },
+    );
+  }
+}
+
 async function extractWithCodex(args: {
   model: string;
   mediaType: SupportedImportMediaType;
@@ -1893,6 +1946,21 @@ async function extractResumeFromProvider(args: {
       );
     }
     return extractWithClaudeCli({
+      model: args.model,
+      mediaType: args.mediaType,
+      fileName: args.fileName,
+      documentText: text,
+      requestId: args.requestId,
+    });
+  }
+  if (args.provider === "claude_agent_sdk") {
+    const text = args.documentText?.trim();
+    if (!text) {
+      throw badRequest(
+        "Claude (subscription) resume import requires plain-text resume content (DOCX or extracted PDF text).",
+      );
+    }
+    return extractWithClaudeAgentSdk({
       model: args.model,
       mediaType: args.mediaType,
       fileName: args.fileName,

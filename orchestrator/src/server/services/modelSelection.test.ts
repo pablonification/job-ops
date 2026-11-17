@@ -144,6 +144,18 @@ describe("Model Selection Logic", () => {
       });
     });
 
+    it("cannot select the Claude subscription provider in hosted mode", async () => {
+      vi.mocked(settingsRepo.getAllSettings).mockResolvedValue({
+        llmProvider: "claude_agent_sdk",
+      });
+
+      await expect(resolveLlmRuntimeSettings()).resolves.toMatchObject({
+        provider: "openrouter",
+        apiKey: null,
+        allowCliProviders: false,
+      });
+    });
+
     it("uses platform provider, model, and credentials for hosted Free", async () => {
       vi.mocked(getCurrentAccountEntitlements).mockResolvedValue({
         plan: "free",

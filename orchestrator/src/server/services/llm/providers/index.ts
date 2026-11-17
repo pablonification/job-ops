@@ -2,6 +2,7 @@ import type { LlmProvider, ProviderStrategy } from "../types";
 import { anthropicStrategy } from "./anthropic";
 import { apiRouteStrategy } from "./api-route";
 import { atlasCloudStrategy } from "./atlascloud";
+import { claudeAgentSdkStrategy } from "./claude_agent_sdk";
 import { claudeCliStrategy } from "./claude_cli";
 import { codexStrategy } from "./codex";
 import { geminiStrategy } from "./gemini";
@@ -32,5 +33,6 @@ export const strategies: Record<LlmProvider, ProviderStrategy> = {
   gemini: geminiStrategy,
   gemini_cli: geminiCliStrategy,
   claude_cli: claudeCliStrategy,
+  claude_agent_sdk: claudeAgentSdkStrategy,
   codex: codexStrategy,
 };

@@ -258,6 +258,39 @@ describe("onboarding status engine", () => {
     expect(status.requirements[1]?.message).toMatch(/access token expired/i);
   });
 
+  it("asks to reconnect when the Claude subscription token stops working", async () => {
+    mocks.getSetting.mockImplementation(async (key: string) => {
+      const values: Record<string, string | null> = {
+        llmApiKey: null,
+        llmProvider: "claude_agent_sdk",
+        llmBaseUrl: "",
+        model: "sonnet",
+        onboardingProfileCompleted: "1",
+        onboardingLlmCompleted: "1",
+        onboardingResumeConfirmedSource: "local:doc-1",
+      };
+      return values[key] ?? null;
+    });
+    mocks.validateLlmCredentials.mockResolvedValue({
+      valid: false,
+      message:
+        "Claude (subscription) is not authenticated: CLAUDE_CODE_OAUTH_TOKEN is not set.",
+    });
+
+    const status = await getOnboardingStatus();
+
+    expect(status.complete).toBe(false);
+    expect(status.nextRequirementId).toBe("model");
+    expect(status.requirements[1]).toMatchObject({
+      id: "model",
+      status: "needs_action",
+      title: "Reconnect your Claude subscription",
+      primaryAction: "connect_model",
+      details: { provider: "claude_agent_sdk", baseUrl: null },
+    });
+    expect(status.requirements[1]?.message).toMatch(/not authenticated/);
+  });
+
   it("returns resume as next when no resume is ready", async () => {
     mocks.getDesignResumeStatus.mockResolvedValue({ exists: false });
 

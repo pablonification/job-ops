@@ -3,6 +3,8 @@ import { getOriginalEnvValue } from "@server/services/envSettings";
 import { resolveLlmApiKey } from "@server/services/llm/credentials";
 import { mapGlmProviderAlias } from "@shared/settings-registry";
 import { toStringOrNull } from "@shared/utils/type-conversion";
+import { ClaudeAgentSdkClient } from "./claude-agent-sdk/client";
+import { classifyClaudeAgentSdkError } from "./claude-agent-sdk/errors";
 import { ClaudeCliClient } from "./claude-cli/client";
 import { CodexClient } from "./codex/client";
 import { GeminiCliClient } from "./gemini-cli/client";
@@ -47,6 +49,7 @@ export class LlmService {
   private readonly codexClient: CodexClient;
   private readonly geminiCliClient: GeminiCliClient;
   private readonly claudeCliClient: ClaudeCliClient;
+  private readonly claudeAgentSdkClient: ClaudeAgentSdkClient;
 
   constructor(options: LlmServiceOptions = {}) {
     const normalizedBaseUrl =
@@ -93,6 +96,7 @@ export class LlmService {
     this.codexClient = new CodexClient();
     this.geminiCliClient = new GeminiCliClient();
     this.claudeCliClient = new ClaudeCliClient();
+    this.claudeAgentSdkClient = new ClaudeAgentSdkClient();
   }
 
   async callJson<T>(options: LlmRequestOptions<T>): Promise<LlmResponse<T>> {
@@ -112,6 +116,10 @@ export class LlmService {
 
     if (this.provider === "claude_cli") {
       return this.callClaudeCliJson(options);
+    }
+
+    if (this.provider === "claude_agent_sdk") {
+      return this.callClaudeAgentSdkJson(options);
     }
 
     if (this.strategy.requiresApiKey && !this.apiKey) {
@@ -183,6 +191,10 @@ export class LlmService {
 
     if (this.provider === "claude_cli") {
       return this.claudeCliClient.validateCredentials();
+    }
+
+    if (this.provider === "claude_agent_sdk") {
+      return this.claudeAgentSdkClient.validateCredentials();
     }
 
     if (this.strategy.requiresApiKey && !this.apiKey) {
@@ -259,6 +271,10 @@ export class LlmService {
     if (this.provider === "claude_cli") {
       const models = await this.claudeCliClient.listModels();
       return sortModels(models, getPreferredModel(this.provider));
+    }
+
+    if (this.provider === "claude_agent_sdk") {
+      return this.claudeAgentSdkClient.listModels();
     }
 
     if (this.strategy.requiresApiKey && !this.apiKey) {
@@ -431,6 +447,60 @@ export class LlmService {
 
         if (attempt < maxRetries && shouldRetryAttempt({ message })) {
           logger.warn("Claude CLI attempt failed, retrying", {
+            jobId: jobId ?? "unknown",
+            attempt: attempt + 1,
+            maxRetries,
+            message,
+          });
+          continue;
+        }
+
+        return { success: false, error: message };
+      }
+    }
+
+    return { success: false, error: "All retry attempts failed" };
+  }
+
+  private async callClaudeAgentSdkJson<T>(
+    options: LlmRequestOptions<T>,
+  ): Promise<LlmResponse<T>> {
+    const { maxRetries = 0, retryDelayMs = 500, signal, jobId } = options;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        if (attempt > 0) {
+          logger.info("LLM retry attempt", {
+            jobId: jobId ?? "unknown",
+            attempt,
+            maxRetries,
+          });
+          await sleep(getRetryDelayMs(retryDelayMs, attempt));
+        }
+
+        const result = await this.claudeAgentSdkClient.callJson({
+          ...options,
+          signal,
+        });
+        const parsed = parseJsonContent<T>(result.text, jobId);
+        return { success: true, data: parsed };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        // Auth, plan limits and caller aborts will not clear on a quick retry.
+        const kind = classifyClaudeAgentSdkError(message);
+        const retryable =
+          kind !== "auth" &&
+          kind !== "usage_limit" &&
+          kind !== "rate_limit" &&
+          kind !== "aborted" &&
+          !signal?.aborted;
+
+        if (
+          retryable &&
+          attempt < maxRetries &&
+          shouldRetryAttempt({ message })
+        ) {
+          logger.warn("Claude (subscription) attempt failed, retrying", {
             jobId: jobId ?? "unknown",
             attempt: attempt + 1,
             maxRetries,
@@ -828,6 +898,7 @@ function normalizeProvider(
   if (normalized === "gemini") return "gemini";
   if (normalized === "gemini_cli") return "gemini_cli";
   if (normalized === "claude_cli") return "claude_cli";
+  if (normalized === "claude_agent_sdk") return "claude_agent_sdk";
   if (normalized === "lmstudio") return "lmstudio";
   if (normalized === "ollama") return "ollama";
   if (normalized === "codex") return "codex";
@@ -862,7 +933,8 @@ function isCliProvider(provider: LlmProvider): boolean {
   return (
     provider === "codex" ||
     provider === "gemini_cli" ||
-    provider === "claude_cli"
+    provider === "claude_cli" ||
+    provider === "claude_agent_sdk"
   );
 }
 
@@ -895,6 +967,7 @@ function getPreferredModel(provider: LlmProvider): string | null {
     return "google/gemini-3-flash-preview";
   }
   if (provider === "claude_cli") return "claude-sonnet-5";
+  if (provider === "claude_agent_sdk") return "sonnet";
   return null;
 }
 

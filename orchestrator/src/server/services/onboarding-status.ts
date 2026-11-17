@@ -392,6 +392,27 @@ async function buildModelRequirement(): Promise<OnboardingRequirement> {
       }
     }
 
+    // Validation results are cached per token, so this does not spend a
+    // subscription request on every status check.
+    if (normalizedProvider === "claude_agent_sdk") {
+      const validation = await validateLlm({ provider: "claude_agent_sdk" });
+      if (!validation.valid) {
+        return buildRequirement({
+          id: "model",
+          status: "needs_action",
+          title: "Reconnect your Claude subscription",
+          message:
+            validation.message ||
+            "The Claude subscription token is missing or no longer works. Run `claude setup-token`, set CLAUDE_CODE_OAUTH_TOKEN, and restart JobOps.",
+          primaryAction: "connect_model",
+          details: {
+            provider: normalizedProvider,
+            baseUrl: null,
+          },
+        });
+      }
+    }
+
     if (normalizedProvider === "litellm" && !model?.trim()) {
       return buildRequirement({
         id: "model",

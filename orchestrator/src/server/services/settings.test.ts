@@ -155,4 +155,61 @@ describe("getEffectiveSettings", () => {
       override: null,
     });
   });
+
+  it("ignores a MODEL meant for another provider for Claude (subscription)", async () => {
+    vi.mocked(getAllSettings).mockResolvedValue({
+      llmProvider: "claude_agent_sdk",
+    } as never);
+    vi.mocked(getOriginalEnvValue).mockImplementation((key) =>
+      key === "MODEL" ? "muse-spark-1.2-contributor" : undefined,
+    );
+
+    const settings = await getEffectiveSettings();
+
+    expect(settings.model).toMatchObject({
+      value: "sonnet",
+      default: "sonnet",
+      override: null,
+    });
+    expect(settings.llmBaseUrl.value).toBe("");
+  });
+
+  it("drops a stored non-Claude model for Claude (subscription) and keeps Claude models", async () => {
+    vi.mocked(getAllSettings).mockResolvedValue({
+      llmProvider: "claude_agent_sdk",
+      model: "gpt-5.4-mini",
+      modelScorer: "haiku",
+      modelTailoring: "claude-opus-5-5",
+      modelProjectSelection: "google/gemini-3-flash-preview",
+    } as never);
+
+    const settings = await getEffectiveSettings();
+
+    expect(settings.model).toMatchObject({ value: "sonnet", override: null });
+    expect(settings.modelScorer).toMatchObject({
+      value: "haiku",
+      override: "haiku",
+    });
+    expect(settings.modelTailoring).toMatchObject({
+      value: "claude-opus-5-5",
+      override: "claude-opus-5-5",
+    });
+    expect(settings.modelProjectSelection).toMatchObject({
+      value: "sonnet",
+      override: null,
+    });
+  });
+
+  it("keeps a valid Claude alias from MODEL for Claude (subscription)", async () => {
+    vi.mocked(getAllSettings).mockResolvedValue({
+      llmProvider: "claude_agent_sdk",
+    } as never);
+    vi.mocked(getOriginalEnvValue).mockImplementation((key) =>
+      key === "MODEL" ? "opus" : undefined,
+    );
+
+    const settings = await getEffectiveSettings();
+
+    expect(settings.model).toMatchObject({ value: "opus", default: "opus" });
+  });
 });
