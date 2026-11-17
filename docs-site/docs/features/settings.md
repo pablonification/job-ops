@@ -236,6 +236,10 @@ Readiness requires:
 
 **Account password** sets or changes the password of the account you are signed in as. Accounts that already have a password must supply the current one; accounts created through single sign-on have none and can set one directly. Keeping a password is what lets you sign in when an identity provider is unavailable, so JobOps refuses to unlink the last connected account of a password-less user.
 
+### Agent access
+
+Create, list and revoke personal access tokens for Claude Code and other MCP clients. Each new token is shown once together with a ready-to-run `claude mcp add` command. See [Agent Access (MCP)](/docs/next/features/agent-access).
+
 ### Backup
 
 ![Backup settings section](/img/features/settings-backup-section.png)
