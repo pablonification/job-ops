@@ -7,8 +7,15 @@ import {
   mapJobStreetJob,
   runJobStreet,
 } from "../src/run";
+// Fixture sources: search.json rows 1-2 and detail.json are the recorded
+// research samples (Indonesian locale); search.json rows 3-4,
+// search-tangerang.json (`where=Tangerang`) and search-unknown-where.json
+// (`where=Qwzxville`) are trimmed copies of live responses received on
+// 2026-11-17 with `locale=en-ID`.
 import detailSample from "./fixtures/detail.json";
 import searchSample from "./fixtures/search.json";
+import tangerangSample from "./fixtures/search-tangerang.json";
+import unknownWhereSample from "./fixtures/search-unknown-where.json";
 
 function jsonResponse(data: unknown, status = 200): Response {
   return {
@@ -26,17 +33,37 @@ const ENGINEER_URL = "https://id.jobstreet.com/job/95924141";
 const REMOTE_URL = "https://id.jobstreet.com/job/95949297";
 const noSleep = vi.fn().mockResolvedValue(undefined);
 
-function searchPage(rows: unknown[], totalCount = rows.length) {
-  return { totalCount, data: rows };
+const [tangerangRow, , westJakartaRow] = tangerangSample.data;
+// How JobStreet answers a recognised `where` (from the live Jakarta search).
+const JAKARTA_LOCATION = {
+  description: "Jakarta",
+  type: "State",
+  whereId: "2030500",
+};
+
+function searchPage(
+  rows: unknown[],
+  totalCount = rows.length,
+  location?: unknown,
+) {
+  return { totalCount, data: rows, ...(location ? { location } : {}) };
 }
 
-type Route = () => Response | Promise<Response>;
+function retitled(
+  row: (typeof searchSample.data)[number],
+  id: string,
+  title: string,
+) {
+  return { ...row, id, title };
+}
+
+type Route = (url: URL) => Response | Promise<Response>;
 
 /** Answers searches with `list` and detail requests by job id. */
 function routedFetch(list: Route, details: Record<string, Route> = {}) {
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input));
-    if (url.pathname === "/api/jobsearch/v5/search") return list();
+    if (url.pathname === "/api/jobsearch/v5/search") return list(url);
     if (url.pathname === "/graphql") {
       const body = JSON.parse(String(init?.body));
       const handler = details[body.variables.jobId];
@@ -73,11 +100,10 @@ describe("JobStreet extractor", () => {
       pageSize: 20,
       where: "Jakarta",
       workplaceTypes: ["remote", "hybrid"],
-      postedWithinDays: 3,
     });
     expect(filtered.searchParams.get("where")).toBe("Jakarta");
     expect(filtered.searchParams.get("workarrangement")).toBe("2,3");
-    expect(filtered.searchParams.get("daterange")).toBe("3");
+    expect(filtered.searchParams.has("daterange")).toBe(false);
     expect(
       buildJobStreetSearchUrl({
         searchTerm: "qa",
@@ -171,6 +197,7 @@ describe("JobStreet extractor", () => {
   });
 
   it("keeps a district-level location through the shared location filter", () => {
+    // "South Jakarta, Jakarta" as received from the live en-ID search.
     const job = mapJobStreetJob(hybridRow);
     if (!job) throw new Error("expected a job");
     const intent = (cityLocations: string[]) =>
@@ -183,6 +210,139 @@ describe("JobStreet extractor", () => {
     expect(matchJobLocationIntent(job, intent(["Bandung"])).matched).toBe(
       false,
     );
+
+    // "Tangerang District, Banten" as received from the live Tangerang search.
+    const regency = mapJobStreetJob(tangerangRow);
+    if (!regency) throw new Error("expected a job");
+    expect(regency.location).toBe("Tangerang District, Banten, Indonesia");
+    expect(matchJobLocationIntent(regency, intent(["Tangerang"])).matched).toBe(
+      true,
+    );
+    expect(
+      matchJobLocationIntent(regency, intent(["Tangerang Selatan"])).matched,
+    ).toBe(false);
+  });
+
+  it("counts the posting's work type as a level for the title check", async () => {
+    const internship = {
+      ...retitled(remoteRow, "3001", "Software Engineer"),
+      workTypes: ["Internship"],
+    };
+    const fullTime = retitled(remoteRow, "3002", "Software Engineer");
+    const result = await runJobStreet({
+      searchTerms: ["software engineer intern"],
+      fetchImpl: routedFetch(() =>
+        jsonResponse(searchPage([internship, fullTime])),
+      ),
+      sleep: noSleep,
+    });
+
+    expect(result.jobs.map((job) => job.sourceJobId)).toEqual(["3001"]);
+  });
+
+  it("splits the cap between cities and hands an unused share to the others", async () => {
+    const jakartaRows = [1, 2, 3, 4, 5].map((n) =>
+      retitled(remoteRow, `100${n}`, "Backend Engineer"),
+    );
+    const tangerangRows = [
+      retitled(tangerangRow, tangerangRow.id, "Backend Engineer"),
+      ...tangerangSample.data.slice(1),
+    ];
+    const fetchMock = routedFetch((url) =>
+      url.searchParams.get("where") === "Jakarta"
+        ? jsonResponse(searchPage(jakartaRows, 5, JAKARTA_LOCATION))
+        : jsonResponse({ ...tangerangSample, data: tangerangRows }),
+    );
+
+    const result = await runJobStreet({
+      searchTerms: ["backend engineer"],
+      cities: ["Jakarta", "Tangerang"],
+      maxJobsPerTerm: 4,
+      fetchImpl: fetchMock,
+      sleep: noSleep,
+    });
+
+    // Two each at first; Tangerang has one match, so Jakarta takes the rest.
+    expect(result.jobs.map((job) => job.sourceJobId)).toEqual([
+      "1001",
+      "1002",
+      tangerangRow.id,
+      "1003",
+    ]);
+    const searches = fetchMock.mock.calls
+      .map(([input]) => new URL(String(input)))
+      .filter((url) => url.pathname.endsWith("/search"));
+    expect(searches.map((url) => url.searchParams.get("where"))).toEqual([
+      "Jakarta",
+      "Tangerang",
+    ]);
+    // The other Tangerang results are not backend roles.
+    expect(westJakartaRow.title).toBe("DRAFTER ENGINEERING (PANEL LISTRIK)");
+  });
+
+  it("keeps the term's scan bound across all cities", async () => {
+    const unrelated = (prefix: string) =>
+      Array.from({ length: 5 }, (_, n) =>
+        retitled(remoteRow, `${prefix}${n}`, "Account Executive"),
+      );
+    const fetchMock = routedFetch((url) =>
+      jsonResponse(
+        searchPage(
+          unrelated(
+            `${url.searchParams.get("where")}-${url.searchParams.get("page")}-`,
+          ),
+          1000,
+          JAKARTA_LOCATION,
+        ),
+      ),
+    );
+
+    await runJobStreet({
+      searchTerms: ["backend engineer"],
+      cities: ["Jakarta", "Tangerang"],
+      maxJobsPerTerm: 4,
+      pageSize: 5,
+      fetchImpl: fetchMock,
+      sleep: noSleep,
+    });
+
+    // At most 3 x 4 = 12 results for the term: 6 per city, so two pages each.
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+
+  it("reports a location JobStreet does not recognise instead of succeeding with nothing", async () => {
+    const fetchMock = routedFetch((url) =>
+      url.searchParams.get("where") === "Jakarta"
+        ? jsonResponse(searchPage([remoteRow], 1, JAKARTA_LOCATION))
+        : jsonResponse(unknownWhereSample),
+    );
+
+    const result = await runJobStreet({
+      searchTerms: ["software engineer"],
+      cities: ["Qwzxville", "Jakarta"],
+      fetchImpl: fetchMock,
+      sleep: noSleep,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.jobs.map((job) => job.jobUrl)).toEqual([REMOTE_URL]);
+    expect(result.sourceErrors).toEqual([
+      'JobStreet: the location "Qwzxville" was not recognised, so no jobs were searched there (term: software engineer)',
+    ]);
+
+    const alone = await runJobStreet({
+      searchTerms: ["software engineer"],
+      cities: ["Qwzxville"],
+      fetchImpl: routedFetch(() => jsonResponse(unknownWhereSample)),
+      sleep: noSleep,
+    });
+    expect(alone).toEqual({
+      success: true,
+      jobs: [],
+      sourceErrors: [
+        'JobStreet: the location "Qwzxville" was not recognised, so no jobs were searched there (term: software engineer)',
+      ],
+    });
   });
 
   it("keeps matching titles, fetches details for new jobs and skips known ones", async () => {

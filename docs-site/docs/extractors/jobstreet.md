@@ -32,18 +32,21 @@ JobStreet is one of the largest job boards in Indonesia, with thousands of softw
 Defaults and constraints:
 
 - Each search term is sent separately, sorted by listing date (newest first).
-- Sorting by date makes JobStreet's keyword match loose: a search for `software engineer` also returns jobs such as `Drafter` or `Project Test Manager`. job-ops keeps only jobs whose title matches the search term, using the same title check as Kalibrr (levels such as intern, graduate or junior must appear in the title, and `developer`, `programmer` and `engineer` count as the same role).
+- Sorting by date makes JobStreet's keyword match loose: a search for `software engineer` also returns jobs such as `Drafter` or `Project Test Manager`. job-ops keeps only jobs whose title matches the search term, using the same title check as Kalibrr (levels such as intern, graduate or junior must appear in the title, and `developer`, `programmer` and `engineer` count as the same role). A posting whose JobStreet work type says internship counts as an internship even when its title does not.
 - Search results only include a short teaser, so job-ops makes one detail request per new job to import the full description. Jobs whose link is already in job-ops skip the detail request. A job whose detail request fails is not imported; the next run requests it again.
 - Requests are sent one at a time with a pause of about 1.5 seconds between them and a browser-like user agent. Results are fetched 20 per page.
-- The result limit (`jobspyResultsWanted`) caps jobs per search term, up to 200. With a high limit a run can take several minutes because of the detail requests. At most three times the limit is scanned per term.
-- Cities: each selected city is sent to JobStreet's location filter as its base city (`Jakarta Selatan` and `South Jakarta` are sent as `Jakarta`), then job-ops keeps only jobs in the city you asked for before they count toward the limit. City names are matched across English and Indonesian forms (`South Jakarta` = `Jakarta Selatan`).
+- The result limit (`jobspyResultsWanted`) caps jobs per search term, up to 200. With a high limit a run can take several minutes because of the detail requests. At most three times the limit is scanned per term, across all selected cities together.
+- Cities: each selected city is sent to JobStreet's location filter as its base city (`Jakarta Selatan` and `South Jakarta` are sent as `Jakarta`, `Tangerang Selatan` as `Tangerang`), then job-ops keeps only jobs in the city you asked for before they count toward the limit. City names are matched across English and Indonesian forms (`South Jakarta` = `Jakarta Selatan`).
+- With several cities, the limit and the scan bound are split evenly between them, so the first city cannot fill the limit before the others are searched. A city that runs out of matching jobs hands its unused share to the others.
+- JobStreet searches around a city (about 50 km), so a `Tangerang` search also returns many Jakarta jobs; job-ops drops those when you only asked for Tangerang.
+- If JobStreet does not recognise a city name, it returns no jobs for it. job-ops then lists a source note naming the city instead of reporting the term as empty. Try the city's usual English or Indonesian name.
 - Workplace types: when you choose fewer than all three (remote, hybrid, on-site), the choice is sent to JobStreet's work-arrangement filter. With all three selected no filter is sent.
 - JobStreet has no "posted within" setting in job-ops today, so no date filter is sent; newest-first sorting and the result limit keep runs to recent jobs.
 - Salaries: labels in the usual `Rp 20.000.000 – Rp 30.000.000 per month` form (dots or commas as thousands separators, with or without an upper bound) are imported as rupiah amounts with an interval, shown as `IDR 20,000,000–30,000,000 / month`. Any other label is kept as text.
 - Expired jobs are skipped, and so are results located outside Indonesia.
 - Job links point to `https://id.jobstreet.com/job/<id>`, without tracking parameters, so the same job keeps the same link across runs.
 - JobStreet often gives only a city and province, such as `South Jakarta, Jakarta`. job-ops adds the country (`South Jakarta, Jakarta, Indonesia`), so the shared country and city filter keeps the job.
-- A run stops starting new requests after 8 minutes (the pipeline allows 10 per source) and keeps the jobs collected so far; the run then lists a source error saying it was cut short.
+- A run stops starting new requests after 8 minutes (the pipeline allows 10 per source) and keeps the jobs collected so far; the run then lists a source error saying it was cut short. The 8 minutes are shared fairly between search terms: each term may use at most the time left divided by the terms left, so every term gets a turn. A term that uses up its share stops with a source note and the next term starts; time a quick term leaves unused goes to the later ones.
 
 ## Common problems
 

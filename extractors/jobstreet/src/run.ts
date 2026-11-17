@@ -7,7 +7,6 @@ import {
   asString,
   asStringList,
   buildIndonesianLocation,
-  collectPages,
   createDetailCandidates,
   createKnownJobUrls,
   INDONESIA_COUNTRY_NAME,
@@ -58,8 +57,6 @@ export interface RunJobStreetOptions extends JobBoardRunOptions {
   getExistingJobUrls?: () => Promise<string[]>;
   /** Narrower than "any" workplace choice, sent as JobStreet's work-arrangement filter. */
   workplaceTypes?: readonly LocationWorkplaceType[];
-  /** Only jobs listed within this many days (JobStreet's `daterange`). */
-  postedWithinDays?: number;
 }
 
 /** JobStreet serves `/job/<id>` without a title slug or tracking parameters. */
@@ -74,7 +71,6 @@ export function buildJobStreetSearchUrl(args: {
   /** City for JobStreet's location filter, e.g. "Jakarta". */
   where?: string;
   workplaceTypes?: readonly LocationWorkplaceType[];
-  postedWithinDays?: number;
 }): URL {
   const url = new URL(JOBSTREET_SEARCH_URL);
   url.searchParams.set("siteKey", "ID-Main");
@@ -87,12 +83,6 @@ export function buildJobStreetSearchUrl(args: {
     String(Math.min(MAX_PAGE_SIZE, Math.max(1, Math.floor(args.pageSize)))),
   );
   url.searchParams.set("sortmode", "ListedDate");
-  if (args.postedWithinDays !== undefined && args.postedWithinDays > 0) {
-    url.searchParams.set(
-      "daterange",
-      String(Math.max(1, Math.ceil(args.postedWithinDays))),
-    );
-  }
   const codes = [...new Set(args.workplaceTypes ?? [])]
     .map((type) => WORK_ARRANGEMENT_CODES[type])
     .filter(Boolean)
@@ -208,14 +198,28 @@ export function mapJobStreetJob(
   };
 }
 
+/** Search results not yet looked at for one `where` value. */
+interface CityCursor {
+  where: string | undefined;
+  /** Last page fetched (1-based). */
+  page: number;
+  buffer: unknown[];
+  /** Results of the current page that were new to this run. */
+  newInPage: number;
+  exhausted: boolean;
+}
+
 /**
  * Searches JobStreet Indonesia newest first. Requested cities go to its
  * location filter as their base city ("Jakarta Selatan" -> "Jakarta"); the
- * shared runner then keeps only jobs in the requested place. Sorting by date
- * makes the keyword match loose, so titles must match the term. The search
- * results only carry a teaser, so each new job gets one detail request; job
- * URLs already in job-ops skip it, and a job whose detail request fails is
- * not imported, so the next run fetches it again.
+ * shared runner then keeps only jobs in the requested place. With several
+ * cities the term's cap and scan bound are split between them, and a city
+ * that runs out of results hands its unused share to the others. Sorting by
+ * date makes the keyword match loose, so titles must match the term (the
+ * posting's work type counts as a level). The search results only carry a
+ * teaser, so each new job gets one detail request; job URLs already in
+ * job-ops skip it, and a job whose detail request fails is not imported, so
+ * the next run fetches it again.
  */
 export async function runJobStreet(
   options: RunJobStreetOptions = {},
@@ -229,47 +233,119 @@ export async function runJobStreet(
     runTerm: async (context) => {
       const { candidates, consume } =
         createDetailCandidates<UnknownRecord>(context);
-      const locations = context.cities.length
-        ? [...new Set(context.cities.map(indonesianSearchCity))]
-        : [undefined];
+      const cursors: CityCursor[] = (
+        context.cities.length
+          ? [...new Set(context.cities.map(indonesianSearchCity))]
+          : [undefined]
+      ).map((where) => ({
+        where,
+        page: 0,
+        buffer: [],
+        newInPage: 0,
+        exhausted: false,
+      }));
+      let added = 0;
+      let scanned = 0;
 
-      for (const where of locations) {
-        const remaining = context.maxJobs - candidates.length;
-        if (remaining <= 0 || context.shouldStop()) break;
-        await collectPages(
-          { ...context, maxJobs: remaining },
-          {
-            toJob: (item) => mapJobStreetJob(item),
-            consume: (job, item) =>
-              isRelevantJobTitle(job.title, context.searchTerm)
-                ? consume(job, item)
-                : "filtered",
-            fetchPage: async ({ number, limit }) => {
-              const payload = asRecord(
-                await context.client.getJson(
-                  buildJobStreetSearchUrl({
-                    searchTerm: context.searchTerm,
-                    page: number,
-                    pageSize: limit,
-                    where,
-                    workplaceTypes: options.workplaceTypes,
-                    postedWithinDays: options.postedWithinDays,
-                  }),
-                ),
-              );
-              if (!Array.isArray(payload?.data)) {
-                throw new Error(
-                  `${JOBSTREET_LABEL} returned an invalid jobs response`,
-                );
-              }
-              const total = asNumber(payload.totalCount);
-              return {
-                items: payload.data,
-                hasMore: total === undefined || number * limit < total,
-              };
-            },
-          },
+      const fetchNextPage = async (cursor: CityCursor) => {
+        cursor.page += 1;
+        const payload = asRecord(
+          await context.client.getJson(
+            buildJobStreetSearchUrl({
+              searchTerm: context.searchTerm,
+              page: cursor.page,
+              pageSize: context.pageSize,
+              where: cursor.where,
+              workplaceTypes: options.workplaceTypes,
+            }),
+          ),
         );
+        if (!Array.isArray(payload?.data)) {
+          throw new Error(
+            `${JOBSTREET_LABEL} returned an invalid jobs response`,
+          );
+        }
+        // A recognised place comes back as `location`; an unknown one gets no
+        // `location` and no jobs, which must not pass for "no jobs there".
+        if (
+          cursor.where &&
+          payload.data.length === 0 &&
+          !asRecord(payload.location)
+        ) {
+          context.reportNote(
+            `${JOBSTREET_LABEL}: the location "${cursor.where}" was not recognised, so no jobs were searched there`,
+          );
+          cursor.exhausted = true;
+          return;
+        }
+        const total = asNumber(payload.totalCount);
+        cursor.buffer = [...payload.data];
+        cursor.newInPage = 0;
+        cursor.exhausted =
+          payload.data.length === 0 ||
+          (total !== undefined && cursor.page * context.pageSize >= total);
+      };
+
+      /** Scans one city until its shares, or the term's totals, are used. */
+      const scanCity = async (
+        cursor: CityCursor,
+        jobShare: number,
+        scanShare: number,
+      ) => {
+        let cityAdded = 0;
+        let cityScanned = 0;
+        while (
+          cityAdded < jobShare &&
+          cityScanned < scanShare &&
+          added < context.maxJobs &&
+          scanned < context.maxScanned &&
+          !context.shouldStop()
+        ) {
+          if (cursor.buffer.length === 0) {
+            if (cursor.exhausted) break;
+            await fetchNextPage(cursor);
+            continue;
+          }
+          const item = cursor.buffer.shift();
+          cityScanned += 1;
+          scanned += 1;
+          const job = mapJobStreetJob(item);
+          const result =
+            job &&
+            isRelevantJobTitle(job.title, context.searchTerm, {
+              levelHint: job.jobType,
+            })
+              ? consume(job, item)
+              : "filtered";
+          if (result !== "duplicate") cursor.newInPage += 1;
+          if (result === "added") {
+            cityAdded += 1;
+            added += 1;
+          }
+          // A page holding only jobs earlier terms took ends this city.
+          if (cursor.buffer.length === 0 && cursor.newInPage === 0) {
+            cursor.exhausted = true;
+          }
+        }
+        return cityScanned;
+      };
+
+      let active = cursors;
+      while (active.length > 0) {
+        const jobsLeft = context.maxJobs - added;
+        const scanLeft = context.maxScanned - scanned;
+        if (jobsLeft <= 0 || scanLeft <= 0 || context.shouldStop()) break;
+        const jobShare = Math.ceil(jobsLeft / active.length);
+        const scanShare = Math.ceil(scanLeft / active.length);
+        let progress = 0;
+        for (const cursor of active) {
+          progress += await scanCity(cursor, jobShare, scanShare);
+        }
+        // A city is done once it has no more pages and no results left over.
+        active = active.filter(
+          (cursor) => !cursor.exhausted || cursor.buffer.length > 0,
+        );
+        if (progress === 0) break;
       }
 
       await acceptWithDetails(context, candidates, {
