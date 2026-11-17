@@ -1,5 +1,6 @@
 import type { ExtractorSourceId } from "../extractors";
 import type { LocationEvidence, LocationMatchResult } from "./location";
+import type { RoleCvMatchSource } from "./role-cvs";
 
 export type { LocationEvidenceQuality } from "./location";
 
@@ -207,6 +208,8 @@ export interface Job {
   tailoredHeadline: string | null; // Generated resume headline
   tailoredSkills: string | null; // Generated resume skills (JSON)
   selectedProjectIds: string | null; // Comma-separated IDs of selected projects
+  roleCvId: string | null; // Role CV this job uses, if any
+  roleCvMatchSource: RoleCvMatchSource | null; // How roleCvId was chosen; null means never matched
   pdfPath: string | null; // Path to generated PDF
   pdfSource: JobPdfSource | null; // Whether PDF was system-generated or user-uploaded
   pdfRegenerating: boolean; // Whether a PDF generation/regeneration is currently in progress for this job
@@ -569,6 +572,8 @@ export interface UpdateJobInput {
   tailoredHeadline?: string;
   tailoredSkills?: string;
   selectedProjectIds?: string;
+  roleCvId?: string | null;
+  roleCvMatchSource?: RoleCvMatchSource | null;
   pdfPath?: string;
   pdfSource?: JobPdfSource | null;
   pdfRegenerating?: boolean;

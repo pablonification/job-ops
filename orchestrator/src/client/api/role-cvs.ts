@@ -1,5 +1,6 @@
 import type {
   CreateRoleCvInput,
+  Job,
   RoleCv,
   RoleCvsListResponse,
   UpdateRoleCvInput,
@@ -51,4 +52,40 @@ export async function getRoleCvPdfBlob(id: string): Promise<Blob> {
     withQuery(roleCvPath(id, "/pdf"), { v: Date.now().toString(36) }),
     { cache: "no-store" },
   );
+}
+
+function jobRoleCvPath(jobId: string, suffix = ""): string {
+  return `/jobs/${encodeURIComponent(jobId)}/role-cv${suffix}`;
+}
+
+/** Auto-picks the best Role CV for a job (or none). */
+export async function matchJobRoleCv(jobId: string): Promise<Job> {
+  return fetchApi<Job>(jobRoleCvPath(jobId, "/match"), { method: "POST" });
+}
+
+/** Sets a job's Role CV by hand; `null` means no Role CV. */
+export async function setJobRoleCv(
+  jobId: string,
+  roleCvId: string | null,
+): Promise<Job> {
+  return fetchApi<Job>(jobRoleCvPath(jobId), {
+    method: "PUT",
+    body: JSON.stringify({ roleCvId }),
+  });
+}
+
+/** Copies the job's Role CV into its tailoring fields (no AI call). */
+export async function applyJobRoleCv(jobId: string): Promise<Job> {
+  return fetchApi<Job>(jobRoleCvPath(jobId, "/apply"), {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+}
+
+/** Tailors the job's CV starting from its Role CV. */
+export async function refineJobRoleCv(jobId: string): Promise<Job> {
+  return fetchApi<Job>(jobRoleCvPath(jobId, "/refine"), {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
 }

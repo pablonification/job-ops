@@ -586,6 +586,10 @@ const migrations = [
   `CREATE INDEX IF NOT EXISTS idx_role_cvs_tenant_user_updated
     ON role_cvs(tenant_id, user_id, updated_at)`,
 
+  // Jobs can reference a Role CV. Also listed in the jobs rebuild below.
+  `ALTER TABLE jobs ADD COLUMN role_cv_id TEXT`,
+  `ALTER TABLE jobs ADD COLUMN role_cv_match_source TEXT`,
+
   `CREATE TABLE IF NOT EXISTS design_resume_assets (
     id TEXT PRIMARY KEY,
     tenant_id TEXT NOT NULL DEFAULT 'tenant_default',
@@ -1040,6 +1044,8 @@ const migrations = [
     tracer_links_enabled INTEGER NOT NULL DEFAULT 0,
     sponsor_match_score REAL,
     sponsor_match_names TEXT,
+    role_cv_id TEXT,
+    role_cv_match_source TEXT,
     discovered_at TEXT NOT NULL DEFAULT (datetime('now')),
     processed_at TEXT,
     ready_at TEXT,
@@ -1056,7 +1062,7 @@ const migrations = [
     vacancy_count, work_from_home_type, title, employer, employer_url, job_url, application_link, disciplines,
     deadline, salary, location, location_evidence, degree_required, starting, job_description, status, outcome, closed_at,
     suitability_score, suitability_reason, job_brief, tailored_summary, tailored_headline, tailored_skills,
-    selected_project_ids, pdf_path, pdf_source, pdf_regenerating, pdf_fingerprint, pdf_generated_at, tracer_links_enabled, sponsor_match_score, sponsor_match_names, discovered_at, processed_at,
+    selected_project_ids, pdf_path, pdf_source, pdf_regenerating, pdf_fingerprint, pdf_generated_at, tracer_links_enabled, sponsor_match_score, sponsor_match_names, role_cv_id, role_cv_match_source, discovered_at, processed_at,
     ready_at,
     applied_at, created_at, updated_at
   )
@@ -1068,7 +1074,7 @@ const migrations = [
     vacancy_count, work_from_home_type, title, employer, employer_url, job_url, application_link, disciplines,
     deadline, salary, location, location_evidence, degree_required, starting, job_description, status, outcome, closed_at,
     suitability_score, suitability_reason, ${jobsHasJobBrief ? "job_brief" : "NULL"}, tailored_summary, tailored_headline, tailored_skills,
-    selected_project_ids, pdf_path, pdf_source, ${jobsHasPdfRegenerating ? "pdf_regenerating" : "0"}, pdf_fingerprint, pdf_generated_at, tracer_links_enabled, sponsor_match_score, sponsor_match_names, discovered_at, processed_at,
+    selected_project_ids, pdf_path, pdf_source, ${jobsHasPdfRegenerating ? "pdf_regenerating" : "0"}, pdf_fingerprint, pdf_generated_at, tracer_links_enabled, sponsor_match_score, sponsor_match_names, role_cv_id, role_cv_match_source, discovered_at, processed_at,
     ready_at,
     applied_at, created_at, updated_at
   FROM jobs`,

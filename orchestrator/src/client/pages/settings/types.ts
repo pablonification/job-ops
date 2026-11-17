@@ -3,6 +3,7 @@ import type {
   ChatStyleManualLanguage,
   LlmPurposeApiKeyHints,
   LlmPurposeOverrides,
+  RoleCvPipelineMode,
 } from "@shared/types.js";
 
 export type EffectiveDefault<T> = {
@@ -26,6 +27,7 @@ export type DisplayValues = {
   showSponsorInfo: EffectiveDefault<boolean>;
   renderMarkdownInJobDescriptions: EffectiveDefault<boolean>;
   autoTailorOnManualImport: EffectiveDefault<boolean>;
+  roleCvPipelineMode: EffectiveDefault<RoleCvPipelineMode>;
 };
 export type ChatValues = {
   tone: EffectiveDefault<string>;

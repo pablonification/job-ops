@@ -56,11 +56,12 @@ See [Find jobs](/docs/next/features/pipeline-run) for the search review flow.
 1. Manual flow:
    1. Job starts in `discovered`.
    2. Open the job and choose Tailor.
-   3. Edit JD/tailored fields/project picks.
-   4. Click **Finalize & Move to Ready**.
+   3. Optional: in the **Role CV** box, **Apply as is** or **Refine for this job** to start from one of your [Role CVs](/docs/next/features/role-cvs).
+   4. Edit JD/tailored fields/project picks.
+   5. Click **Finalize & Move to Ready**.
 2. Auto flow:
    1. Pipeline scores discovered jobs.
-   2. Top jobs above threshold are auto-processed.
+   2. Top jobs above threshold are auto-processed. If you have Role CVs, each job gets the best-fitting one, used as set in **Settings → Display → Role CVs when auto-tailoring** (refine by default).
    3. Jobs move directly to `ready` with generated PDFs.
 
 When you select a job, the detail panel shows the available title, employer,
@@ -173,7 +174,7 @@ PDF generation uses:
 
 - base resume selected from RxResume
 - job description
-- tailored summary/headline/skills/projects
+- tailored summary/headline/skills/projects (copied from or refined from a [Role CV](/docs/next/features/role-cvs) when you use one)
 - the configured PDF renderer (`rxresume` export or local LaTeX via `tectonic`)
 
 Common paths:

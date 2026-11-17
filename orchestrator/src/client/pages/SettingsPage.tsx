@@ -113,6 +113,7 @@ const DEFAULT_FORM_VALUES: UpdateSettingsInput = {
   ghostwriterSystemPromptTemplate: "",
   tailoringPromptTemplate: "",
   roleCvPromptTemplate: "",
+  roleCvPipelineMode: null,
   scoringPromptTemplate: "",
 };
 
@@ -388,6 +389,7 @@ const SECTION_FIELD_MAP: Record<
     "showSponsorInfo",
     "renderMarkdownInJobDescriptions",
     "autoTailorOnManualImport",
+    "roleCvPipelineMode",
   ],
   backup: ["backupEnabled", "backupHour", "backupMaxCount"],
   "danger-zone": [],
@@ -491,6 +493,7 @@ const NULL_SETTINGS_PAYLOAD: UpdateSettingsInput = {
   ghostwriterSystemPromptTemplate: null,
   tailoringPromptTemplate: null,
   roleCvPromptTemplate: null,
+  roleCvPipelineMode: null,
   scoringPromptTemplate: null,
 };
 
@@ -562,6 +565,7 @@ const mapSettingsToForm = (data: AppSettings): UpdateSettingsInput => ({
     data.ghostwriterSystemPromptTemplate.value ?? "",
   tailoringPromptTemplate: data.tailoringPromptTemplate.value ?? "",
   roleCvPromptTemplate: data.roleCvPromptTemplate.value ?? "",
+  roleCvPipelineMode: data.roleCvPipelineMode.override,
   scoringPromptTemplate: data.scoringPromptTemplate.value ?? "",
 });
 
@@ -713,6 +717,10 @@ const getDerivedSettings = (settings: AppSettings | null) => {
       autoTailorOnManualImport: {
         effective: settings?.autoTailorOnManualImport?.value ?? true,
         default: settings?.autoTailorOnManualImport?.default ?? true,
+      },
+      roleCvPipelineMode: {
+        effective: settings?.roleCvPipelineMode?.value ?? "refine",
+        default: settings?.roleCvPipelineMode?.default ?? "refine",
       },
     },
     chat: {
@@ -1289,6 +1297,10 @@ export const SettingsPage: React.FC = () => {
         autoTailorOnManualImport: nullIfSame(
           data.autoTailorOnManualImport,
           display.autoTailorOnManualImport.default,
+        ),
+        roleCvPipelineMode: nullIfSame(
+          data.roleCvPipelineMode,
+          display.roleCvPipelineMode.default,
         ),
         chatStyleTone: normalizeString(data.chatStyleTone),
         chatStyleFormality: normalizeString(data.chatStyleFormality),

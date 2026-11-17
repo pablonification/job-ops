@@ -596,6 +596,43 @@ describe.sequential("database migrations", () => {
     );
   });
 
+  it("adds the job Role CV columns and keeps them across reboots", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "job-ops-migrate-"));
+    const runMigrations = `import { join } from "node:path"; import { pathToFileURL } from "node:url"; await import(pathToFileURL(join(process.cwd(), "src/server/db/migrate.ts")).href);`;
+    const exec = (script: string) =>
+      execFileSync(
+        process.execPath,
+        ["--import", "tsx", "--input-type=module", "-e", script],
+        { env: { ...process.env, DATA_DIR: tempDir ?? "" }, stdio: "pipe" },
+      );
+
+    exec(`
+      ${runMigrations}
+      import Database from "better-sqlite3";
+      const db = new Database(join(process.env.DATA_DIR, "jobs.db"));
+      const columns = db.prepare("PRAGMA table_info(jobs)").all().map((column) => column.name);
+      for (const required of ["role_cv_id", "role_cv_match_source"]) {
+        if (!columns.includes(required)) throw new Error(\`jobs.\${required} missing\`);
+      }
+      db.prepare(
+        "INSERT INTO jobs (id, title, employer, job_url, role_cv_id, role_cv_match_source) VALUES (?, ?, ?, ?, ?, ?)",
+      ).run("job-1", "Engineer", "Acme", "https://example.com/job-1", "cv-1", "manual");
+      db.close();
+    `);
+
+    // The jobs table is rebuilt on every boot; the reference must survive it.
+    exec(`
+      ${runMigrations}
+      import Database from "better-sqlite3";
+      const db = new Database(join(process.env.DATA_DIR, "jobs.db"), { readonly: true });
+      const row = db.prepare("SELECT role_cv_id, role_cv_match_source FROM jobs WHERE id = ?").get("job-1");
+      if (row?.role_cv_id !== "cv-1" || row?.role_cv_match_source !== "manual") {
+        throw new Error(\`Role CV reference lost on reboot: \${JSON.stringify(row)}\`);
+      }
+      db.close();
+    `);
+  });
+
   it("creates access_tokens with owner foreign keys and a unique prefix", async () => {
     tempDir = await mkdtemp(join(tmpdir(), "job-ops-migrate-"));
     const script = `

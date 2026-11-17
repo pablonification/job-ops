@@ -289,6 +289,11 @@ export const jobs = sqliteTable(
       .default(false),
     sponsorMatchScore: real("sponsor_match_score"),
     sponsorMatchNames: text("sponsor_match_names"),
+    // Role CV this job uses. Cleared in code when the Role CV is deleted.
+    roleCvId: text("role_cv_id"),
+    roleCvMatchSource: text("role_cv_match_source", {
+      enum: ["auto", "manual"],
+    }),
 
     // Timestamps
     discoveredAt: text("discovered_at")

@@ -39,6 +39,7 @@ Writing style formality: {{formality}}.
       "maxKeywordsPerSkillLine",
       "constraintsBullet",
       "avoidTermsBullet",
+      "roleCvBaseline",
     ] as const,
     defaultTemplate: `
 You are an expert resume writer tailoring a profile for a specific job application.
@@ -48,7 +49,7 @@ JOB DESCRIPTION (JD):
 {{jobDescription}}
 
 MY PROFILE:
-{{profileJson}}
+{{profileJson}}{{roleCvBaseline}}
 
 INSTRUCTIONS:
 
