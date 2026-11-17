@@ -136,6 +136,51 @@ describe("job-board runner", () => {
     });
   });
 
+  it("lets a caller decide when recorded errors fail the run", async () => {
+    const events: unknown[] = [];
+    const result = await runJobBoard({
+      label: "Board",
+      maxPageSize: 20,
+      options: {
+        searchTerms: ["a"],
+        onProgress: (event) => events.push(event),
+      },
+      shouldFail: ({ errors }) => errors.length > 1,
+      runTerm: async ({ reportError, reportProgress }) => {
+        reportError("Grab: request failed with status 403");
+        reportProgress("GoTo: 0 jobs");
+      },
+    });
+
+    expect(result).toEqual({
+      success: true,
+      jobs: [],
+      sourceErrors: ["Grab: request failed with status 403 (term: a)"],
+    });
+    expect(events).toContainEqual({
+      type: "note",
+      termIndex: 1,
+      termTotal: 1,
+      searchTerm: "a",
+      detail: "GoTo: 0 jobs",
+    });
+    expect(
+      toExtractorProgress("Board", {
+        type: "note",
+        termIndex: 1,
+        termTotal: 2,
+        searchTerm: "a",
+        detail: "GoTo: 0 jobs",
+      }),
+    ).toEqual({
+      phase: "list",
+      termsProcessed: 0,
+      termsTotal: 2,
+      currentUrl: "a",
+      detail: "Board: term 1/2 (a), GoTo: 0 jobs",
+    });
+  });
+
   it("filters requested cities before a job is accepted", async () => {
     const result = await runJobBoard({
       label: "Board",

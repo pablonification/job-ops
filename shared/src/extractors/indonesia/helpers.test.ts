@@ -72,6 +72,9 @@ describe("Indonesian places", () => {
       false,
     );
     expect(matchesIndonesianPlace("Surabaya", "Jakarta")).toBe(false);
+    expect(matchesIndonesianPlace("BSD City", "Tangerang Selatan")).toBe(true);
+    expect(matchesIndonesianPlace("BSD City", "Tangerang")).toBe(true);
+    expect(matchesIndonesianPlace("BSD City", "Jakarta")).toBe(false);
   });
 
   it("keeps city-only Indonesian locations through the shared location filter", () => {
@@ -223,6 +226,54 @@ describe("polite JSON client", () => {
     expect((init.headers as Record<string, string>)["User-Agent"]).toBe(
       BROWSER_USER_AGENT,
     );
+  });
+
+  it("posts JSON bodies and reads pages, with per-request headers and labels", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ posted: true }))
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        text: async () => "<html>job</html>",
+      } as Response)
+      .mockResolvedValueOnce({ ok: false, status: 403 } as Response);
+    const sleep = vi.fn().mockResolvedValue(undefined);
+    const client = createPoliteJsonClient({
+      label: "Board",
+      fetchImpl: fetchMock,
+      delayMs: 500,
+      sleep,
+    });
+
+    await expect(
+      client.postJson(
+        "https://example.com/search",
+        { keyword: "engineer" },
+        { headers: { "website-path": "tiktok" } },
+      ),
+    ).resolves.toEqual({ posted: true });
+    await expect(client.getText("https://example.com/job")).resolves.toBe(
+      "<html>job</html>",
+    );
+    await expect(
+      client.getJson("https://example.com/x", { label: "Grab" }),
+    ).rejects.toThrow(/^Grab request failed with status 403$/);
+
+    const postInit = fetchMock.mock.calls[0][1] as RequestInit;
+    const postHeaders = postInit.headers as Record<string, string>;
+    expect(postInit.method).toBe("POST");
+    expect(postInit.body).toBe('{"keyword":"engineer"}');
+    expect(postHeaders["Content-Type"]).toBe("application/json");
+    expect(postHeaders["website-path"]).toBe("tiktok");
+    expect(postHeaders["User-Agent"]).toBe(BROWSER_USER_AGENT);
+    const pageInit = fetchMock.mock.calls[1][1] as RequestInit;
+    expect(pageInit.method).toBe("GET");
+    expect((pageInit.headers as Record<string, string>).Accept).toContain(
+      "text/html",
+    );
+    expect(sleep).toHaveBeenCalledTimes(2);
+    expect(client.requestCount).toBe(3);
   });
 
   it("refuses to start a request past its deadline", async () => {

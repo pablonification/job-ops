@@ -55,7 +55,8 @@ const INDONESIAN_PLACES: readonly IndonesianPlace[] = [
   },
   {
     name: "Tangerang Selatan",
-    aliases: ["South Tangerang", "Tangsel"],
+    // BSD City (Serpong) is the business district where Traveloka is based.
+    aliases: ["South Tangerang", "Tangsel", "BSD City", "BSD", "Serpong"],
     searchCity: "Tangerang",
   },
   {
