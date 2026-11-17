@@ -50,7 +50,7 @@ Each meter includes completed usage and work currently in progress. Limits reset
 ![Model settings section](/img/features/settings-model-section.png)
 
 - In hosted deployments with platform-managed LLM enabled, this section is hidden because provider, API key, and model selection are managed by the hosted platform.
-- Choose provider (`atlascloud`, `litellm`, `openrouter`, `orcarouter`, `requesty`, `api_route`, `lmstudio`, `ollama`, `openai`, `glm`, `gemini`, `gemini_cli`, `claude_cli`, `codex`)
+- Choose provider (`atlascloud`, `litellm`, `openrouter`, `orcarouter`, `requesty`, `api_route`, `lmstudio`, `ollama`, `openai`, `glm`, `gemini`, `gemini_cli`, `claude_cli`, `claude_agent_sdk`, `codex`)
 - Set provider-specific base URL/API key when required
 - Configure the default model/runtime, plus purpose-specific overrides for:
   - Scoring
@@ -66,6 +66,7 @@ Each meter includes completed usage and work currently in progress. Limits reset
   - `glm` defaults to `glm-5.1`
   - `gemini` and `gemini_cli` default to `google/gemini-3-flash-preview`
   - `claude_cli` defaults to `claude-sonnet-5`
+  - `claude_agent_sdk` defaults to `sonnet`
   - `litellm` and `ollama` have no default; pick one of the models the server offers
 - The settings page shows provider-aware model pickers for:
   - `atlascloud`: console-visible text models from the live Atlas Cloud catalog
@@ -75,6 +76,7 @@ Each meter includes completed usage and work currently in progress. Limits reset
   - `gemini`: available Gemini text-generation models only
   - `gemini_cli`: a curated list of Gemini model ids the CLI typically supports (install [Gemini CLI](https://www.npmjs.com/package/@google/gemini-cli), run `gemini` and complete Google sign-in, or set `GEMINI_API_KEY` for the CLI; JobOps spawns headless `gemini -p ...` with `--approval-mode plan` and no JobOps API key field). **Resume import** uses the CLI with extracted text: DOCX is parsed locally; PDF uses local text extraction then JSON extraction via the CLI (scanned PDFs without a text layer may not import well).
   - `claude_cli`: a curated list of Claude model ids (install [Claude Code](https://www.npmjs.com/package/@anthropic-ai/claude-code), run `claude setup-token` to mint a long-lived token from a Claude Pro/Max/Team/Enterprise subscription and set it as `CLAUDE_CODE_OAUTH_TOKEN`, or set `ANTHROPIC_API_KEY` instead; JobOps spawns headless `claude -p ...` with `--permission-mode plan` and no JobOps API key field). **Resume import** uses the CLI with extracted text, same as `gemini_cli`: DOCX is parsed locally; PDF uses local text extraction then JSON extraction via the CLI.
+  - `claude_agent_sdk`: the model aliases `sonnet`, `opus`, and `haiku` (see [Claude (subscription) setup](#claude-subscription-setup) below)
   - `ollama`: locally installed Ollama models
   - `orcarouter`: available models from the OrcaRouter gateway
   - `api_route`: model IDs available to your key from `https://global.api-route.com/v1/models`, excluding known image, video, embedding, and audio model families
@@ -84,6 +86,109 @@ Each meter includes completed usage and work currently in progress. Limits reset
 - For [API Route](https://www.api-route.com/), create a key in [API Keys](https://www.api-route.com/api-keys), select API Route, and choose a chat model visible to that key. The endpoint is preset. Use exact IDs without adding an upstream-provider prefix. For environment setup, set `LLM_PROVIDER=api_route`, `API_ROUTE_API_KEY` (or `LLM_API_KEY`), and `MODEL` to the chosen ID. See the [API documentation](https://github.com/DennyHo0917/api-route/blob/main/API.md). JobOps sends the same task prompts and necessary profile/job fields as for its other hosted providers; keys remain in the existing secret storage. Screenshot attachments are not enabled by this integration.
 - Changing the provider clears stale model overrides in the form, so inherited fields follow the new provider default unless you explicitly choose a new override
 - The preview under each field and the **Resolved config** block reflect the model currently selected in the form, even before you save
+
+#### Claude (subscription) setup
+
+The **Claude (subscription)** provider (`claude_agent_sdk`) runs every AI feature (scoring, tailoring, project selection, search planning, manual job import, tracking-inbox email routing, field suggestions, Ghostwriter including screenshot attachments, and resume import) on your own Claude Pro, Max, Team, or Enterprise plan through the Claude Agent SDK. The SDK and its Claude Code binary ship inside the JobOps Docker image, so you do not install anything in the container.
+
+1. On any computer with [Claude Code](https://code.claude.com/docs/en/authentication) installed, run:
+
+   ```bash
+   claude setup-token
+   ```
+
+   It opens a browser sign-in and prints a long-lived token. It does not save the token anywhere.
+2. Add the token to your `.env` file and restart JobOps:
+
+   ```bash
+   LLM_PROVIDER=claude_agent_sdk
+   MODEL=sonnet
+   CLAUDE_CODE_OAUTH_TOKEN=paste-the-token-here
+   ```
+
+3. In **Settings → Models** (or the onboarding model step), choose **Claude (subscription)** and save. If this install already saved a different provider, the saved setting wins over `.env`, so switching here is required.
+
+How it behaves:
+
+- Default model: `sonnet`. Suggested models: `sonnet`, `opus`, `haiku` (aliases that follow the newest model of each family). Full ids that start with `claude-` also work. A `MODEL` value meant for another provider is ignored for this provider.
+- Each request uses your JobOps prompts as the system prompt, has every Claude Code tool switched off, loads no settings, `CLAUDE.md`, or MCP servers, keeps no session history on disk, runs in an empty temporary folder, and asks for structured JSON output.
+- `ANTHROPIC_API_KEY` and `ANTHROPIC_AUTH_TOKEN` are never passed to this provider, so requests cannot silently move to API billing. Other app secrets are not passed either.
+- At most 2 requests run at the same time (pipeline scoring included), to stay inside subscription rate limits.
+- Resume import extracts PDF/DOCX text locally first, then sends only the text.
+- The connection check sends one tiny request with `haiku` and remembers the result for 30 minutes (1 minute after a failure), so status checks do not use up your plan.
+- Not available in hosted mode.
+
+Optional environment variables (defaults shown):
+
+```bash
+CLAUDE_AGENT_SDK_MAX_CONCURRENCY=2
+CLAUDE_AGENT_SDK_REQUEST_TIMEOUT_MS=180000
+CLAUDE_AGENT_SDK_VALIDATION_TIMEOUT_MS=60000
+CLAUDE_AGENT_SDK_MAX_TURNS=4
+# Only to use a Claude Code binary other than the one bundled with the SDK:
+# CLAUDE_AGENT_SDK_EXECUTABLE=/usr/local/bin/claude
+```
+
+Anthropic's terms say third-party products should not offer claude.ai sign-in or subscription limits to their users. Use this provider only with your own token, on your own single-user install.
+
+#### Fallback provider
+
+A fallback provider keeps AI features working when the provider you selected above fails. It is configured only in the environment, is ignored in hosted mode, and with none set JobOps behaves exactly as before.
+
+**Your data goes to the fallback when it is used.** Every request the fallback serves carries the same prompt your selected provider would have received, which includes resume and job content. Only configure a fallback provider you are willing to send that data to.
+
+When a request to your selected provider fails for a provider-side reason, JobOps retries that one request once on the fallback, using the fallback's own model, base URL and API key. The model, base URL and key of your selected provider (including any per-purpose model override) are never sent to the fallback. This covers every AI feature, including Ghostwriter and resume import (for resume import the fallback must be a provider import supports, so `atlascloud`, `requesty` and `api_route` fallbacks are not used there).
+
+What fails over and what does not:
+
+| Fails over | Does not fail over |
+| --- | --- |
+| Not authenticated, rejected key, unknown model or endpoint (`401`, `403`, `404`, and similar) | You cancelled the request |
+| Usage, quota or billing limit (`402`, "usage limit reached") | The request itself is wrong: `400`, `413`, `422` (bad schema, prompt or context too long), or Claude (subscription) reporting `invalid_request` or an API error 400/413/422 |
+| Rate limit (`429`) | |
+| Timeout | |
+| Server error (`5xx`, overloaded) or provider unreachable | |
+| A CLI or Claude (subscription) process crashing | |
+| Output that still is not valid JSON after the request's retries | |
+
+A `400` whose error message starts by naming an unknown model or a bad key counts as a configuration problem and fails over. The fallback is tried once. If it also fails, that failure is what you see (shortened, with keys and credentials removed), and both reasons are written to the server log.
+
+After 3 provider-side failures in a row, your selected provider is skipped for 5 minutes and requests go straight to the fallback. Output that is not valid JSON still fails over but does not count toward those 3, since it does not mean the provider is down. After the cool-down, one request tries your selected provider again; if it works, everything goes back to it. This state is kept per workspace and per provider endpoint in the server process and resets on restart.
+
+With a fallback configured, a "not authenticated" error from your selected provider no longer pauses the pipeline: the run continues on the fallback. If the fallback then fails as well (for any reason), the run pauses, because your selected provider's credentials still need fixing.
+
+**Settings → Models** shows the fallback provider and model under the model fields, and says when the fallback is answering every request (forced, or a provider is being skipped, naming the purpose such as scoring when only a purpose override is affected) and when it last took over and whether that worked. The API key is never shown. `GET /api/settings` returns the same information as `llmFallback`.
+
+**Forced mode never contacts your selected provider.** With `LLM_FORCE_FALLBACK=true`, requests, the connection check in Settings and the onboarding status all use the fallback only; an expired Claude token does not ask you to reconnect while forced.
+
+Environment variables:
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `LLM_FALLBACK_PROVIDER` | none | Exact provider id, for example `openai_compatible`, `openrouter`, `claude_agent_sdk`. Aliases are not accepted (`claude` is rejected rather than read as `anthropic`) |
+| `LLM_FALLBACK_MODEL` | none | Model sent to the fallback. Required |
+| `LLM_FALLBACK_BASE_URL` | provider default | Required for `openai_compatible` |
+| `LLM_FALLBACK_API_KEY` | none | Required for providers that need a key. `LLM_API_KEY` is never used for the fallback |
+| `LLM_FORCE_FALLBACK` | `false` | `true` sends every request to the fallback without trying your selected provider |
+| `LLM_FALLBACK_BREAKER_THRESHOLD` | `3` | Provider-side failures in a row before your selected provider is skipped |
+| `LLM_FALLBACK_BREAKER_COOLDOWN_MS` | `300000` | How long it is skipped (5 minutes) |
+
+Example: Claude (subscription) with Meta's Muse Spark (an OpenAI-compatible endpoint) behind it. In `.env`:
+
+```bash
+LLM_PROVIDER=claude_agent_sdk
+MODEL=sonnet
+CLAUDE_CODE_OAUTH_TOKEN=paste-the-token-here
+
+LLM_FALLBACK_PROVIDER=openai_compatible
+LLM_FALLBACK_BASE_URL=https://api.meta.ai/v1
+LLM_FALLBACK_MODEL=muse-spark-1.2-contributor
+LLM_FALLBACK_API_KEY=paste-your-meta-api-key-here
+```
+
+The Muse Spark model name depends on your Meta account; use the one your account lists (it may not be `muse-spark-1.2-contributor`). Restart JobOps. To go back to Muse Spark for everything, add `LLM_FORCE_FALLBACK=true` and restart; remove it to return to Claude.
+
+If the fallback is set but unusable (unknown provider, missing model, missing key or base URL, or the same provider and endpoint as your selected one), JobOps ignores it and Settings says why. It never stops the app from starting.
 
 ### Webhooks
 
@@ -102,6 +207,8 @@ Each meter includes completed usage and work currently in progress. Limits reset
 - Default: Markdown rendering is enabled
 - Toggle `Auto-tailor manually imported jobs` to control whether jobs created through Manual Import immediately run tailoring + suitability scoring + PDF generation, or land in Discovered so you can tailor them later
 - Default: Auto-tailor on import is enabled. The per-import "Tailor automatically after import" checkbox in the Manual Import review step defaults to this setting and can override it for a single import
+- `Role CVs when auto-tailoring` controls how pipeline runs, **Move to Ready** and auto-tailored imports use [Role CVs](/docs/next/features/role-cvs): **Refine for each job**, **Use as is** or **Off**
+- Default: Refine for each job. It has no effect until you create a Role CV
 
 ### Writing Style & Language
 
@@ -162,18 +269,20 @@ Defaults and constraints:
 
 - Edit the base templates for:
   - Ghostwriter system prompt
-  - Resume tailoring prompt
+  - Resume tailoring prompt (its `{{roleCvBaseline}}` placeholder holds the Role CV content when a job is refined from a Role CV)
+  - Role CV prompt (see [Role CVs](/docs/next/features/role-cvs))
   - Job scoring prompt
 - Each editor starts from the current effective template, not a blank override
 - Supported placeholders are shown inline for each template
 - Job scoring always appends minified normalized source-job JSON, including `null` values, plus the required output contract
+- The job scoring template has `{{targetCompaniesSection}}` and `{{dealbreakersSection}}` placeholders. They are empty unless you fill in Target companies or Dealbreakers in Scoring Settings. A custom scoring template without them still gets that context, appended after the template
 - The same scoring call may propose evidence-backed corrections to existing job facts. JobOps only accepts whitelisted, schema-valid values supported by an excerpt from the listing; these mandatory safety instructions remain appended even when you customize the scoring template
-- Use **Reset** to restore a single template, or **Reset all prompts** to restore all three
+- Use **Reset** to restore a single template, or **Reset all prompts** to restore all of them
 - Template editing is intentionally advanced:
   - removing key instructions can degrade output quality
   - removing placeholders can strip important runtime data from the prompt
   - resetting restores the shared default templates
-- Existing writing-style, language, and scoring-instructions settings still matter because the default templates consume those values through placeholders
+- Existing writing-style, language, scoring-instructions, target-company, and dealbreaker settings still matter because the default templates consume those values through placeholders
 
 ### Reactive Resume
 
@@ -225,6 +334,8 @@ Readiness requires:
   - RxResume API key
   - UKVisaJobs email/password
   - Adzuna app ID/app key
+- Choose job source options:
+  - **Indonesia Big Tech**: which company career sites the source checks (all eight by default, at least one stays on). If the stored value is empty or unreadable, the source checks all eight. See [Indonesia Big Tech](/docs/next/extractors/idbigtech).
 - Manage workspace users when signed in as a system admin:
   - create a user with a private workspace
   - disable a user
@@ -235,6 +346,14 @@ Readiness requires:
 **Connected accounts** lists the identity providers linked to your own account, with the email the provider reported and the date it was connected. **Connect** starts the provider's consent flow and adds the identity to your account; **Unlink** removes it after a confirmation. The block is hidden when no provider is configured and nothing is linked. Every user manages their own connections, and admins cannot unlink another user's identity. See [Single Sign-On Setup](/docs/next/getting-started/sso-setup) for the server-side configuration.
 
 **Account password** sets or changes the password of the account you are signed in as. Accounts that already have a password must supply the current one; accounts created through single sign-on have none and can set one directly. Keeping a password is what lets you sign in when an identity provider is unavailable, so JobOps refuses to unlink the last connected account of a password-less user.
+
+### Agent access
+
+Create, list and revoke personal access tokens for Claude Code and other MCP clients. Each new token is shown once together with a ready-to-run `claude mcp add` command. See [Agent Access (MCP)](/docs/next/features/agent-access).
+
+### Schedule & digest
+
+Run a saved search every day at a set time, in your time zone, and get the best new jobs on Telegram. Shows the next run, what happened at the last scheduled time and whether the last digest was delivered. **Send test message** checks the saved bot token and chat id. System admins only; not available in hosted mode. See [Scheduled Runs and Telegram Digest](/docs/next/features/scheduled-runs).
 
 ### Backup
 
@@ -250,10 +369,14 @@ Readiness requires:
 
 ![Scoring settings section](/img/features/settings-scoring-section.png)
 
+- Target companies: one company per line, with other names for the same company on the same line separated by `|` (for example `GoTo | Gojek | Tokopedia`). Jobs at these companies get a **Target** badge and filter in the jobs list, and scoring favours them when fit is otherwise close
+- Dealbreakers: free text listing what you will not accept. Scoring gives jobs that clearly break one a low score and names it in the reason
 - Penalize missing salary data
 - Set penalty amount
 - Optional auto-skip threshold for low-score jobs
 - Block jobs from companies that match configured keyword tokens
+
+Target companies and dealbreakers are empty by default; while both are empty, scoring prompts are unchanged. Like search terms, they can be changed by any signed-in user for their own workspace, not only by system admins. See [Target Companies and Dealbreakers](/docs/next/features/target-companies) for the matching rules.
 
 Per-search ranking preferences live in **Find jobs**. Add them to the search description, then review or edit them in **Configure your search** before starting.
 
@@ -368,10 +491,31 @@ curl -X POST "http://localhost:3001/api/backups"
 - Ensure `JOBOPS_PUBLIC_BASE_URL` is set for background/pipeline usage.
 - Ensure the configured host is publicly reachable and `/health` responds.
 
+### Claude (subscription) says "not authenticated"
+
+- Check that `CLAUDE_CODE_OAUTH_TOKEN` is set in the environment JobOps runs with (for Docker, in `.env`), then restart.
+- Tokens from `claude setup-token` last about a year. If it expired or was revoked, run `claude setup-token` again and replace the value.
+- The pipeline pauses on this error instead of failing every job. Fix the token, then start the run again.
+- With a [fallback provider](#fallback-provider) configured, the run continues on the fallback instead of pausing.
+
+### Claude (subscription) says "usage limit reached" or "rate limit reached"
+
+- Your plan's session or weekly limit is used up, or Anthropic is throttling requests. Wait for the limit to reset, or switch provider in **Settings → Models**.
+- Lower `CLAUDE_AGENT_SDK_MAX_CONCURRENCY` (for example to `1`) if large pipeline runs hit rate limits often.
+- Configure a [fallback provider](#fallback-provider) so requests move to another model automatically until the limit resets.
+
+### Settings says the fallback model is not active
+
+- Read the reason under the model fields. It names the missing or wrong variable, for example `LLM_FALLBACK_MODEL is not set.`
+- `openai_compatible` needs `LLM_FALLBACK_BASE_URL` and `LLM_FALLBACK_API_KEY`; the fallback never borrows `LLM_BASE_URL` or `LLM_API_KEY`.
+- A fallback with the same provider and endpoint as your selected provider is ignored, because it cannot help.
+- Environment changes need a restart. In hosted mode the fallback is always off.
+
 ## Related pages
 
 - [Reactive Resume](/docs/next/features/reactive-resume)
 - [Database Backups](/docs/next/getting-started/database-backups)
+- [Scheduled Runs and Telegram Digest](/docs/next/features/scheduled-runs)
 - [Overview](/docs/next/features/overview)
 - [Orchestrator](/docs/next/features/orchestrator)
 - [Ghostwriter](/docs/next/features/ghostwriter)

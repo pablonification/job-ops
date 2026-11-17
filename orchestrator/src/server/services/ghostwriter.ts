@@ -337,6 +337,12 @@ async function imageInputCapabilityReason(
       : `The selected Claude model (${input.model}) is not recognized as image-capable.`;
   }
 
+  if (provider === "claude_agent_sdk") {
+    return /^(claude-|(sonnet|opus|haiku|fable)(\[1m\])?$)/.test(model)
+      ? null
+      : `The selected Claude model (${input.model}) is not recognized as image-capable.`;
+  }
+
   if (
     provider === "atlascloud" ||
     provider === "litellm" ||

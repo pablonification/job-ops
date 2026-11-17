@@ -1,0 +1,192 @@
+{
+  "totalCount": 4,
+  "data": [
+    {
+      "advertiser": {
+        "id": "63388996",
+        "description": "PT SHIYUN TECHNOLOGY INDONESIA"
+      },
+      "branding": {
+        "serpLogoUrl": "https://bx-branding-gateway.cloud.seek.com.au/3a853d77-49a7-4304-92c0-ac3fafb361e2.1/jdpLogo"
+      },
+      "classifications": [
+        {
+          "classification": {
+            "id": "1206",
+            "description": "Konstruksi"
+          },
+          "subclassification": {
+            "id": "6119",
+            "description": "Manajemen Proyek"
+          }
+        }
+      ],
+      "companyName": "PT SHIYUN TECHNOLOGY INDONESIA",
+      "employer": {
+        "id": "3355880",
+        "name": "PT SHIYUN TECHNOLOGY INDONESIA"
+      },
+      "id": "95924141",
+      "listingDate": "2026-11-16T10:06:08Z",
+      "locations": [
+        {
+          "label": "Cikarang Pusat, Jawa Barat",
+          "countryCode": "ID"
+        }
+      ],
+      "salaryLabel": "Rp 20.000.000 – Rp 30.000.000 per month",
+      "teaser": "Lead testing, integration, and acceptance for smart building and ELV projects through final handover.",
+      "title": "PROJECT TEST MANAGER",
+      "workTypes": ["Full time"],
+      "workArrangements": {
+        "data": [
+          {
+            "id": "1",
+            "label": {
+              "text": "Kantor"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "advertiser": {
+        "id": "",
+        "description": "Pengiklan Anonim"
+      },
+      "branding": {},
+      "classifications": [
+        {
+          "classification": {
+            "id": "1209",
+            "description": "Teknik"
+          },
+          "subclassification": {
+            "id": "6025",
+            "description": "Drafting Teknik"
+          }
+        }
+      ],
+      "id": "95923479",
+      "listingDate": "2026-11-16T09:45:23Z",
+      "locations": [
+        {
+          "label": "Cikarang Pusat, Jawa Barat",
+          "countryCode": "ID"
+        }
+      ],
+      "salaryLabel": "Rp 7.000.000 – Rp 9.000.000 per month",
+      "teaser": "Master CAD software and grow your career in precision engineering with competitive pay and development opportunities.",
+      "title": "Drafter",
+      "workTypes": ["Full time"],
+      "workArrangements": {
+        "data": [
+          {
+            "id": "1",
+            "label": {
+              "text": "Kantor"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "advertiser": {
+        "id": "",
+        "description": "Private Advertiser"
+      },
+      "branding": {},
+      "classifications": [
+        {
+          "classification": {
+            "id": "6281",
+            "description": "Information & Communication Technology"
+          },
+          "subclassification": {
+            "id": "6290",
+            "description": "Engineering - Software"
+          }
+        }
+      ],
+      "companyName": "Private Advertiser",
+      "employer": {
+        "id": "",
+        "name": "Private Advertiser"
+      },
+      "id": "95949297",
+      "listingDate": "2026-11-17T09:10:49Z",
+      "locations": [
+        {
+          "label": "Jakarta",
+          "countryCode": "ID"
+        }
+      ],
+      "salaryLabel": "Rp 6,000,000 – Rp 7,000,000 per month",
+      "teaser": "Build end-to-end voice messaging features for field teams with Node.js, React, and AI.",
+      "title": "Senior Full-Stack Engineer at Blue Pigeon",
+      "workTypes": ["Part time"],
+      "workArrangements": {
+        "data": [
+          {
+            "id": "3",
+            "label": {
+              "text": "Remote"
+            }
+          }
+        ],
+        "displayText": "Remote"
+      }
+    },
+    {
+      "advertiser": {
+        "id": "60902475",
+        "description": "PT PEFINDO Biro Kredit"
+      },
+      "branding": {
+        "serpLogoUrl": "https://bx-branding-gateway.cloud.seek.com.au/9974ecdf-9275-4b41-802d-2116942f1616.1/jdpLogo"
+      },
+      "classifications": [
+        {
+          "classification": {
+            "id": "1223",
+            "description": "Science & Technology"
+          },
+          "subclassification": {
+            "id": "6222",
+            "description": "Mathematics, Statistics & Information Sciences"
+          }
+        }
+      ],
+      "companyName": "Pefindo Credit Bureau",
+      "employer": {
+        "id": "435874",
+        "name": "Pefindo Credit Bureau",
+        "companyId": "168552533220539",
+        "companyUrl": "https://id.jobstreet.com/companies/pefindo-credit-bureau-168552533220539"
+      },
+      "id": "95918022",
+      "listingDate": "2026-11-16T06:37:05Z",
+      "locations": [
+        {
+          "label": "South Jakarta, Jakarta",
+          "countryCode": "ID"
+        }
+      ],
+      "salaryLabel": "",
+      "teaser": "Lead data strategy, manage analytics projects, and drive data-driven growth across the organization.",
+      "title": "Data Scientist",
+      "workTypes": ["Full time"],
+      "workArrangements": {
+        "data": [
+          {
+            "id": "2",
+            "label": {
+              "text": "Hybrid"
+            }
+          }
+        ],
+        "displayText": "Hybrid"
+      }
+    }
+  ]
+}

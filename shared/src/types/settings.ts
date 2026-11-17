@@ -1,3 +1,4 @@
+import type { IdBigTechCompanyId } from "../extractors/indonesia/big-tech";
 import {
   TYPST_THEME_LABELS,
   TYPST_THEME_VALUES,
@@ -7,6 +8,8 @@ import type {
   LocationMatchStrictness,
   LocationSearchScope,
 } from "../location-preferences";
+import type { DigestMode, ScheduleWeekday } from "../pipeline-schedule";
+import type { RoleCvPipelineMode } from "./role-cvs";
 
 export { TYPST_THEME_LABELS, TYPST_THEME_VALUES };
 
@@ -40,6 +43,7 @@ export const LLM_PROVIDER_VALUES = [
   "gemini",
   "gemini_cli",
   "claude_cli",
+  "claude_agent_sdk",
   "codex",
 ] as const;
 export type LlmProviderId = (typeof LLM_PROVIDER_VALUES)[number];
@@ -249,6 +253,36 @@ export interface DemoInfoResponse {
 export type Resolved<T> = { value: T; default: T; override: T | null };
 export type ModelResolved = { value: string; override: string | null };
 
+/**
+ * Read-only status of the environment-configured fallback LLM provider
+ * (`LLM_FALLBACK_*`). Never carries the fallback API key.
+ */
+export interface LlmFallbackStatus {
+  /** A complete fallback configuration is present. */
+  configured: boolean;
+  /** Configured and usable for the current primary provider. */
+  active: boolean;
+  provider: string | null;
+  model: string | null;
+  /** `LLM_FORCE_FALLBACK` is on: every call goes to the fallback. */
+  forced: boolean;
+  /** Some primary (default or a purpose override) is being skipped after repeated provider-side failures. */
+  tripped: boolean;
+  /** When the skipped primary will next be retried (ISO time, the latest if several). */
+  trippedUntil: string | null;
+  /** Which model purposes are on the fallback because their primary is skipped ("default", "scoring", ...). */
+  trippedPurposes: string[];
+  /** Why the fallback is not active, when something is set but unusable. */
+  inactiveReason: string | null;
+  /** The most recent call the fallback took over after a primary failed. */
+  lastFailover: {
+    at: string;
+    reason: string;
+    outcome: "succeeded" | "failed";
+    purposes: string[];
+  } | null;
+}
+
 export interface AppSettings {
   // Typed settings (Resolved):
   model: Resolved<string>;
@@ -268,6 +302,7 @@ export interface AppSettings {
   seekMaxJobsPerTerm: Resolved<number>;
   naukriMaxJobsPerTerm: Resolved<number>;
   jobindexMaxJobsPerTerm: Resolved<number>;
+  idbigtechCompanies: Resolved<IdBigTechCompanyId[]>;
   searchTerms: Resolved<string[]>;
   workplaceTypes: Resolved<Array<"remote" | "hybrid" | "onsite">>;
   onboardingProfileCompleted: Resolved<boolean>;
@@ -276,9 +311,13 @@ export interface AppSettings {
   onboardingLegacyMigrationPending: Resolved<boolean>;
   blockedCompanyKeywords: Resolved<string[]>;
   scoringInstructions: Resolved<string>;
+  targetCompanies: Resolved<string[]>;
+  dealbreakers: Resolved<string>;
   ghostwriterSystemPromptTemplate: Resolved<string>;
   ghostwriterStopSlopEnabled: Resolved<boolean>;
   tailoringPromptTemplate: Resolved<string>;
+  roleCvPromptTemplate: Resolved<string>;
+  roleCvPipelineMode: Resolved<RoleCvPipelineMode>;
   scoringPromptTemplate: Resolved<string>;
   searchCities: Resolved<string>;
   locationSearchMode: Resolved<LocationInputMode>;
@@ -303,6 +342,15 @@ export interface AppSettings {
   backupEnabled: Resolved<boolean>;
   backupHour: Resolved<number>;
   backupMaxCount: Resolved<number>;
+  scheduleEnabled: Resolved<boolean>;
+  scheduleTime: Resolved<string>;
+  scheduleTimeZone: Resolved<string>;
+  scheduleWeekdays: Resolved<ScheduleWeekday[]>;
+  scheduleCatchUpMinutes: Resolved<number>;
+  scheduleSearchPresetId: Resolved<string>;
+  digestMode: Resolved<DigestMode>;
+  digestMaxJobs: Resolved<number>;
+  telegramChatId: Resolved<string>;
   penalizeMissingSalary: Resolved<boolean>;
   missingSalaryPenalty: Resolved<number>;
   autoSkipScoreThreshold: Resolved<number | null>;
@@ -326,7 +374,9 @@ export interface AppSettings {
   adzunaAppKeyHint: string | null;
   apifyTokenHint: string | null;
   webhookSecretHint: string | null;
+  telegramBotTokenHint: string | null;
 
   // Computed:
   profileProjects: ResumeProjectCatalogItem[];
+  llmFallback: LlmFallbackStatus;
 }

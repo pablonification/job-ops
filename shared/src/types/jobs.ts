@@ -1,5 +1,6 @@
 import type { ExtractorSourceId } from "../extractors";
 import type { LocationEvidence, LocationMatchResult } from "./location";
+import type { RoleCvMatchSource } from "./role-cvs";
 
 export type { LocationEvidenceQuality } from "./location";
 
@@ -207,6 +208,8 @@ export interface Job {
   tailoredHeadline: string | null; // Generated resume headline
   tailoredSkills: string | null; // Generated resume skills (JSON)
   selectedProjectIds: string | null; // Comma-separated IDs of selected projects
+  roleCvId: string | null; // Role CV this job uses, if any
+  roleCvMatchSource: RoleCvMatchSource | null; // How roleCvId was chosen; null means never matched
   pdfPath: string | null; // Path to generated PDF
   pdfSource: JobPdfSource | null; // Whether PDF was system-generated or user-uploaded
   pdfRegenerating: boolean; // Whether a PDF generation/regeneration is currently in progress for this job
@@ -217,6 +220,7 @@ export interface Job {
   sponsorMatchScore: number | null; // 0-100 fuzzy match score with visa sponsors
   sponsorMatchNames: string | null; // JSON array of matched sponsor names (when 100% matches or top match)
   appliedDuplicateMatch?: AppliedDuplicateMatch | null; // Included on detail responses and may be omitted on list responses
+  isTargetCompany?: boolean; // Computed from the targetCompanies setting on list and detail responses; never stored
 
   // JobSpy fields (nullable for non-JobSpy sources)
   jobType: string | null;
@@ -272,6 +276,7 @@ export type JobListItem = Pick<
   | "suitabilityScore"
   | "sponsorMatchScore"
   | "appliedDuplicateMatch"
+  | "isTargetCompany"
   | "jobType"
   | "jobFunction"
   | "pdfRegenerating"
@@ -569,6 +574,8 @@ export interface UpdateJobInput {
   tailoredHeadline?: string;
   tailoredSkills?: string;
   selectedProjectIds?: string;
+  roleCvId?: string | null;
+  roleCvMatchSource?: RoleCvMatchSource | null;
   pdfPath?: string;
   pdfSource?: JobPdfSource | null;
   pdfRegenerating?: boolean;

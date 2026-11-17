@@ -28,6 +28,7 @@ import {
   serializeTailoredSkills,
   toEditableSkillGroups,
 } from "../tailoring-utils";
+import { RoleCvPicker, type RoleCvPickerProps } from "./RoleCvPicker";
 import { TailoringSections } from "./TailoringSections";
 import {
   getTailoringSavePayloadKey,
@@ -161,6 +162,7 @@ export const TailoringWorkspace: React.FC<TailoringWorkspaceProps> = (
   const [generateTarget, setGenerateTarget] =
     useState<TailoringGenerateTarget | null>(null);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const [isRoleCvBusy, setIsRoleCvBusy] = useState(false);
   const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const saveInFlightRef = useRef<Promise<void> | null>(null);
   const saveAgainRef = useRef(false);
@@ -412,6 +414,17 @@ export const TailoringWorkspace: React.FC<TailoringWorkspaceProps> = (
     [props.onUpdate, flushAutosave, props.job.id, applyIncomingDraft],
   );
 
+  const handleRoleCvJobChange = useCallback<RoleCvPickerProps["onJobChange"]>(
+    async (updatedJob, { tailoringChanged }) => {
+      if (tailoringChanged) {
+        applyIncomingDraft(updatedJob);
+        setAiBaseline(toBaselineFromJob(updatedJob));
+      }
+      await props.onUpdate(updatedJob);
+    },
+    [applyIncomingDraft, props.onUpdate],
+  );
+
   const handleSummarizeEditor = useCallback(async () => {
     await handleGenerateTailoring("all");
   }, [handleGenerateTailoring]);
@@ -513,7 +526,8 @@ export const TailoringWorkspace: React.FC<TailoringWorkspaceProps> = (
     );
   }, [aiBaseline.skillsJson, setSkillsDraft]);
 
-  const disableInputs = Boolean(generateTarget) || isGeneratingPdf;
+  const disableInputs =
+    Boolean(generateTarget) || isGeneratingPdf || isRoleCvBusy;
   const isDraftReady = textHasValue(summary) && textHasValue(headline);
 
   const tailoringSectionsProps = useMemo<TailoringSectionsProps>(
@@ -656,7 +670,7 @@ export const TailoringWorkspace: React.FC<TailoringWorkspaceProps> = (
         <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
           <Button
             onClick={handleSummarizeEditor}
-            disabled={Boolean(generateTarget) || isGeneratingPdf}
+            disabled={disableInputs}
             variant="outline"
             size="sm"
           >
@@ -669,9 +683,7 @@ export const TailoringWorkspace: React.FC<TailoringWorkspaceProps> = (
           </Button>
           <Button
             onClick={handleGeneratePdf}
-            disabled={
-              Boolean(generateTarget) || isGeneratingPdf || !isDraftReady
-            }
+            disabled={disableInputs || !isDraftReady}
             size="sm"
           >
             {isGeneratingPdf ? (
@@ -683,6 +695,14 @@ export const TailoringWorkspace: React.FC<TailoringWorkspaceProps> = (
           </Button>
         </div>
       </div>
+
+      <RoleCvPicker
+        job={props.job}
+        disabled={Boolean(generateTarget) || isGeneratingPdf}
+        beforeTailoringChange={flushAutosave}
+        onJobChange={handleRoleCvJobChange}
+        onBusyChange={setIsRoleCvBusy}
+      />
 
       <TailoringSections {...tailoringSectionsProps} />
     </div>

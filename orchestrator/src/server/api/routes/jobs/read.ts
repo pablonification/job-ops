@@ -3,6 +3,10 @@ import { fail, ok } from "@infra/http";
 import { logger } from "@infra/logger";
 import * as jobsRepo from "@server/repositories/jobs";
 import { attachAppliedDuplicateMatches } from "@server/services/applied-duplicate-matching";
+import {
+  hydrateJobPdfFreshness,
+  requireJob,
+} from "@server/services/jobs/common";
 import { getPdfPath, pdfExists } from "@server/services/pdf";
 import {
   applyJobsPdfFreshness,
@@ -13,15 +17,17 @@ import {
   listJobPostApplicationEmails,
   MAX_JOB_EMAIL_LIMIT,
 } from "@server/services/post-application/job-emails";
+import {
+  loadTargetCompanyMatcher,
+  withTargetCompanyFlag,
+} from "@server/services/target-companies";
 import { type Request, type Response, Router } from "express";
 import { z } from "zod";
 import {
-  hydrateJobPdfFreshness,
   JOBS_BENCHMARK_ENABLED,
   jobsRevisionQuerySchema,
   listJobsQuerySchema,
   parseStatusFilter,
-  requireJob,
   toJobListItem,
   toJobsRouteError,
 } from "./shared";
@@ -66,16 +72,20 @@ jobsReadRouter.get("/", async (req: Request, res: Response) => {
 
     const primaryQueryStart = performance.now();
     const pdfFingerprintContext = await resolvePdfFingerprintContext();
+    // Parsed once per request; the flag is computed per job from it.
+    const targetCompanies = await loadTargetCompanyMatcher();
     const jobs =
       view === "list"
         ? applyJobsPdfFreshness(
             await jobsRepo.getJobListItems(statuses),
             pdfFingerprintContext,
-          ).map(toJobListItem)
+          ).map((job) =>
+            withTargetCompanyFlag(toJobListItem(job), targetCompanies),
+          )
         : applyJobsPdfFreshness(
             await jobsRepo.getAllJobs(statuses),
             pdfFingerprintContext,
-          );
+          ).map((job) => withTargetCompanyFlag(job, targetCompanies));
     primaryQueryMs = performance.now() - primaryQueryStart;
     const candidateCount = 0;
     const duplicateMatchingEnabled = false;
@@ -177,7 +187,13 @@ jobsReadRouter.get("/:id", async (req: Request, res: Response) => {
       [job],
       await jobsRepo.getAppliedDuplicateMatchCandidates(),
     );
-    ok(res, await hydrateJobPdfFreshness(jobWithAppliedDuplicateMatch));
+    ok(
+      res,
+      withTargetCompanyFlag(
+        await hydrateJobPdfFreshness(jobWithAppliedDuplicateMatch),
+        await loadTargetCompanyMatcher(),
+      ),
+    );
   } catch (error) {
     fail(res, toJobsRouteError(error));
   }

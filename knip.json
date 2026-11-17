@@ -4,7 +4,8 @@
   "workspaces": {
     ".": {
       "entry": [],
-      "project": []
+      "project": [],
+      "ignoreDependencies": ["@anthropic-ai/claude-agent-sdk"]
     },
     "orchestrator": {
       "entry": [
@@ -19,7 +20,8 @@
         "src/**/*.test.tsx"
       ],
       "project": ["src/**/*.{ts,tsx}"],
-      "ignore": ["dist/**", "src/components/ui/**"]
+      "ignore": ["dist/**", "src/components/ui/**"],
+      "ignoreDependencies": ["@anthropic-ai/claude-agent-sdk"]
     },
     "shared": {
       "entry": ["src/index.ts"],

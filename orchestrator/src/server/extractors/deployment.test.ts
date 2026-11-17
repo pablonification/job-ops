@@ -145,4 +145,29 @@ describe("extractor deployment config", () => {
     expect(composeFile).toContain("path: ./career-boards/bamboohr/src");
     expect(composeFile).toContain("target: /app/career-boards/bamboohr/src");
   });
+
+  it.each([
+    "techinasia",
+    "kalibrr",
+    "dealls",
+    "jobstreet",
+    "glints",
+    "idbigtech",
+  ])("ships the %s Indonesian extractor in Docker images and compose watch", async (name) => {
+    const dockerfile = await readFile(resolve(process.cwd(), "../Dockerfile"), {
+      encoding: "utf8",
+    });
+    const composeFile = await readFile(
+      resolve(process.cwd(), "../docker-compose.yml"),
+      { encoding: "utf8" },
+    );
+    const packageCopy = `COPY extractors/${name}/package*.json ./extractors/${name}/`;
+    const sourceCopy = `COPY extractors/${name} ./extractors/${name}`;
+
+    // node-deps + runtime-node-deps, then build-sources + production.
+    expect(dockerfile.split(packageCopy)).toHaveLength(3);
+    expect(dockerfile.split(`${sourceCopy}\n`)).toHaveLength(3);
+    expect(composeFile).toContain(`path: ./extractors/${name}/src`);
+    expect(composeFile).toContain(`target: /app/extractors/${name}/src`);
+  });
 });

@@ -36,7 +36,7 @@ It helps you:
 
 AI fills the same fields you can edit yourself; it never starts discovery. **Describe search** returns to your brief while keeping the criteria you have edited. Rebuilding uses those current criteria as context.
 
-The configuration form keeps its existing layout and controls. **Search notes** contains any AI assumptions or limitations and is collapsed by default. Ranking preferences influence scores rather than strictly excluding listings, including salary preferences.
+The configuration form keeps its existing layout and controls. **Search notes** contains any AI assumptions or limitations and is collapsed by default. Ranking preferences influence scores rather than strictly excluding listings, including salary preferences. Scoring also uses your target companies and dealbreakers from **Settings → Scoring Settings** on every run; see [Target Companies and Dealbreakers](/docs/next/features/target-companies).
 
 The search description and configuration form use the same page width.
 
@@ -60,6 +60,8 @@ the same values. The pipeline run itself still derives per-source caps from the
 saved budget when you start the run.
 
 **Find jobs** always opens search setup. Adding a job does not change that entry point.
+
+Click **Save as** to keep the setup as a saved search. A saved search can also run by itself every day: see [Scheduled Runs and Telegram Digest](/docs/next/features/scheduled-runs).
 
 #### Search area
 
@@ -221,6 +223,7 @@ For formats and limits, see [Manual Import Extractor](/docs/next/extractors/manu
 
 ## Related pages
 
+- [Scheduled Runs and Telegram Digest](/docs/next/features/scheduled-runs)
 - [Find Jobs and Apply Workflow](/docs/next/workflows/find-jobs-and-apply-workflow)
 - [Manual Import Extractor](/docs/next/extractors/manual)
 - [Orchestrator](/docs/next/features/orchestrator)

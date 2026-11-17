@@ -427,6 +427,51 @@ export async function listJobSummariesByIds(jobIds: string[]): Promise<
 }
 
 /**
+ * Title, employer, score and status of the given jobs, for the run digest.
+ * Jobs outside the current scope are left out.
+ */
+export async function listJobDigestRowsByIds(jobIds: string[]): Promise<
+  Array<{
+    id: string;
+    title: string;
+    employer: string;
+    suitabilityScore: number | null;
+    status: JobStatus;
+  }>
+> {
+  if (jobIds.length === 0) return [];
+  const rows: Array<{
+    id: string;
+    title: string;
+    employer: string;
+    suitabilityScore: number | null;
+    status: JobStatus;
+  }> = [];
+  // Stay well under SQLite's bound-parameter limit on very large runs.
+  for (let start = 0; start < jobIds.length; start += 500) {
+    const chunk = await db
+      .select({
+        id: jobs.id,
+        title: jobs.title,
+        employer: jobs.employer,
+        suitabilityScore: jobs.suitabilityScore,
+        status: jobs.status,
+      })
+      .from(jobs)
+      .where(
+        and(
+          jobsScopeFilter(),
+          inArray(jobs.id, jobIds.slice(start, start + 500)),
+        ),
+      );
+    rows.push(
+      ...chunk.map((row) => ({ ...row, status: row.status as JobStatus })),
+    );
+  }
+  return rows;
+}
+
+/**
  * Get a job by its URL (for deduplication).
  */
 export async function getJobByUrl(jobUrl: string): Promise<Job | null> {
@@ -531,7 +576,11 @@ async function insertJob(input: CreateJobInput): Promise<Job> {
   return job;
 }
 
-function isJobUrlUniqueViolation(error: unknown): boolean {
+/**
+ * True for SQLite's unique-violation error on a job URL, whichever unique
+ * index raised it (column index or the tenant/user expression index).
+ */
+export function isJobUrlUniqueViolation(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
   return /UNIQUE constraint failed: (jobs\.job_url|jobs\.tenant_id, jobs\.job_url|jobs\.tenant_id, jobs\.user_id, jobs\.job_url|index ['"]idx_jobs_tenant_user_job_url_unique['"])/i.test(
     error.message,
@@ -554,11 +603,13 @@ export async function createJobs(input: CreateJobInput): Promise<Job>;
 export async function createJobs(
   inputs: CreateJobInput[],
   onProgress?: (input: CreateJobInput, index: number, total: number) => void,
-): Promise<{ created: number; skipped: number }>;
+): Promise<{ created: number; skipped: number; createdJobIds: string[] }>;
 export async function createJobs(
   inputOrInputs: CreateJobInput | CreateJobInput[],
   onProgress?: (input: CreateJobInput, index: number, total: number) => void,
-): Promise<Job | { created: number; skipped: number }> {
+): Promise<
+  Job | { created: number; skipped: number; createdJobIds: string[] }
+> {
   if (!Array.isArray(inputOrInputs)) {
     const inserted = await tryInsertJob(inputOrInputs);
     if (inserted) return inserted;
@@ -587,10 +638,11 @@ export async function createJobs(
   let created = 0;
   let skipped = 0;
   let processed = 0;
+  const createdJobIds: string[] = [];
 
   const uniqueUrls = Array.from(byUrl.keys());
   if (uniqueUrls.length === 0) {
-    return { created, skipped };
+    return { created, skipped, createdJobIds };
   }
 
   const existingRows = await db
@@ -615,10 +667,11 @@ export async function createJobs(
     }
 
     created += 1;
+    createdJobIds.push(inserted.id);
     skipped += count - 1;
   }
 
-  return { created, skipped };
+  return { created, skipped, createdJobIds };
 }
 
 /**
@@ -900,6 +953,8 @@ function mapRowToJob(row: typeof jobs.$inferSelect): Job {
     tailoredHeadline: row.tailoredHeadline ?? null,
     tailoredSkills: row.tailoredSkills ?? null,
     selectedProjectIds: row.selectedProjectIds ?? null,
+    roleCvId: row.roleCvId ?? null,
+    roleCvMatchSource: row.roleCvMatchSource ?? null,
     pdfPath: row.pdfPath,
     pdfSource: row.pdfSource ?? null,
     pdfRegenerating: row.pdfRegenerating ?? false,

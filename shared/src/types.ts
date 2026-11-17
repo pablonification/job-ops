@@ -5,6 +5,7 @@
  * This file re-exports everything for backward compatibility.
  */
 
+export * from "./types/access-tokens";
 export * from "./types/api";
 export * from "./types/app";
 export * from "./types/auth-sso";
@@ -17,6 +18,7 @@ export * from "./types/jobs";
 export * from "./types/location";
 export * from "./types/pipeline";
 export * from "./types/post-application";
+export * from "./types/role-cvs";
 export * from "./types/settings";
 export * from "./types/usage";
 export * from "./types/visa-sponsors";

@@ -1,0 +1,41 @@
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "job_list": [
+      {
+        "id": 135078,
+        "job_id": "J02163314",
+        "job_name": "Regional Content & Creator Experience",
+        "department_id": 8,
+        "employment_id": 2,
+        "region_id": 7,
+        "city_id": 10,
+        "post_type": 2,
+        "external_entity_id": 1,
+        "job_type_id": 0,
+        "job_description": "<ul><li>Own strategic projects across the content, creator and affiliate space, and drive research to understand the pain points, behaviours and incentives of creators, affiliates and content consumers across our markets.</li><li>Analyse data, user feedback and local market performance to identify opportunities to improve the creator, affiliate and content experience, ensuring a seamless journey from onboarding to monetisation.</li><li>",
+        "requirements": "<ul><li>Bachelor’s or Master’s degree from a reputable university, in any related major.</li><li>3+ years of experience. Product management or management consulting is a plus.</li><li>Proven ability to structure and solve complex problems, collaborate across varied stakeholders and teams, and communicate effectively both verbally and in writing.</li><li>Strong analytical and logical thinking, with a data-driven approach.</li><li>Self-motivated, results-oriented and comfortable with ambiguity and change in a fast-paced environment.</li><li>",
+        "sub_team_description": "",
+        "application_form_id": 17
+      },
+      {
+        "id": 134055,
+        "job_id": "J02146670",
+        "job_name": "Business Operations Project, SPX Express",
+        "department_id": 9,
+        "employment_id": 2,
+        "region_id": 7,
+        "city_id": 10,
+        "post_type": 2,
+        "external_entity_id": 5,
+        "job_type_id": 0,
+        "job_description": "<ul><li>Lead and drive the strategic analysis and optimization of end-to-end SPX Express operations within the project timeline to identify structural efficiencies and performance bottlenecks.</li><li>Define data-driven recommendations and steer the implementation of high-impact strategic initiatives focused on efficiency &amp; improvement.</li><li>Establish alignment and manage relationships with key cross-functional stakeholders and leadership to ensure the seamless, on-time delivery of operational solutions.</li><li>",
+        "requirements": "<ul><li>Hold a Bachelor&#39;s degree in Engineering, Economics, or Business.</li><li>Possess 5 to 10 years of relevant professional experience, with a proven track record in Logistics, Cost Optimization, or Management Consulting functions.</li><li>Highly proficient in Microsoft Office tools, with an advanced command of Microsoft Excel and Microsoft PowerPoint for complex data evaluation, modeling, and executive-level presentations.</li><li>Fluency in English with exceptional written and verbal communication skills.</li><li>",
+        "sub_team_description": "<p>-</p>",
+        "application_form_id": 17
+      }
+    ],
+    "total_count": 63
+  }
+}

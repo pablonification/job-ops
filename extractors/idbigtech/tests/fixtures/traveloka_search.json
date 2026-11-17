@@ -1,0 +1,38 @@
+{
+  "data": {
+    "page": 1,
+    "limit": 30,
+    "total": 3,
+    "lastPage": 1,
+    "jobs": [
+      {
+        "requisitionId": "mj000453-software-development-engineer-in",
+        "title": "Software Development Engineer In Test",
+        "location": "BSD City, Indonesia",
+        "link": "/jobs/mj000453-software-development-engineer-in",
+        "employmentType": "Regular",
+        "department": "Engineering & IT",
+        "createdAt": 1794541975000
+      },
+      {
+        "requisitionId": "mj000438-mobile-engineering-manager",
+        "title": "Mobile Engineering Manager",
+        "location": "BSD City, Indonesia",
+        "link": "/jobs/mj000438-mobile-engineering-manager",
+        "employmentType": "Regular",
+        "department": "Engineering & IT",
+        "createdAt": 1793849779000
+      },
+      {
+        "requisitionId": "mj000249-senior-android-engineer",
+        "title": "资深安卓开发工程师/Senior Android Engineer",
+        "location": "Shenzhen, China",
+        "link": "/jobs/mj000249-senior-android-engineer",
+        "employmentType": "Regular",
+        "department": "Engineering & IT",
+        "createdAt": 1785382151000
+      }
+    ]
+  },
+  "errorMessage": null
+}

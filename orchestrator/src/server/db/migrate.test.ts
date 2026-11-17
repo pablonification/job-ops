@@ -518,6 +518,270 @@ describe.sequential("database migrations", () => {
     );
   });
 
+  it("creates the role_cvs table with private scoping and per-scope unique names", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "job-ops-migrate-"));
+    const script = `
+      import { join } from "node:path";
+      import { pathToFileURL } from "node:url";
+      import Database from "better-sqlite3";
+
+      const dbPath = join(process.env.DATA_DIR, "jobs.db");
+      await import(pathToFileURL(join(process.cwd(), "src/server/db/migrate.ts")).href);
+      const migratedDb = new Database(dbPath);
+
+      const columns = migratedDb.prepare("PRAGMA table_info(role_cvs)").all().map((column) => column.name);
+      for (const required of [
+        "id", "tenant_id", "user_id", "name", "role_description",
+        "tailored_headline", "tailored_summary", "tailored_skills", "selected_project_ids",
+        "master_resume_revision", "generated_at",
+        "pdf_path", "pdf_fingerprint", "pdf_generated_at", "pdf_regenerating_since",
+        "created_at", "updated_at",
+      ]) {
+        if (!columns.includes(required)) {
+          throw new Error(\`role_cvs.\${required} missing\`);
+        }
+      }
+
+      const fks = migratedDb.prepare("PRAGMA foreign_key_list(role_cvs)").all();
+      if (!fks.some((fk) => fk.from === "tenant_id" && fk.table === "tenants" && String(fk.on_delete).toUpperCase() === "CASCADE")) {
+        throw new Error("role_cvs is missing the tenant foreign key");
+      }
+
+      migratedDb.prepare("INSERT INTO tenants(id, name, slug) VALUES (?, ?, ?)").run("tenant_other", "Other", "other");
+      const insert = migratedDb.prepare("INSERT INTO role_cvs(id, tenant_id, user_id, name) VALUES (?, ?, NULL, ?)");
+      insert.run("cv-1", "tenant_default", "Backend Engineer");
+      insert.run("cv-2", "tenant_other", "Backend Engineer");
+
+      let duplicateFailed = false;
+      try {
+        insert.run("cv-3", "tenant_default", "backend engineer");
+      } catch {
+        duplicateFailed = true;
+      }
+      if (!duplicateFailed) {
+        throw new Error("role_cvs allowed a duplicate name in the same scope");
+      }
+      migratedDb.close();
+    `;
+
+    execFileSync(
+      process.execPath,
+      ["--import", "tsx", "--input-type=module", "-e", script],
+      {
+        env: {
+          ...process.env,
+          DATA_DIR: tempDir,
+        },
+        stdio: "pipe",
+      },
+    );
+
+    // Re-running migrations on an already-migrated database must succeed.
+    execFileSync(
+      process.execPath,
+      [
+        "--import",
+        "tsx",
+        "--input-type=module",
+        "-e",
+        `import { join } from "node:path"; import { pathToFileURL } from "node:url"; await import(pathToFileURL(join(process.cwd(), "src/server/db/migrate.ts")).href);`,
+      ],
+      {
+        env: {
+          ...process.env,
+          DATA_DIR: tempDir,
+        },
+        stdio: "pipe",
+      },
+    );
+  });
+
+  it("adds the job Role CV columns and keeps them across reboots", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "job-ops-migrate-"));
+    const runMigrations = `import { join } from "node:path"; import { pathToFileURL } from "node:url"; await import(pathToFileURL(join(process.cwd(), "src/server/db/migrate.ts")).href);`;
+    const exec = (script: string) =>
+      execFileSync(
+        process.execPath,
+        ["--import", "tsx", "--input-type=module", "-e", script],
+        { env: { ...process.env, DATA_DIR: tempDir ?? "" }, stdio: "pipe" },
+      );
+
+    exec(`
+      ${runMigrations}
+      import Database from "better-sqlite3";
+      const db = new Database(join(process.env.DATA_DIR, "jobs.db"));
+      const columns = db.prepare("PRAGMA table_info(jobs)").all().map((column) => column.name);
+      for (const required of ["role_cv_id", "role_cv_match_source"]) {
+        if (!columns.includes(required)) throw new Error(\`jobs.\${required} missing\`);
+      }
+      db.prepare(
+        "INSERT INTO jobs (id, title, employer, job_url, role_cv_id, role_cv_match_source) VALUES (?, ?, ?, ?, ?, ?)",
+      ).run("job-1", "Engineer", "Acme", "https://example.com/job-1", "cv-1", "manual");
+      db.close();
+    `);
+
+    // The jobs table is rebuilt on every boot; the reference must survive it.
+    exec(`
+      ${runMigrations}
+      import Database from "better-sqlite3";
+      const db = new Database(join(process.env.DATA_DIR, "jobs.db"), { readonly: true });
+      const row = db.prepare("SELECT role_cv_id, role_cv_match_source FROM jobs WHERE id = ?").get("job-1");
+      if (row?.role_cv_id !== "cv-1" || row?.role_cv_match_source !== "manual") {
+        throw new Error(\`Role CV reference lost on reboot: \${JSON.stringify(row)}\`);
+      }
+      db.close();
+    `);
+  });
+
+  it("creates access_tokens with owner foreign keys and a unique prefix", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "job-ops-migrate-"));
+    const script = `
+      import { join } from "node:path";
+      import { pathToFileURL } from "node:url";
+      import Database from "better-sqlite3";
+
+      const dbPath = join(process.env.DATA_DIR, "jobs.db");
+      // The database was already migrated once: a second boot must not fail.
+      await import(pathToFileURL(join(process.cwd(), "src/server/db/migrate.ts")).href);
+
+      const migratedDb = new Database(dbPath);
+      migratedDb.pragma("foreign_keys = ON");
+
+      const fks = migratedDb.prepare("PRAGMA foreign_key_list(access_tokens)").all();
+      const cascades = (from, table) => fks.some((fk) => fk.from === from && fk.table === table && String(fk.on_delete).toUpperCase() === "CASCADE");
+      if (!cascades("tenant_id", "tenants") || !cascades("user_id", "users")) {
+        throw new Error("access_tokens is missing its foreign keys");
+      }
+
+      const indexes = migratedDb.prepare("PRAGMA index_list(access_tokens)").all();
+      if (!indexes.some((index) => index.name === "idx_access_tokens_tenant_user")) {
+        throw new Error("access_tokens tenant/user index missing");
+      }
+
+      migratedDb.prepare("INSERT INTO users(id, username) VALUES (?, ?)").run("user-1", "alice");
+      const insert = migratedDb.prepare("INSERT INTO access_tokens(id, tenant_id, user_id, name, token_prefix, token_hash, scope) VALUES (?, ?, ?, ?, ?, ?, ?)");
+      insert.run("token-1", "tenant_default", "user-1", "agent", "abcdef012345", "hash-1", "read");
+
+      const expectFailure = (label, fn) => {
+        let failed = false;
+        try { fn(); } catch { failed = true; }
+        if (!failed) throw new Error(label);
+      };
+      expectFailure("duplicate prefix accepted", () =>
+        insert.run("token-2", "tenant_default", "user-1", "agent", "abcdef012345", "hash-2", "read"));
+      expectFailure("unknown scope accepted", () =>
+        insert.run("token-3", "tenant_default", "user-1", "agent", "abcdef099999", "hash-3", "admin"));
+
+      migratedDb.prepare("DELETE FROM users WHERE id = ?").run("user-1");
+      const remaining = migratedDb.prepare("SELECT count(*) AS count FROM access_tokens").get();
+      if (remaining.count !== 0) {
+        throw new Error("access tokens survived their user");
+      }
+
+      migratedDb.close();
+    `;
+    const migrateOnly = `
+      import { join } from "node:path";
+      import { pathToFileURL } from "node:url";
+      await import(pathToFileURL(join(process.cwd(), "src/server/db/migrate.ts")).href);
+    `;
+
+    for (const source of [migrateOnly, script]) {
+      execFileSync(
+        process.execPath,
+        ["--import", "tsx", "--input-type=module", "-e", source],
+        {
+          env: {
+            ...process.env,
+            DATA_DIR: tempDir,
+          },
+          stdio: "pipe",
+        },
+      );
+    }
+  });
+
+  it("keeps the run trigger across reboots and creates the schedule state table", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "job-ops-migrate-"));
+    const runMigrations = `import { join } from "node:path"; import { pathToFileURL } from "node:url"; await import(pathToFileURL(join(process.cwd(), "src/server/db/migrate.ts")).href);`;
+    const exec = (script: string) =>
+      execFileSync(
+        process.execPath,
+        ["--import", "tsx", "--input-type=module", "-e", script],
+        { env: { ...process.env, DATA_DIR: tempDir ?? "" }, stdio: "pipe" },
+      );
+
+    // An install from before scheduled runs: pipeline_runs has no trigger.
+    exec(`
+      import { join } from "node:path";
+      import Database from "better-sqlite3";
+      const db = new Database(join(process.env.DATA_DIR, "jobs.db"));
+      db.exec(\`
+        CREATE TABLE pipeline_runs (
+          id TEXT PRIMARY KEY,
+          started_at TEXT NOT NULL DEFAULT (datetime('now')),
+          completed_at TEXT,
+          status TEXT NOT NULL DEFAULT 'running',
+          jobs_discovered INTEGER NOT NULL DEFAULT 0,
+          jobs_processed INTEGER NOT NULL DEFAULT 0,
+          error_message TEXT,
+          config_snapshot TEXT
+        );
+        INSERT INTO pipeline_runs (id, status) VALUES ('old-run', 'completed');
+      \`);
+      db.close();
+    `);
+
+    exec(`
+      ${runMigrations}
+      import Database from "better-sqlite3";
+      const db = new Database(join(process.env.DATA_DIR, "jobs.db"));
+      const old = db.prepare("SELECT run_trigger FROM pipeline_runs WHERE id = ?").get("old-run");
+      if (!old || old.run_trigger !== null) throw new Error(\`old run changed: \${JSON.stringify(old)}\`);
+      db.prepare("INSERT INTO pipeline_runs (id, status, run_trigger) VALUES (?, ?, ?)").run("scheduled-run", "completed", "schedule");
+      db.close();
+    `);
+
+    // pipeline_runs is rebuilt on every boot; the trigger must survive it.
+    exec(`
+      ${runMigrations}
+      import Database from "better-sqlite3";
+      const db = new Database(join(process.env.DATA_DIR, "jobs.db"));
+      db.pragma("foreign_keys = ON");
+      const row = db.prepare("SELECT run_trigger FROM pipeline_runs WHERE id = ?").get("scheduled-run");
+      if (row?.run_trigger !== "schedule") {
+        throw new Error(\`run trigger lost on reboot: \${JSON.stringify(row)}\`);
+      }
+
+      const stateColumns = db.prepare("PRAGMA table_info(pipeline_schedule_state)").all().map((column) => column.name);
+      for (const required of ["last_fired_occurrence", "last_fired_local_date", "settings_saved_at", "reported_invalid_time_zone"]) {
+        if (!stateColumns.includes(required)) throw new Error(\`pipeline_schedule_state.\${required} missing\`);
+      }
+
+      const fks = db.prepare("PRAGMA foreign_key_list(pipeline_schedule_state)").all();
+      const hasFk = (from, table, onDelete) => fks.some((fk) => fk.from === from && fk.table === table && String(fk.on_delete).toUpperCase() === onDelete);
+      if (!hasFk("tenant_id", "tenants", "CASCADE") || !hasFk("owner_user_id", "users", "SET NULL")) {
+        throw new Error("pipeline_schedule_state is missing its foreign keys");
+      }
+
+      db.prepare("INSERT INTO users(id, username) VALUES (?, ?)").run("owner-1", "owner");
+      db.prepare("INSERT INTO pipeline_schedule_state(tenant_id, owner_user_id, last_fired_occurrence, last_outcome) VALUES (?, ?, ?, ?)")
+        .run("tenant_default", "owner-1", "2026-11-17T01:00:00.000Z", "started");
+      let rejected = false;
+      try {
+        db.prepare("UPDATE pipeline_schedule_state SET last_outcome = ? WHERE tenant_id = ?").run("exploded", "tenant_default");
+      } catch { rejected = true; }
+      if (!rejected) throw new Error("unknown schedule outcome accepted");
+
+      db.prepare("DELETE FROM users WHERE id = ?").run("owner-1");
+      const state = db.prepare("SELECT owner_user_id, last_fired_occurrence FROM pipeline_schedule_state WHERE tenant_id = ?").get("tenant_default");
+      if (state?.owner_user_id !== null || state?.last_fired_occurrence !== "2026-11-17T01:00:00.000Z") {
+        throw new Error(\`schedule state wrong after owner deletion: \${JSON.stringify(state)}\`);
+      }
+      db.close();
+    `);
+  });
+
   it("enforces private unique indexes when user_id is null", async () => {
     tempDir = await mkdtemp(join(tmpdir(), "job-ops-migrate-"));
     const script = `

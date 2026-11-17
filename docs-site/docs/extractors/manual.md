@@ -33,6 +33,8 @@ existing single-job flow is unchanged.
 
 When a URL is provided, backend fetch attempts depend on whether the page can be resolved with `curl`. Some job sites block or heavily script content, so certain links will not resolve cleanly.
 
+JobOps fetches only public web pages. The URL must use `http` or `https`, and its host must resolve to public internet addresses: loopback (`localhost`), private networks (for example `192.168.x.x`), link-local and cloud metadata addresses (`169.254.169.254`), and other reserved ranges are refused, also when a page redirects there. At most 5 redirects are followed, the first 5 MB of a page are read, and a page that does not answer within 15 seconds times out. For a posting on an intranet, open it yourself and paste the description.
+
 If you enter a URL and paste the description manually, the URL you entered is preserved through AI inference and takes precedence over any inferred URL.
 
 #### Import a PDF job description

@@ -9,7 +9,9 @@ import { enqueueAutoPdfRegenerationForSettingsChanges } from "@server/services/a
 import { getDesignResumeStatus } from "@server/services/design-resume";
 import { getOriginalEnvValue } from "@server/services/envSettings";
 import { resolveLlmApiKey } from "@server/services/llm/credentials";
+import { resolveLlmFallbackEligibility } from "@server/services/llm/failover/eligibility";
 import { isHostedLocalProvider } from "@server/services/llm/hosted-policy";
+import { resolveLlmEndpoint } from "@server/services/llm/provider-endpoint";
 import { LlmService } from "@server/services/llm/service";
 import { clearProfileCache } from "@server/services/profile";
 import {
@@ -84,6 +86,23 @@ export function normalizeLlmProviderValue(
   return (LLM_PROVIDER_VALUES as readonly string[]).includes(mapped)
     ? (mapped as LlmProviderId)
     : undefined;
+}
+
+/** The fallback target when LLM_FORCE_FALLBACK routes this provider's calls to it. */
+function resolveForcedFallback(primary: {
+  provider: string | null;
+  baseUrl: string | null;
+}): { provider: string } | null {
+  const eligibility = resolveLlmFallbackEligibility(
+    resolveLlmEndpoint({
+      provider: primary.provider,
+      baseUrl: primary.baseUrl,
+    }),
+  );
+  if (eligibility.state !== "active" || !eligibility.config.forced) {
+    return null;
+  }
+  return { provider: eligibility.config.target.provider };
 }
 
 export async function validateLlm(options: {
@@ -371,9 +390,37 @@ async function buildModelRequirement(): Promise<OnboardingRequirement> {
   ]);
   const normalizedProvider = normalizeLlmProviderValue(provider);
   const providerLabel = normalizedProvider ?? "selected provider";
+  // With LLM_FORCE_FALLBACK every call goes to the fallback: check that and
+  // never contact (or ask to reconnect) the primary.
+  const forcedFallback = resolveForcedFallback({
+    provider: normalizedProvider ?? null,
+    baseUrl: baseUrl ?? null,
+  });
+
+  if (completed === "1" && forcedFallback) {
+    const validation = await validateLlm({
+      provider: normalizedProvider ?? undefined,
+      baseUrl: baseUrl ?? undefined,
+    });
+    if (!validation.valid) {
+      return buildRequirement({
+        id: "model",
+        status: "needs_action",
+        title: "Fix the fallback model",
+        message:
+          validation.message ||
+          "LLM_FORCE_FALLBACK is on, but the fallback model configured in the environment is not usable. Check the LLM_FALLBACK_* variables and restart JobOps.",
+        primaryAction: "connect_model",
+        details: {
+          provider: forcedFallback.provider,
+          baseUrl: null,
+        },
+      });
+    }
+  }
 
   if (completed === "1") {
-    if (normalizedProvider === "codex") {
+    if (normalizedProvider === "codex" && !forcedFallback) {
       const validation = await validateLlm({ provider: "codex" });
       if (!validation.valid) {
         return buildRequirement({
@@ -383,6 +430,27 @@ async function buildModelRequirement(): Promise<OnboardingRequirement> {
           message:
             validation.message ||
             "The saved Codex sign-in is no longer usable. Sign in again before continuing.",
+          primaryAction: "connect_model",
+          details: {
+            provider: normalizedProvider,
+            baseUrl: null,
+          },
+        });
+      }
+    }
+
+    // Validation results are cached per token, so this does not spend a
+    // subscription request on every status check.
+    if (normalizedProvider === "claude_agent_sdk" && !forcedFallback) {
+      const validation = await validateLlm({ provider: "claude_agent_sdk" });
+      if (!validation.valid) {
+        return buildRequirement({
+          id: "model",
+          status: "needs_action",
+          title: "Reconnect your Claude subscription",
+          message:
+            validation.message ||
+            "The Claude subscription token is missing or no longer works. Run `claude setup-token`, set CLAUDE_CODE_OAUTH_TOKEN, and restart JobOps.",
           primaryAction: "connect_model",
           details: {
             provider: normalizedProvider,

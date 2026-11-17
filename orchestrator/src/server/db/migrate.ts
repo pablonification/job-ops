@@ -177,6 +177,10 @@ const pipelineRunsHasConfigSnapshot = tableHasColumn(
   "config_snapshot",
 );
 const pipelineRunsHasTenantId = tableHasColumn("pipeline_runs", "tenant_id");
+const pipelineRunsHasRunTrigger = tableHasColumn(
+  "pipeline_runs",
+  "run_trigger",
+);
 const jobsHasPdfRegenerating = tableHasColumn("jobs", "pdf_regenerating");
 const jobsHasJobBrief = tableHasColumn("jobs", "job_brief");
 const watchlistJobStatesHasUserId = tableHasColumn(
@@ -352,6 +356,7 @@ const migrations = [
     requested_config TEXT,
     effective_config TEXT,
     result_summary TEXT,
+    run_trigger TEXT,
     FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
   )`,
 
@@ -479,6 +484,46 @@ const migrations = [
   `CREATE INDEX IF NOT EXISTS idx_auth_sessions_revoked_at
     ON auth_sessions(revoked_at)`,
 
+  `CREATE TABLE IF NOT EXISTS access_tokens (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    token_prefix TEXT NOT NULL UNIQUE,
+    token_hash TEXT NOT NULL,
+    scope TEXT NOT NULL CHECK (scope IN ('read', 'write')),
+    expires_at TEXT,
+    last_used_at TEXT,
+    revoked_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  )`,
+
+  `CREATE INDEX IF NOT EXISTS idx_access_tokens_tenant_user
+    ON access_tokens(tenant_id, user_id)`,
+
+  // Scheduled runs: one row per tenant with the last claimed occurrence, so
+  // a scheduled minute fires at most once, across restarts too.
+  `CREATE TABLE IF NOT EXISTS pipeline_schedule_state (
+    tenant_id TEXT PRIMARY KEY,
+    owner_user_id TEXT,
+    last_fired_occurrence TEXT,
+    last_fired_local_date TEXT,
+    settings_saved_at TEXT,
+    reported_invalid_time_zone TEXT,
+    last_attempt_at TEXT,
+    last_outcome TEXT CHECK (last_outcome IN ('started', 'skipped_active', 'skipped_no_user', 'failed_to_start')),
+    last_outcome_detail TEXT,
+    last_digest_at TEXT,
+    last_digest_status TEXT CHECK (last_digest_status IN ('sent', 'failed')),
+    last_digest_detail TEXT,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+    FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE SET NULL
+  )`,
+
   `CREATE TABLE IF NOT EXISTS sso_identities (
     id TEXT PRIMARY KEY,
     tenant_id TEXT NOT NULL DEFAULT 'tenant_default',
@@ -538,6 +583,37 @@ const migrations = [
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
   )`,
+
+  `CREATE TABLE IF NOT EXISTS role_cvs (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL DEFAULT 'tenant_default',
+    user_id TEXT,
+    name TEXT NOT NULL,
+    role_description TEXT NOT NULL DEFAULT '',
+    tailored_headline TEXT,
+    tailored_summary TEXT,
+    tailored_skills TEXT,
+    selected_project_ids TEXT,
+    master_resume_revision TEXT,
+    generated_at TEXT,
+    pdf_path TEXT,
+    pdf_fingerprint TEXT,
+    pdf_generated_at TEXT,
+    pdf_regenerating_since TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
+  )`,
+
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_role_cvs_tenant_user_name_unique
+    ON role_cvs(tenant_id, coalesce(user_id, ''), lower(name))`,
+
+  `CREATE INDEX IF NOT EXISTS idx_role_cvs_tenant_user_updated
+    ON role_cvs(tenant_id, user_id, updated_at)`,
+
+  // Jobs can reference a Role CV. Also listed in the jobs rebuild below.
+  `ALTER TABLE jobs ADD COLUMN role_cv_id TEXT`,
+  `ALTER TABLE jobs ADD COLUMN role_cv_match_source TEXT`,
 
   `CREATE TABLE IF NOT EXISTS design_resume_assets (
     id TEXT PRIMARY KEY,
@@ -918,14 +994,16 @@ const migrations = [
     requested_config TEXT,
     effective_config TEXT,
     result_summary TEXT,
+    run_trigger TEXT,
     FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
   )`,
+  // run_trigger is carried over so run history keeps "scheduled" on reboot.
   pipelineRunsHasConfigSnapshot
-    ? `INSERT OR REPLACE INTO pipeline_runs_new (id, tenant_id, started_at, completed_at, status, jobs_discovered, jobs_processed, error_message, config_snapshot, requested_config, effective_config, result_summary)
-   SELECT id, ${pipelineRunsHasTenantId ? `COALESCE(tenant_id, ${sqlString(DEFAULT_TENANT_ID)})` : sqlString(DEFAULT_TENANT_ID)}, started_at, completed_at, status, jobs_discovered, jobs_processed, error_message, config_snapshot, NULL, NULL, NULL
+    ? `INSERT OR REPLACE INTO pipeline_runs_new (id, tenant_id, started_at, completed_at, status, jobs_discovered, jobs_processed, error_message, config_snapshot, requested_config, effective_config, result_summary, run_trigger)
+   SELECT id, ${pipelineRunsHasTenantId ? `COALESCE(tenant_id, ${sqlString(DEFAULT_TENANT_ID)})` : sqlString(DEFAULT_TENANT_ID)}, started_at, completed_at, status, jobs_discovered, jobs_processed, error_message, config_snapshot, NULL, NULL, NULL, ${pipelineRunsHasRunTrigger ? "run_trigger" : "NULL"}
    FROM pipeline_runs`
-    : `INSERT OR REPLACE INTO pipeline_runs_new (id, tenant_id, started_at, completed_at, status, jobs_discovered, jobs_processed, error_message, config_snapshot, requested_config, effective_config, result_summary)
-   SELECT id, ${sqlString(DEFAULT_TENANT_ID)}, started_at, completed_at, status, jobs_discovered, jobs_processed, error_message, NULL, NULL, NULL, NULL
+    : `INSERT OR REPLACE INTO pipeline_runs_new (id, tenant_id, started_at, completed_at, status, jobs_discovered, jobs_processed, error_message, config_snapshot, requested_config, effective_config, result_summary, run_trigger)
+   SELECT id, ${sqlString(DEFAULT_TENANT_ID)}, started_at, completed_at, status, jobs_discovered, jobs_processed, error_message, NULL, NULL, NULL, NULL, NULL
    FROM pipeline_runs`,
   `DROP TABLE IF EXISTS pipeline_runs`,
   `ALTER TABLE pipeline_runs_new RENAME TO pipeline_runs`,
@@ -993,6 +1071,8 @@ const migrations = [
     tracer_links_enabled INTEGER NOT NULL DEFAULT 0,
     sponsor_match_score REAL,
     sponsor_match_names TEXT,
+    role_cv_id TEXT,
+    role_cv_match_source TEXT,
     discovered_at TEXT NOT NULL DEFAULT (datetime('now')),
     processed_at TEXT,
     ready_at TEXT,
@@ -1009,7 +1089,7 @@ const migrations = [
     vacancy_count, work_from_home_type, title, employer, employer_url, job_url, application_link, disciplines,
     deadline, salary, location, location_evidence, degree_required, starting, job_description, status, outcome, closed_at,
     suitability_score, suitability_reason, job_brief, tailored_summary, tailored_headline, tailored_skills,
-    selected_project_ids, pdf_path, pdf_source, pdf_regenerating, pdf_fingerprint, pdf_generated_at, tracer_links_enabled, sponsor_match_score, sponsor_match_names, discovered_at, processed_at,
+    selected_project_ids, pdf_path, pdf_source, pdf_regenerating, pdf_fingerprint, pdf_generated_at, tracer_links_enabled, sponsor_match_score, sponsor_match_names, role_cv_id, role_cv_match_source, discovered_at, processed_at,
     ready_at,
     applied_at, created_at, updated_at
   )
@@ -1021,7 +1101,7 @@ const migrations = [
     vacancy_count, work_from_home_type, title, employer, employer_url, job_url, application_link, disciplines,
     deadline, salary, location, location_evidence, degree_required, starting, job_description, status, outcome, closed_at,
     suitability_score, suitability_reason, ${jobsHasJobBrief ? "job_brief" : "NULL"}, tailored_summary, tailored_headline, tailored_skills,
-    selected_project_ids, pdf_path, pdf_source, ${jobsHasPdfRegenerating ? "pdf_regenerating" : "0"}, pdf_fingerprint, pdf_generated_at, tracer_links_enabled, sponsor_match_score, sponsor_match_names, discovered_at, processed_at,
+    selected_project_ids, pdf_path, pdf_source, ${jobsHasPdfRegenerating ? "pdf_regenerating" : "0"}, pdf_fingerprint, pdf_generated_at, tracer_links_enabled, sponsor_match_score, sponsor_match_names, role_cv_id, role_cv_match_source, discovered_at, processed_at,
     ready_at,
     applied_at, created_at, updated_at
   FROM jobs`,
@@ -1194,6 +1274,10 @@ const migrations = [
   `ALTER TABLE job_chat_threads ADD COLUMN selected_email_ids TEXT NOT NULL DEFAULT '[]'`,
   `ALTER TABLE job_chat_threads ADD COLUMN selected_document_ids TEXT NOT NULL DEFAULT '[]'`,
   `ALTER TABLE pipeline_runs ADD COLUMN config_snapshot TEXT`,
+  `ALTER TABLE pipeline_runs ADD COLUMN run_trigger TEXT`,
+  `ALTER TABLE pipeline_schedule_state ADD COLUMN last_fired_local_date TEXT`,
+  `ALTER TABLE pipeline_schedule_state ADD COLUMN settings_saved_at TEXT`,
+  `ALTER TABLE pipeline_schedule_state ADD COLUMN reported_invalid_time_zone TEXT`,
   `ALTER TABLE analytics_install_state ADD COLUMN raw_event_replay_version INTEGER NOT NULL DEFAULT 0`,
   `ALTER TABLE analytics_install_state ADD COLUMN raw_event_replay_completed_at TEXT`,
 
@@ -1291,7 +1375,10 @@ for (const migration of migrations) {
           .includes("alter table job_chat_threads add column") ||
         migration
           .toLowerCase()
-          .includes("alter table analytics_install_state add column")) &&
+          .includes("alter table analytics_install_state add column") ||
+        migration
+          .toLowerCase()
+          .includes("alter table pipeline_schedule_state add column")) &&
       message.toLowerCase().includes("duplicate column name");
 
     if (isDuplicateColumn) {
@@ -1372,6 +1459,7 @@ function ensurePrivateUserColumns(): void {
     "post_application_messages",
     "tracer_links",
     "tracer_click_events",
+    "role_cvs",
   ]) {
     addUserColumn(tableName);
   }
@@ -1381,6 +1469,7 @@ function ensurePrivateUserColumns(): void {
     "pipeline_runs",
     "settings",
     "design_resume_documents",
+    "role_cvs",
     "post_application_integrations",
     "post_application_sync_runs",
   ]) {

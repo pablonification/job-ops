@@ -557,6 +557,8 @@ describe.sequential("Settings API routes", () => {
         workplaceTypes: ["remote"],
         jobspyCountryIndeed: "united kingdom",
         searchCities: "London",
+        targetCompanies: ["GoTo | Gojek", "Grab"],
+        dealbreakers: "No unpaid internships.",
       }),
     });
     const searchSettingsBody = await searchSettingsRes.json();
@@ -567,6 +569,13 @@ describe.sequential("Settings API routes", () => {
       "backend engineer",
     ]);
     expect(searchSettingsBody.data.searchCities.value).toBe("London");
+    expect(searchSettingsBody.data.targetCompanies.value).toEqual([
+      "GoTo | Gojek",
+      "Grab",
+    ]);
+    expect(searchSettingsBody.data.dealbreakers.value).toBe(
+      "No unpaid internships.",
+    );
 
     const protectedSettingsRes = await fetch(`${baseUrl}/api/settings`, {
       method: "PATCH",
@@ -583,6 +592,59 @@ describe.sequential("Settings API routes", () => {
 
     expect(protectedSettingsRes.status).toBe(403);
     expect(protectedSettingsBody.error.code).toBe("FORBIDDEN");
+  });
+
+  it("validates and normalises target companies and dealbreakers", async () => {
+    const patch = (body: Record<string, unknown>) =>
+      fetch(`${baseUrl}/api/settings`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+    const savedRes = await patch({
+      targetCompanies: [" GoTo|Gojek |Tokopedia ", "", "  ", "Grab", "grab"],
+      dealbreakers: "  No unpaid internships.\nNo roles outside Jakarta.  ",
+    });
+    const savedBody = await savedRes.json();
+    expect(savedRes.status).toBe(200);
+    expect(savedBody.data.targetCompanies).toEqual({
+      value: ["GoTo | Gojek | Tokopedia", "Grab"],
+      default: [],
+      override: ["GoTo | Gojek | Tokopedia", "Grab"],
+    });
+    expect(savedBody.data.dealbreakers.value).toBe(
+      "No unpaid internships.\nNo roles outside Jakarta.",
+    );
+
+    for (const invalid of [
+      { targetCompanies: "Grab" },
+      { targetCompanies: Array.from({ length: 201 }, (_, i) => `Co ${i}`) },
+      { targetCompanies: ["x".repeat(501)] },
+      { dealbreakers: "x".repeat(4001) },
+    ]) {
+      const res = await patch(invalid);
+      const body = await res.json();
+      expect(res.status).toBe(400);
+      expect(body.error.code).toBe("INVALID_REQUEST");
+    }
+
+    const clearedRes = await patch({
+      targetCompanies: ["", " | "],
+      dealbreakers: "   ",
+    });
+    const clearedBody = await clearedRes.json();
+    expect(clearedRes.status).toBe(200);
+    expect(clearedBody.data.targetCompanies).toEqual({
+      value: [],
+      default: [],
+      override: null,
+    });
+    expect(clearedBody.data.dealbreakers).toEqual({
+      value: "",
+      default: "",
+      override: null,
+    });
   });
 
   it("preserves upstream 404 from Reactive Resume project lookup", async () => {

@@ -4,6 +4,10 @@
 
 import { logger } from "@infra/logger";
 import { getDefaultPromptTemplate } from "@shared/prompt-template-definitions.js";
+import {
+  createTargetCompanyMatcher,
+  type TargetCompanyMatcher,
+} from "@shared/target-companies";
 import type { Job, JobBrief, UpdateJobInput } from "@shared/types";
 import { stripHtmlTags } from "@shared/utils/string";
 import { withHostedUsageReservation } from "./hosted-usage";
@@ -49,6 +53,8 @@ interface SuitabilityResult {
 type ScoringPreferences = {
   instructions: string;
   promptTemplate: string;
+  targetCompanies: TargetCompanyMatcher;
+  dealbreakers: string;
 };
 
 type ProfileRecord = Record<string, unknown>;
@@ -206,6 +212,7 @@ const NON_SOURCE_JOB_FIELDS = new Set<keyof Job>([
   "sponsorMatchScore",
   "sponsorMatchNames",
   "appliedDuplicateMatch",
+  "isTargetCompany",
   "discoveredAt",
   "processedAt",
   "readyAt",
@@ -292,6 +299,10 @@ export async function scoreJobSuitability(
     promptTemplate:
       settings.scoringPromptTemplate?.value ??
       getDefaultPromptTemplate("scoringPromptTemplate"),
+    targetCompanies: createTargetCompanyMatcher(
+      settings.targetCompanies?.value,
+    ),
+    dealbreakers: settings.dealbreakers?.value ?? "",
   });
 
   const llm = await createConfiguredLlmService("scoring");
@@ -481,6 +492,40 @@ export function parseJsonFromContent(
   throw new Error("Unable to parse JSON from model response");
 }
 
+/**
+ * Context from the Target companies setting. Empty when the setting is empty,
+ * so the rendered prompt is unchanged for users who do not use it.
+ */
+function buildTargetCompaniesSection(
+  job: Job,
+  matcher: TargetCompanyMatcher,
+): string {
+  if (matcher.isEmpty) return "";
+  const companies = matcher.groups
+    .map((group) =>
+      group.names.length > 1
+        ? `- ${group.label} (also: ${group.names.slice(1).join(", ")})`
+        : `- ${group.label}`,
+    )
+    .join("\n");
+  const matched = matcher.match(job.employer);
+  const verdict = matched
+    ? `\nThis job's employer matches the target company "${matched.label}".`
+    : "";
+  return `\n\nTARGET COMPANIES (employers the candidate most wants to join):\n${companies}${verdict}\nWhen fit is otherwise comparable, favour a job at a target company: treat it as a tie-breaker worth a modest boost of a few points. Never let it lift a poor fit to a high score.`;
+}
+
+/** Context from the Dealbreakers setting; empty when the setting is empty. */
+function buildDealbreakersSection(dealbreakers: string): string {
+  const text = dealbreakers.trim();
+  if (!text) return "";
+  return `\n\nDEALBREAKERS (conditions the candidate will not accept):\n${text}\nIf the listing clearly violates a dealbreaker, score it 20 or lower and name the violated dealbreaker in the reason. Do not treat missing or unclear information as a violation.`;
+}
+
+function templateHasPlaceholder(template: string, token: string): boolean {
+  return new RegExp(`\\{\\{\\s*${token}\\s*\\}\\}`).test(template);
+}
+
 function buildScoringPrompt(
   job: Job,
   profile: Record<string, unknown>,
@@ -496,6 +541,24 @@ function buildScoringPrompt(
     jobDescription,
   });
 
+  const targetCompaniesSection = buildTargetCompaniesSection(
+    job,
+    preferences.targetCompanies,
+  );
+  const dealbreakersSection = buildDealbreakersSection(
+    preferences.dealbreakers,
+  );
+  // Custom templates written before these placeholders existed still get the
+  // context, appended after the template, so it is never silently dropped.
+  const appendedContext = [
+    templateHasPlaceholder(preferences.promptTemplate, "targetCompaniesSection")
+      ? ""
+      : targetCompaniesSection,
+    templateHasPlaceholder(preferences.promptTemplate, "dealbreakersSection")
+      ? ""
+      : dealbreakersSection,
+  ].join("");
+
   return `${renderPromptTemplate(preferences.promptTemplate, {
     profileJson: JSON.stringify(profile),
     jobTitle: job.title,
@@ -508,7 +571,9 @@ function buildScoringPrompt(
     scoringInstructionsText: preferences.instructions
       ? preferences.instructions
       : "No additional custom scoring instructions.",
-  })}\n\nJOB DATA (JSON):\n${jobJson}\n\n${SCORING_OUTPUT_INSTRUCTIONS}`;
+    targetCompaniesSection,
+    dealbreakersSection,
+  })}${appendedContext}\n\nJOB DATA (JSON):\n${jobJson}\n\n${SCORING_OUTPUT_INSTRUCTIONS}`;
 }
 
 function sanitizeProfileForPrompt(

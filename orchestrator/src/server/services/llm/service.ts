@@ -1,10 +1,20 @@
 import { logger } from "@infra/logger";
 import { getOriginalEnvValue } from "@server/services/envSettings";
 import { resolveLlmApiKey } from "@server/services/llm/credentials";
-import { mapGlmProviderAlias } from "@shared/settings-registry";
 import { toStringOrNull } from "@shared/utils/type-conversion";
+import { ClaudeAgentSdkClient } from "./claude-agent-sdk/client";
+import { classifyClaudeAgentSdkError } from "./claude-agent-sdk/errors";
 import { ClaudeCliClient } from "./claude-cli/client";
 import { CodexClient } from "./codex/client";
+import {
+  type LlmFallbackTarget,
+  resolveLlmFallbackConfig,
+} from "./failover/config";
+import {
+  type LlmFallbackEligibility,
+  resolveLlmFallbackEligibility,
+} from "./failover/eligibility";
+import { runWithLlmFailover } from "./failover/runner";
 import { GeminiCliClient } from "./gemini-cli/client";
 import {
   buildModeCacheKey,
@@ -17,11 +27,13 @@ import {
   parseRetryAfterMs,
   shouldRetryAttempt,
 } from "./policies/retry-policy";
+import { resolveLlmEndpoint } from "./provider-endpoint";
 import { strategies } from "./providers";
 import { normalizeLiteLlmBaseUrl } from "./providers/litellm";
 import type {
   JsonSchemaDefinition,
   LlmApiError,
+  LlmFailoverOptions,
   LlmProvider,
   LlmRequestOptions,
   LlmResponse,
@@ -47,23 +59,12 @@ export class LlmService {
   private readonly codexClient: CodexClient;
   private readonly geminiCliClient: GeminiCliClient;
   private readonly claudeCliClient: ClaudeCliClient;
+  private readonly claudeAgentSdkClient: ClaudeAgentSdkClient;
+  private readonly failover: LlmFailoverOptions | false;
 
   constructor(options: LlmServiceOptions = {}) {
-    const normalizedBaseUrl =
-      toStringOrNull(options.baseUrl) ||
-      (options.allowEnvironmentCredentials === false
-        ? null
-        : toStringOrNull(getOriginalEnvValue("LLM_BASE_URL"))) ||
-      null;
-    const resolvedProvider = normalizeProvider(
-      options.provider ?? getOriginalEnvValue("LLM_PROVIDER") ?? null,
-      normalizedBaseUrl,
-    );
-
+    const { provider: resolvedProvider, baseUrl } = resolveLlmEndpoint(options);
     const strategy = strategies[resolvedProvider];
-    const baseUrl = providerUsesConfiguredBaseUrl(resolvedProvider)
-      ? normalizedBaseUrl || strategy.defaultBaseUrl
-      : strategy.defaultBaseUrl;
 
     const apiKey = resolveLlmApiKey({
       storedApiKey: options.apiKey,
@@ -93,9 +94,56 @@ export class LlmService {
     this.codexClient = new CodexClient();
     this.geminiCliClient = new GeminiCliClient();
     this.claudeCliClient = new ClaudeCliClient();
+    this.claudeAgentSdkClient =
+      options.claudeAgentSdkClient ?? new ClaudeAgentSdkClient();
+    this.failover = options.failover ?? {};
   }
 
+  /**
+   * The single choke point for structured LLM calls. With a fallback
+   * configured (`LLM_FALLBACK_*`), a provider-side failure of this service's
+   * provider is retried once on the fallback; without one this is exactly
+   * the provider call.
+   */
   async callJson<T>(options: LlmRequestOptions<T>): Promise<LlmResponse<T>> {
+    const eligibility = this.resolveFallback();
+    // No usable fallback: exactly the provider call.
+    if (eligibility.state !== "active") return this.callProviderJson(options);
+
+    const { config } = eligibility;
+    const fallbackService = createFallbackLlmService(config.target);
+    const result = await runWithLlmFailover<T>({
+      operation: "callJson",
+      jobId: options.jobId,
+      signal: options.signal,
+      breaker: this.failover === false ? undefined : this.failover.breaker,
+      primary: {
+        provider: this.provider,
+        baseUrl: this.baseUrl,
+        apiKey: this.apiKey,
+      },
+      fallback: config,
+      callPrimary: () => this.callProviderJson(options),
+      // The fallback gets its own model; the primary's (including any
+      // per-purpose override the caller resolved) is never sent to it.
+      callFallback: () =>
+        fallbackService.callJson<T>({ ...options, model: config.target.model }),
+    });
+    if (result.success) return result;
+    return { success: false, error: result.error };
+  }
+
+  private resolveFallback(): LlmFallbackEligibility {
+    if (this.failover === false) return { state: "absent" };
+    return resolveLlmFallbackEligibility(
+      { provider: this.provider, baseUrl: this.baseUrl },
+      this.failover.config ?? resolveLlmFallbackConfig(),
+    );
+  }
+
+  private async callProviderJson<T>(
+    options: LlmRequestOptions<T>,
+  ): Promise<LlmResponse<T>> {
     if (!this.allowCliProviders && isCliProvider(this.provider)) {
       return {
         success: false,
@@ -112,6 +160,10 @@ export class LlmService {
 
     if (this.provider === "claude_cli") {
       return this.callClaudeCliJson(options);
+    }
+
+    if (this.provider === "claude_agent_sdk") {
+      return this.callClaudeAgentSdkJson(options);
     }
 
     if (this.strategy.requiresApiKey && !this.apiKey) {
@@ -167,6 +219,14 @@ export class LlmService {
   }
 
   async validateCredentials(): Promise<LlmValidationResult> {
+    // With LLM_FORCE_FALLBACK every call goes to the fallback, so checking
+    // (and spending a request on) the primary would only mislead.
+    const eligibility = this.resolveFallback();
+    if (eligibility.state === "active" && eligibility.config.forced) {
+      return createFallbackLlmService(
+        eligibility.config.target,
+      ).validateCredentials();
+    }
     if (!this.allowCliProviders && isCliProvider(this.provider)) {
       return {
         valid: false,
@@ -183,6 +243,10 @@ export class LlmService {
 
     if (this.provider === "claude_cli") {
       return this.claudeCliClient.validateCredentials();
+    }
+
+    if (this.provider === "claude_agent_sdk") {
+      return this.claudeAgentSdkClient.validateCredentials();
     }
 
     if (this.strategy.requiresApiKey && !this.apiKey) {
@@ -259,6 +323,10 @@ export class LlmService {
     if (this.provider === "claude_cli") {
       const models = await this.claudeCliClient.listModels();
       return sortModels(models, getPreferredModel(this.provider));
+    }
+
+    if (this.provider === "claude_agent_sdk") {
+      return this.claudeAgentSdkClient.listModels();
     }
 
     if (this.strategy.requiresApiKey && !this.apiKey) {
@@ -431,6 +499,60 @@ export class LlmService {
 
         if (attempt < maxRetries && shouldRetryAttempt({ message })) {
           logger.warn("Claude CLI attempt failed, retrying", {
+            jobId: jobId ?? "unknown",
+            attempt: attempt + 1,
+            maxRetries,
+            message,
+          });
+          continue;
+        }
+
+        return { success: false, error: message };
+      }
+    }
+
+    return { success: false, error: "All retry attempts failed" };
+  }
+
+  private async callClaudeAgentSdkJson<T>(
+    options: LlmRequestOptions<T>,
+  ): Promise<LlmResponse<T>> {
+    const { maxRetries = 0, retryDelayMs = 500, signal, jobId } = options;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        if (attempt > 0) {
+          logger.info("LLM retry attempt", {
+            jobId: jobId ?? "unknown",
+            attempt,
+            maxRetries,
+          });
+          await sleep(getRetryDelayMs(retryDelayMs, attempt));
+        }
+
+        const result = await this.claudeAgentSdkClient.callJson({
+          ...options,
+          signal,
+        });
+        const parsed = parseJsonContent<T>(result.text, jobId);
+        return { success: true, data: parsed };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        // Auth, plan limits and caller aborts will not clear on a quick retry.
+        const kind = classifyClaudeAgentSdkError(message);
+        const retryable =
+          kind !== "auth" &&
+          kind !== "usage_limit" &&
+          kind !== "rate_limit" &&
+          kind !== "aborted" &&
+          !signal?.aborted;
+
+        if (
+          retryable &&
+          attempt < maxRetries &&
+          shouldRetryAttempt({ message })
+        ) {
+          logger.warn("Claude (subscription) attempt failed, retrying", {
             jobId: jobId ?? "unknown",
             attempt: attempt + 1,
             maxRetries,
@@ -800,69 +922,31 @@ export class LlmService {
   }
 }
 
-function normalizeProvider(
-  raw: string | null,
-  baseUrl: string | null,
-): LlmProvider {
-  const normalized = normalizeProviderName(raw);
-  if (normalized === "openai_compatible") {
-    if (
-      baseUrl?.includes("localhost:1234") ||
-      baseUrl?.includes("127.0.0.1:1234")
-    ) {
-      return "lmstudio";
-    }
-    return "openai_compatible";
-  }
-  if (normalized === "openai") return "openai";
-  if (normalized === "atlascloud" || normalized === "atlas_cloud") {
-    return "atlascloud";
-  }
-  if (normalized === "litellm" || normalized === "litellm_proxy") {
-    return "litellm";
-  }
-  if (normalized === "anthropic" || normalized === "claude") {
-    return "anthropic";
-  }
-  if (normalized === "glm") return "glm";
-  if (normalized === "gemini") return "gemini";
-  if (normalized === "gemini_cli") return "gemini_cli";
-  if (normalized === "claude_cli") return "claude_cli";
-  if (normalized === "lmstudio") return "lmstudio";
-  if (normalized === "ollama") return "ollama";
-  if (normalized === "codex") return "codex";
-  if (normalized === "requesty") return "requesty";
-  if (normalized === "api_route") return "api_route";
-  if (normalized === "orcarouter") return "orcarouter";
-  if (normalized && normalized !== "openrouter") {
-    logger.warn("Unknown LLM provider, defaulting to openrouter", {
-      normalized,
-    });
-  }
-  return "openrouter";
-}
-
-function normalizeProviderName(raw: string | null): string | undefined {
-  const normalized = raw?.trim().toLowerCase().replace(/[-.]/g, "_");
-  if (!normalized) return normalized;
-  return mapGlmProviderAlias(normalized);
-}
-
-function providerUsesConfiguredBaseUrl(provider: LlmProvider): boolean {
-  return (
-    provider === "litellm" ||
-    provider === "lmstudio" ||
-    provider === "ollama" ||
-    provider === "openai_compatible" ||
-    provider === "glm"
-  );
+/**
+ * The service that serves fallback calls: built only from the fallback's own
+ * provider, base URL and key. Environment credentials are off so the
+ * primary's `LLM_API_KEY` / `LLM_BASE_URL` can never reach the fallback's
+ * endpoint, and failover is off so a fallback cannot fail over again.
+ */
+export function createFallbackLlmService(
+  target: LlmFallbackTarget,
+): LlmService {
+  return new LlmService({
+    provider: target.provider,
+    baseUrl: target.baseUrl,
+    apiKey: target.apiKey,
+    allowEnvironmentCredentials: false,
+    allowCliProviders: true,
+    failover: false,
+  });
 }
 
 function isCliProvider(provider: LlmProvider): boolean {
   return (
     provider === "codex" ||
     provider === "gemini_cli" ||
-    provider === "claude_cli"
+    provider === "claude_cli" ||
+    provider === "claude_agent_sdk"
   );
 }
 
@@ -895,6 +979,7 @@ function getPreferredModel(provider: LlmProvider): string | null {
     return "google/gemini-3-flash-preview";
   }
   if (provider === "claude_cli") return "claude-sonnet-5";
+  if (provider === "claude_agent_sdk") return "sonnet";
   return null;
 }
 

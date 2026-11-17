@@ -134,6 +134,22 @@ export const useOrchestratorFilters = () => {
     [setSearchParams],
   );
 
+  const targetCompaniesOnly = searchParams.get("target") === "1";
+
+  const setTargetCompaniesOnly = useCallback(
+    (value: boolean) => {
+      setSearchParams(
+        (prev) => {
+          if (value) prev.set("target", "1");
+          else prev.delete("target");
+          return prev;
+        },
+        { replace: true },
+      );
+    },
+    [setSearchParams],
+  );
+
   const salaryFilter = useMemo((): SalaryFilter => {
     const modeRaw = searchParams.get("salaryMode") ?? "at_least";
     const mode = allowedSalaryModes.includes(modeRaw as SalaryFilterMode)
@@ -363,6 +379,7 @@ export const useOrchestratorFilters = () => {
       (prev) => {
         prev.delete("source");
         prev.delete("sponsor");
+        prev.delete("target");
         prev.delete("salaryMode");
         prev.delete("salaryMin");
         prev.delete("salaryMax");
@@ -390,6 +407,8 @@ export const useOrchestratorFilters = () => {
     setSourceFilter,
     sponsorFilter,
     setSponsorFilter,
+    targetCompaniesOnly,
+    setTargetCompaniesOnly,
     salaryFilter,
     setSalaryFilter,
     scoreFilter,

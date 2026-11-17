@@ -36,6 +36,7 @@ export const LLM_PROVIDERS = [
   "gemini",
   "gemini_cli",
   "claude_cli",
+  "claude_agent_sdk",
   "codex",
 ] as const;
 
@@ -49,6 +50,7 @@ export const LLM_MODEL_SUGGESTION_PROVIDERS = [
   "gemini",
   "gemini_cli",
   "claude_cli",
+  "claude_agent_sdk",
   "ollama",
   "requesty",
   "api_route",
@@ -71,6 +73,7 @@ export const LLM_PROVIDER_LABELS: Record<LlmProviderId, string> = {
   gemini: "Gemini",
   gemini_cli: "Gemini (CLI)",
   claude_cli: "Claude (CLI)",
+  claude_agent_sdk: "Claude (subscription)",
   codex: "Codex",
 };
 
@@ -127,6 +130,8 @@ const PROVIDER_HINTS: Record<LlmProviderId, string> = {
     "Gemini (CLI) runs the official Google Gemini CLI on this host using your OAuth session or CLI API key — no JobOps LLM key.",
   claude_cli:
     "Claude (CLI) runs the official Claude Code CLI on this host using your subscription token or API key — no JobOps LLM key.",
+  claude_agent_sdk:
+    "Claude (subscription) runs your Claude Pro or Max plan through the Claude Agent SDK on this host, using the CLAUDE_CODE_OAUTH_TOKEN from `claude setup-token` — no JobOps LLM key.",
   codex:
     "Codex runs through a local app-server process and uses your Codex login session.",
 };
@@ -187,6 +192,9 @@ const PROVIDER_KEY_HELPERS: Record<
   },
   claude_cli: {
     text: "Authenticate with the Claude CLI (claude setup-token); see docs link below",
+  },
+  claude_agent_sdk: {
+    text: "Run claude setup-token and set CLAUDE_CODE_OAUTH_TOKEN; see the setup note below",
   },
   codex: { text: "No API key required when Codex is authenticated locally" },
 };

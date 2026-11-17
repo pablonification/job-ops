@@ -18,6 +18,7 @@ import {
   toRxResumeValidationPayload,
   validateAndMaybePersistRxResumeMode,
 } from "@client/lib/rxresume-config";
+import { AgentAccessSection } from "@client/pages/settings/components/AgentAccessSection";
 import { BackupSettingsSection } from "@client/pages/settings/components/BackupSettingsSection";
 import { BillingSettingsSection } from "@client/pages/settings/components/BillingSettingsSection";
 import { ChatSettingsSection } from "@client/pages/settings/components/ChatSettingsSection";
@@ -27,20 +28,32 @@ import { EnvironmentSettingsSection } from "@client/pages/settings/components/En
 import { ModelSettingsSection } from "@client/pages/settings/components/ModelSettingsSection";
 import { PromptTemplatesSection } from "@client/pages/settings/components/PromptTemplatesSection";
 import { ReactiveResumeSection } from "@client/pages/settings/components/ReactiveResumeSection";
+import { ScheduleDigestSection } from "@client/pages/settings/components/ScheduleDigestSection";
 import { ScoringSettingsSection } from "@client/pages/settings/components/ScoringSettingsSection";
 import { TracerLinksSettingsSection } from "@client/pages/settings/components/TracerLinksSettingsSection";
 import { WebhooksSection } from "@client/pages/settings/components/WebhooksSection";
+import type { ScheduleValues } from "@client/pages/settings/types";
 import {
   type LlmProviderId,
   normalizeLlmProvider,
   resumeProjectsEqual,
 } from "@client/pages/settings/utils";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { ID_BIG_TECH_COMPANY_IDS } from "@shared/extractors/indonesia/big-tech.js";
 import { normalizeStringArray } from "@shared/normalize-string-array.js";
+import {
+  DEFAULT_DIGEST_MAX_JOBS,
+  DEFAULT_DIGEST_MODE,
+  DEFAULT_SCHEDULE_CATCH_UP_MINUTES,
+  DEFAULT_SCHEDULE_TIME,
+  DEFAULT_SCHEDULE_TIME_ZONE,
+  SCHEDULE_WEEKDAY_VALUES,
+} from "@shared/pipeline-schedule.js";
 import {
   type UpdateSettingsInput,
   updateSettingsSchema,
 } from "@shared/settings-schema.js";
+import { normalizeTargetCompanyLines } from "@shared/target-companies.js";
 import type {
   AppSettings,
   JobStatus,
@@ -109,9 +122,24 @@ const DEFAULT_FORM_VALUES: UpdateSettingsInput = {
   missingSalaryPenalty: null,
   autoSkipScoreThreshold: null,
   blockedCompanyKeywords: [],
+  targetCompanies: [],
+  dealbreakers: "",
+  idbigtechCompanies: null,
   ghostwriterSystemPromptTemplate: "",
   tailoringPromptTemplate: "",
+  roleCvPromptTemplate: "",
+  roleCvPipelineMode: null,
   scoringPromptTemplate: "",
+  scheduleEnabled: null,
+  scheduleTime: null,
+  scheduleTimeZone: null,
+  scheduleWeekdays: null,
+  scheduleCatchUpMinutes: null,
+  scheduleSearchPresetId: "",
+  digestMode: null,
+  digestMaxJobs: null,
+  telegramChatId: "",
+  telegramBotToken: "",
 };
 
 type LlmProviderValue = LlmProviderId | null;
@@ -138,7 +166,9 @@ type SettingsSectionId =
   | "webhooks"
   | "tracer-links"
   | "environment"
+  | "agent-access"
   | "display"
+  | "schedule"
   | "backup"
   | "danger-zone";
 
@@ -149,6 +179,7 @@ type SettingsGroupId =
   | "integrations"
   | "workspaces"
   | "display"
+  | "automation"
   | "backups"
   | "danger";
 
@@ -195,6 +226,8 @@ const SETTINGS_NAV_GROUPS: SettingsNavGroup[] = [
           "gemini_cli",
           "claude",
           "claude_cli",
+          "claude_agent_sdk",
+          "subscription",
           "ollama",
           "litellm",
           "codex",
@@ -259,12 +292,26 @@ const SETTINGS_NAV_GROUPS: SettingsNavGroup[] = [
       {
         id: "environment",
         label: "Workspace Access",
-        description: "Service credentials and authentication protection.",
+        description:
+          "Service credentials, job source options and authentication protection.",
         searchTerms: [
           "security",
           "auth",
           "adzuna",
           "ukvisajobs",
+          "job sources",
+          "indonesia big tech",
+          "companies",
+          "grab",
+          "gojek",
+          "goto",
+          "tokopedia",
+          "tiktok",
+          "shopee",
+          "traveloka",
+          "tiket",
+          "blibli",
+          "xendit",
           "sso",
           "single sign-on",
           "oidc",
@@ -272,6 +319,20 @@ const SETTINGS_NAV_GROUPS: SettingsNavGroup[] = [
           "github",
           "connected accounts",
           "password",
+        ],
+      },
+      {
+        id: "agent-access",
+        label: "Agent access",
+        description:
+          "Access tokens and the MCP connection for Claude Code and other agents.",
+        searchTerms: [
+          "mcp",
+          "agent",
+          "claude code",
+          "token",
+          "api",
+          "personal access token",
         ],
       },
     ],
@@ -285,6 +346,26 @@ const SETTINGS_NAV_GROUPS: SettingsNavGroup[] = [
         label: "Display Preferences",
         description: "Sponsor badges and markdown rendering behavior.",
         searchTerms: ["markdown", "sponsor", "rendering", "appearance"],
+      },
+    ],
+  },
+  {
+    id: "automation",
+    label: "Automation",
+    items: [
+      {
+        id: "schedule",
+        label: "Schedule & digest",
+        description: "Daily runs on a schedule and a Telegram digest.",
+        searchTerms: [
+          "schedule",
+          "daily",
+          "cron",
+          "telegram",
+          "digest",
+          "notifications",
+          "bot",
+        ],
       },
     ],
   },
@@ -342,6 +423,7 @@ const SECTION_FIELD_MAP: Record<
   "prompt-templates": [
     "ghostwriterSystemPromptTemplate",
     "tailoringPromptTemplate",
+    "roleCvPromptTemplate",
     "scoringPromptTemplate",
   ],
   scoring: [
@@ -349,6 +431,8 @@ const SECTION_FIELD_MAP: Record<
     "missingSalaryPenalty",
     "autoSkipScoreThreshold",
     "blockedCompanyKeywords",
+    "targetCompanies",
+    "dealbreakers",
   ],
   "reactive-resume": [
     "pdfRenderer",
@@ -364,11 +448,26 @@ const SECTION_FIELD_MAP: Record<
     "ukvisajobsPassword",
     "adzunaAppId",
     "adzunaAppKey",
+    "idbigtechCompanies",
   ],
+  "agent-access": [],
   display: [
     "showSponsorInfo",
     "renderMarkdownInJobDescriptions",
     "autoTailorOnManualImport",
+    "roleCvPipelineMode",
+  ],
+  schedule: [
+    "scheduleEnabled",
+    "scheduleTime",
+    "scheduleTimeZone",
+    "scheduleWeekdays",
+    "scheduleCatchUpMinutes",
+    "scheduleSearchPresetId",
+    "digestMode",
+    "digestMaxJobs",
+    "telegramChatId",
+    "telegramBotToken",
   ],
   backup: ["backupEnabled", "backupHour", "backupMaxCount"],
   "danger-zone": [],
@@ -469,9 +568,24 @@ const NULL_SETTINGS_PAYLOAD: UpdateSettingsInput = {
   missingSalaryPenalty: null,
   autoSkipScoreThreshold: null,
   blockedCompanyKeywords: null,
+  targetCompanies: null,
+  dealbreakers: null,
+  idbigtechCompanies: null,
   ghostwriterSystemPromptTemplate: null,
   tailoringPromptTemplate: null,
+  roleCvPromptTemplate: null,
+  roleCvPipelineMode: null,
   scoringPromptTemplate: null,
+  scheduleEnabled: null,
+  scheduleTime: null,
+  scheduleTimeZone: null,
+  scheduleWeekdays: null,
+  scheduleCatchUpMinutes: null,
+  scheduleSearchPresetId: null,
+  digestMode: null,
+  digestMaxJobs: null,
+  telegramChatId: null,
+  telegramBotToken: null,
 };
 
 function getResetSettingsPayload(
@@ -538,11 +652,82 @@ const mapSettingsToForm = (data: AppSettings): UpdateSettingsInput => ({
   missingSalaryPenalty: data.missingSalaryPenalty.override,
   autoSkipScoreThreshold: data.autoSkipScoreThreshold.override,
   blockedCompanyKeywords: data.blockedCompanyKeywords.override ?? [],
+  targetCompanies: data.targetCompanies?.override ?? [],
+  dealbreakers: data.dealbreakers?.override ?? "",
+  idbigtechCompanies:
+    data.idbigtechCompanies?.override ?? data.idbigtechCompanies?.value ?? null,
   ghostwriterSystemPromptTemplate:
     data.ghostwriterSystemPromptTemplate.value ?? "",
   tailoringPromptTemplate: data.tailoringPromptTemplate.value ?? "",
+  roleCvPromptTemplate: data.roleCvPromptTemplate.value ?? "",
+  roleCvPipelineMode: data.roleCvPipelineMode.override,
   scoringPromptTemplate: data.scoringPromptTemplate.value ?? "",
+  scheduleEnabled: data.scheduleEnabled?.value ?? false,
+  scheduleTime: data.scheduleTime?.value ?? null,
+  scheduleTimeZone: data.scheduleTimeZone?.value ?? null,
+  scheduleWeekdays: data.scheduleWeekdays?.value ?? null,
+  scheduleCatchUpMinutes: data.scheduleCatchUpMinutes?.value ?? null,
+  scheduleSearchPresetId: data.scheduleSearchPresetId?.value ?? "",
+  digestMode: data.digestMode?.value ?? null,
+  digestMaxJobs: data.digestMaxJobs?.value ?? null,
+  telegramChatId: data.telegramChatId?.value ?? "",
+  telegramBotToken: "",
 });
+
+const sameWeekdays = (left: readonly string[], right: readonly string[]) =>
+  left.length === right.length && left.every((day) => right.includes(day));
+
+/**
+ * Changed schedule and digest fields only (they are admin-only, so a save of
+ * other settings must not carry them). A value equal to the default clears
+ * the override. The bot token is handled with the other secrets.
+ */
+const buildSchedulePayload = (
+  data: UpdateSettingsInput,
+  schedule: ScheduleValues,
+): Partial<UpdateSettingsInput> => {
+  const out: Partial<UpdateSettingsInput> = {};
+  const scalar = <
+    K extends
+      | "scheduleEnabled"
+      | "scheduleTime"
+      | "scheduleTimeZone"
+      | "scheduleCatchUpMinutes"
+      | "scheduleSearchPresetId"
+      | "digestMode"
+      | "digestMaxJobs"
+      | "telegramChatId",
+  >(
+    key: K,
+    raw: UpdateSettingsInput[K],
+  ) => {
+    const value = typeof raw === "string" ? raw.trim() : raw;
+    if (value === undefined || value === null) return;
+    if (value === schedule[key].effective) return;
+    (out as Record<string, unknown>)[key] =
+      value === schedule[key].default || value === "" ? null : value;
+  };
+  scalar("scheduleEnabled", data.scheduleEnabled);
+  scalar("scheduleTime", data.scheduleTime);
+  scalar("scheduleTimeZone", data.scheduleTimeZone);
+  scalar("scheduleCatchUpMinutes", data.scheduleCatchUpMinutes);
+  scalar("scheduleSearchPresetId", data.scheduleSearchPresetId);
+  scalar("digestMode", data.digestMode);
+  scalar("digestMaxJobs", data.digestMaxJobs);
+  scalar("telegramChatId", data.telegramChatId);
+  if (
+    data.scheduleWeekdays &&
+    !sameWeekdays(data.scheduleWeekdays, schedule.scheduleWeekdays.effective)
+  ) {
+    out.scheduleWeekdays = sameWeekdays(
+      data.scheduleWeekdays,
+      schedule.scheduleWeekdays.default,
+    )
+      ? null
+      : data.scheduleWeekdays;
+  }
+  return out;
+};
 
 const normalizeString = (value: string | null | undefined) => {
   const trimmed = value?.trim();
@@ -657,6 +842,7 @@ const getDerivedSettings = (settings: AppSettings | null) => {
       llmApiKeyHint: settings?.llmApiKeyHint ?? null,
       llmPurposeOverrides: settings?.llmPurposeOverrides?.value ?? {},
       llmPurposeApiKeyHints: settings?.llmPurposeApiKeyHints ?? {},
+      llmFallback: settings?.llmFallback ?? null,
     },
     pipelineWebhook: {
       effective: settings?.pipelineWebhookUrl?.value ?? "",
@@ -692,6 +878,10 @@ const getDerivedSettings = (settings: AppSettings | null) => {
       autoTailorOnManualImport: {
         effective: settings?.autoTailorOnManualImport?.value ?? true,
         default: settings?.autoTailorOnManualImport?.default ?? true,
+      },
+      roleCvPipelineMode: {
+        effective: settings?.roleCvPipelineMode?.value ?? "refine",
+        default: settings?.roleCvPipelineMode?.default ?? "refine",
       },
     },
     chat: {
@@ -743,11 +933,70 @@ const getDerivedSettings = (settings: AppSettings | null) => {
         webhookSecretHint: settings?.webhookSecretHint ?? null,
       },
     },
+    sources: {
+      idbigtechCompanies: {
+        effective: settings?.idbigtechCompanies?.value ?? [
+          ...ID_BIG_TECH_COMPANY_IDS,
+        ],
+        default: settings?.idbigtechCompanies?.default ?? [
+          ...ID_BIG_TECH_COMPANY_IDS,
+        ],
+      },
+    },
     defaultResumeProjects: settings?.resumeProjects?.default ?? null,
 
     profileProjects,
     maxProjectsTotal: profileProjects.length,
 
+    schedule: {
+      scheduleEnabled: {
+        effective: settings?.scheduleEnabled?.value ?? false,
+        default: settings?.scheduleEnabled?.default ?? false,
+      },
+      scheduleTime: {
+        effective: settings?.scheduleTime?.value ?? DEFAULT_SCHEDULE_TIME,
+        default: settings?.scheduleTime?.default ?? DEFAULT_SCHEDULE_TIME,
+      },
+      scheduleTimeZone: {
+        effective:
+          settings?.scheduleTimeZone?.value ?? DEFAULT_SCHEDULE_TIME_ZONE,
+        default:
+          settings?.scheduleTimeZone?.default ?? DEFAULT_SCHEDULE_TIME_ZONE,
+      },
+      scheduleWeekdays: {
+        effective: settings?.scheduleWeekdays?.value ?? [
+          ...SCHEDULE_WEEKDAY_VALUES,
+        ],
+        default: settings?.scheduleWeekdays?.default ?? [
+          ...SCHEDULE_WEEKDAY_VALUES,
+        ],
+      },
+      scheduleCatchUpMinutes: {
+        effective:
+          settings?.scheduleCatchUpMinutes?.value ??
+          DEFAULT_SCHEDULE_CATCH_UP_MINUTES,
+        default:
+          settings?.scheduleCatchUpMinutes?.default ??
+          DEFAULT_SCHEDULE_CATCH_UP_MINUTES,
+      },
+      scheduleSearchPresetId: {
+        effective: settings?.scheduleSearchPresetId?.value ?? "",
+        default: settings?.scheduleSearchPresetId?.default ?? "",
+      },
+      digestMode: {
+        effective: settings?.digestMode?.value ?? DEFAULT_DIGEST_MODE,
+        default: settings?.digestMode?.default ?? DEFAULT_DIGEST_MODE,
+      },
+      digestMaxJobs: {
+        effective: settings?.digestMaxJobs?.value ?? DEFAULT_DIGEST_MAX_JOBS,
+        default: settings?.digestMaxJobs?.default ?? DEFAULT_DIGEST_MAX_JOBS,
+      },
+      telegramChatId: {
+        effective: settings?.telegramChatId?.value ?? "",
+        default: settings?.telegramChatId?.default ?? "",
+      },
+    } satisfies ScheduleValues,
+    telegramBotTokenHint: settings?.telegramBotTokenHint ?? null,
     backup: {
       backupEnabled: {
         effective: settings?.backupEnabled?.value ?? false,
@@ -779,6 +1028,14 @@ const getDerivedSettings = (settings: AppSettings | null) => {
         effective: settings?.blockedCompanyKeywords?.value ?? [],
         default: settings?.blockedCompanyKeywords?.default ?? [],
       },
+      targetCompanies: {
+        effective: settings?.targetCompanies?.value ?? [],
+        default: settings?.targetCompanies?.default ?? [],
+      },
+      dealbreakers: {
+        effective: settings?.dealbreakers?.value ?? "",
+        default: settings?.dealbreakers?.default ?? "",
+      },
     },
     promptTemplates: {
       ghostwriterSystemPromptTemplate: {
@@ -788,6 +1045,10 @@ const getDerivedSettings = (settings: AppSettings | null) => {
       tailoringPromptTemplate: {
         effective: settings?.tailoringPromptTemplate?.value ?? "",
         default: settings?.tailoringPromptTemplate?.default ?? "",
+      },
+      roleCvPromptTemplate: {
+        effective: settings?.roleCvPromptTemplate?.value ?? "",
+        default: settings?.roleCvPromptTemplate?.default ?? "",
       },
       scoringPromptTemplate: {
         effective: settings?.scoringPromptTemplate?.value ?? "",
@@ -983,9 +1244,12 @@ export const SettingsPage: React.FC = () => {
     display,
     chat,
     envSettings,
+    sources,
     defaultResumeProjects,
     profileProjects,
     backup,
+    schedule,
+    telegramBotTokenHint,
     scoring,
     promptTemplates,
   } = derived;
@@ -1195,6 +1459,13 @@ export const SettingsPage: React.FC = () => {
         if (value !== undefined) envPayload.webhookSecret = value;
       }
 
+      // Schedule and digest settings are admin-only: send only what changed.
+      const schedulePayload = buildSchedulePayload(data, schedule);
+      if (dirtyFields.telegramBotToken) {
+        const value = normalizePrivateInput(data.telegramBotToken);
+        if (value !== undefined) schedulePayload.telegramBotToken = value;
+      }
+
       const llmPayload: Partial<UpdateSettingsInput> = canEditLlmSettings
         ? {
             model: dirtyFields.llmProvider
@@ -1265,6 +1536,10 @@ export const SettingsPage: React.FC = () => {
           data.autoTailorOnManualImport,
           display.autoTailorOnManualImport.default,
         ),
+        roleCvPipelineMode: nullIfSame(
+          data.roleCvPipelineMode,
+          display.roleCvPipelineMode.default,
+        ),
         chatStyleTone: normalizeString(data.chatStyleTone),
         chatStyleFormality: normalizeString(data.chatStyleFormality),
         chatStyleConstraints: normalizeString(data.chatStyleConstraints),
@@ -1313,6 +1588,18 @@ export const SettingsPage: React.FC = () => {
             ? null
             : normalized;
         })(),
+        targetCompanies: (() => {
+          const normalized = normalizeTargetCompanyLines(data.targetCompanies);
+          return normalized.length > 0 ? normalized : null;
+        })(),
+        dealbreakers: normalizeString(data.dealbreakers),
+        idbigtechCompanies: (() => {
+          const selected = data.idbigtechCompanies ?? [];
+          return selected.length === 0 ||
+            stringArraysEqual(selected, sources.idbigtechCompanies.default)
+            ? null
+            : selected;
+        })(),
         ghostwriterSystemPromptTemplate: nullIfSame(
           normalizeString(data.ghostwriterSystemPromptTemplate),
           promptTemplates.ghostwriterSystemPromptTemplate.default,
@@ -1321,11 +1608,16 @@ export const SettingsPage: React.FC = () => {
           normalizeString(data.tailoringPromptTemplate),
           promptTemplates.tailoringPromptTemplate.default,
         ),
+        roleCvPromptTemplate: nullIfSame(
+          normalizeString(data.roleCvPromptTemplate),
+          promptTemplates.roleCvPromptTemplate.default,
+        ),
         scoringPromptTemplate: nullIfSame(
           normalizeString(data.scoringPromptTemplate),
           promptTemplates.scoringPromptTemplate.default,
         ),
         ...envPayload,
+        ...schedulePayload,
       };
 
       const shouldValidateRxResumeBeforeSave = Boolean(
@@ -1376,6 +1668,9 @@ export const SettingsPage: React.FC = () => {
       const updated = await updateSettingsMutation.mutateAsync(payload);
       setSettings(updated);
       reset(mapSettingsToForm(updated));
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.settings.scheduleStatus(),
+      });
       toast.success("Settings saved");
       if (rxResumeSaveWarningMessage) {
         toast.info(rxResumeSaveWarningMessage);
@@ -1492,6 +1787,7 @@ export const SettingsPage: React.FC = () => {
         items: group.items.filter(
           (item) =>
             (item.id !== "billing" || isHostedMode) &&
+            (item.id !== "schedule" || !isHostedMode) &&
             (canEditLlmSettings || item.id !== "model"),
         ),
       })).filter((group) => group.items.length > 0),
@@ -1595,13 +1891,17 @@ export const SettingsPage: React.FC = () => {
           promptTemplates.ghostwriterSystemPromptTemplate.default ||
           promptTemplates.tailoringPromptTemplate.effective !==
             promptTemplates.tailoringPromptTemplate.default ||
+          promptTemplates.roleCvPromptTemplate.effective !==
+            promptTemplates.roleCvPromptTemplate.default ||
           promptTemplates.scoringPromptTemplate.effective !==
             promptTemplates.scoringPromptTemplate.default
           ? { label: "Customized", variant: "outline" as const }
           : { label: "Using defaults", variant: "secondary" as const };
       case "scoring":
         return scoring.autoSkipScoreThreshold.effective != null ||
-          scoring.blockedCompanyKeywords.effective.length > 0
+          scoring.blockedCompanyKeywords.effective.length > 0 ||
+          scoring.targetCompanies.effective.length > 0 ||
+          scoring.dealbreakers.effective.trim() !== ""
           ? { label: "Customized", variant: "outline" as const }
           : { label: "Default rules", variant: "secondary" as const };
       case "reactive-resume":
@@ -1629,6 +1929,10 @@ export const SettingsPage: React.FC = () => {
         return backup.backupEnabled.effective
           ? { label: "Scheduled", variant: "outline" as const }
           : { label: "Manual only", variant: "secondary" as const };
+      case "schedule":
+        return schedule.scheduleEnabled.effective
+          ? { label: "On", variant: "outline" as const }
+          : { label: "Off", variant: "secondary" as const };
       default:
         return { label: "Ready", variant: "outline" as const };
     }
@@ -1742,11 +2046,15 @@ export const SettingsPage: React.FC = () => {
       activeSectionContent = (
         <EnvironmentSettingsSection
           values={envSettings}
+          sourceValues={sources}
           isLoading={isLoading}
           isSaving={isSaving}
           layoutMode="panel"
         />
       );
+      break;
+    case "agent-access":
+      activeSectionContent = <AgentAccessSection />;
       break;
     case "display":
       activeSectionContent = (
@@ -1770,6 +2078,18 @@ export const SettingsPage: React.FC = () => {
           onDeleteBackup={handleDeleteBackup}
           isCreatingBackup={isCreatingBackup}
           isDeletingBackup={isDeletingBackup}
+          layoutMode="panel"
+        />
+      );
+      break;
+    case "schedule":
+      activeSectionContent = (
+        <ScheduleDigestSection
+          values={schedule}
+          canManage={currentUserQuery.data?.isSystemAdmin === true}
+          telegramBotTokenHint={telegramBotTokenHint}
+          isLoading={isLoading}
+          isSaving={isSaving}
           layoutMode="panel"
         />
       );
@@ -1832,7 +2152,8 @@ export const SettingsPage: React.FC = () => {
                 : null
             }
             actions={
-              activeSection === "billing" ? null : (
+              activeSection === "billing" ||
+              activeSection === "agent-access" ? null : (
                 <>
                   {activeSectionIsDirty ? (
                     <Button

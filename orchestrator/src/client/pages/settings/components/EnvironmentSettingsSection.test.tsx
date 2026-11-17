@@ -1,4 +1,5 @@
 import * as api from "@client/api";
+import { ID_BIG_TECH_COMPANY_IDS } from "@shared/extractors/indonesia/big-tech.js";
 import type { UpdateSettingsInput } from "@shared/settings-schema.js";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen } from "@testing-library/react";
@@ -51,6 +52,12 @@ const EnvironmentSettingsHarness = () => {
                 ukvisajobsPasswordHint: "pass",
                 adzunaAppKeyHint: "adzu",
                 webhookSecretHint: "sec-",
+              },
+            }}
+            sourceValues={{
+              idbigtechCompanies: {
+                effective: [...ID_BIG_TECH_COMPANY_IDS],
+                default: [...ID_BIG_TECH_COMPANY_IDS],
               },
             }}
             isLoading={false}

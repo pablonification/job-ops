@@ -29,6 +29,39 @@ export interface TailoredData {
   skills: Array<{ name: string; keywords: string[] }>;
 }
 
+/**
+ * What the tailoring content is generated against.
+ * - `job`: a specific job description (per-job tailoring, the default).
+ * - `role`: a target role description (Role CVs), using the Role CV prompt.
+ */
+export type TailoringTarget =
+  | { kind: "job" }
+  | { kind: "role"; roleName: string };
+
+export interface GenerateTailoringOptions {
+  target?: TailoringTarget;
+  /**
+   * Starting point for per-job tailoring ("refine"), usually the job's Role
+   * CV. Rendered into the `roleCvBaseline` placeholder, or appended when a
+   * customised template lacks it. Ignored for the `role` target.
+   */
+  baseline?: TailoredData;
+}
+
+const ROLE_CV_BASELINE_PLACEHOLDER = /\{\{\s*roleCvBaseline\s*\}\}/;
+
+function buildRoleCvBaselineSection(baseline: TailoredData): string {
+  return `
+
+STARTING POINT (my Role CV for this kind of role):
+${JSON.stringify({
+  headline: baseline.headline,
+  summary: baseline.summary,
+  skills: baseline.skills,
+})}
+Use it as the base: keep its positioning and wording where it still fits, and adapt the headline, summary and skills to this job. Do NOT add experience that is not in my profile.`;
+}
+
 export interface TailoringResult {
   success: boolean;
   data?: TailoredData;
@@ -76,11 +109,13 @@ const TAILORING_SCHEMA: JsonSchemaDefinition = {
 };
 
 /**
- * Generate tailored resume content (summary, headline, skills) for a job.
+ * Generate tailored resume content (summary, headline, skills) for a job, or
+ * for a target role when `options.target.kind === "role"`.
  */
 export async function generateTailoring(
   jobDescription: string,
   profile: ResumeProfile,
+  options?: GenerateTailoringOptions,
 ): Promise<TailoringResult> {
   const [model, writingStyle, aiProfile] = await Promise.all([
     resolveLlmModel("tailoring"),
@@ -91,6 +126,8 @@ export async function generateTailoring(
     aiProfile,
     jobDescription,
     writingStyle,
+    options?.target ?? { kind: "job" },
+    options?.baseline,
   );
 
   const llm = await createConfiguredLlmService("tailoring");
@@ -150,6 +187,8 @@ async function buildTailoringPrompt(
   profile: ResumeProfile,
   jd: string,
   writingStyle: Awaited<ReturnType<typeof getWritingStyle>>,
+  target: TailoringTarget,
+  baseline?: TailoredData,
 ): Promise<string> {
   const jobDescription = stripHtmlTags(jd);
   const resolvedLanguage = resolveWritingOutputLanguage({
@@ -189,10 +228,24 @@ async function buildTailoringPrompt(
     })),
   };
 
-  const template = await getEffectivePromptTemplate("tailoringPromptTemplate");
+  const template = await getEffectivePromptTemplate(
+    target.kind === "role" ? "roleCvPromptTemplate" : "tailoringPromptTemplate",
+  );
+  const baselineSection =
+    target.kind === "job" && baseline
+      ? buildRoleCvBaselineSection(baseline)
+      : "";
+  // Customised templates saved before the placeholder existed lack it; append
+  // the baseline so it is never silently dropped.
+  const appendBaseline =
+    baselineSection !== "" && !ROLE_CV_BASELINE_PLACEHOLDER.test(template);
 
-  return renderPromptTemplate(template, {
+  const prompt = renderPromptTemplate(template, {
     jobDescription,
+    roleCvBaseline: appendBaseline ? "" : baselineSection,
+    ...(target.kind === "role"
+      ? { roleName: target.roleName, roleDescription: jobDescription }
+      : {}),
     profileJson: JSON.stringify(relevantProfile),
     outputLanguage,
     tone: writingStyle.tone,
@@ -212,6 +265,7 @@ async function buildTailoringPrompt(
       ? `- Avoid these words or phrases: ${writingStyle.doNotUse}`
       : "",
   });
+  return appendBaseline ? `${prompt}${baselineSection}` : prompt;
 }
 
 function sanitizeText(text: string): string {

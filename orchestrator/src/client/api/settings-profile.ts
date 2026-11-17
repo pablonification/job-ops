@@ -10,6 +10,7 @@ import type {
   DesignResumePdfResponse,
   DesignResumeStatusResponse,
   OnboardingStatusResponse,
+  PipelineScheduleStatus,
   ProfileStatusResponse,
   ResumeProfile,
   ResumeProjectCatalogItem,
@@ -294,6 +295,18 @@ export async function updateSettings(
   return fetchApi<AppSettings>("/settings", {
     method: "PATCH",
     body: JSON.stringify(update),
+  });
+}
+
+/** Scheduled runs and digest status for the Settings page. */
+export async function getScheduleStatus(): Promise<PipelineScheduleStatus> {
+  return fetchApi<PipelineScheduleStatus>("/settings/schedule-status");
+}
+
+/** Sends a fixed test message with the saved Telegram bot token and chat id. */
+export async function sendTelegramTestMessage(): Promise<{ sent: true }> {
+  return fetchApi<{ sent: true }>("/settings/telegram/test", {
+    method: "POST",
   });
 }
 

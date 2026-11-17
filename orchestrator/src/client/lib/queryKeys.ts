@@ -10,6 +10,7 @@ export const queryKeys = {
     currentUser: () => [...queryKeys.auth.all, "me"] as const,
     ssoProviders: () => [...queryKeys.auth.all, "sso-providers"] as const,
     ssoIdentities: () => [...queryKeys.auth.all, "sso-identities"] as const,
+    accessTokens: () => [...queryKeys.auth.all, "access-tokens"] as const,
   },
   billing: {
     all: ["billing"] as const,
@@ -20,9 +21,17 @@ export const queryKeys = {
     current: () => [...queryKeys.designResume.all, "current"] as const,
     status: () => [...queryKeys.designResume.all, "status"] as const,
   },
+  roleCvs: {
+    all: ["role-cvs"] as const,
+    list: () => [...queryKeys.roleCvs.all, "list"] as const,
+    projectCatalog: () =>
+      [...queryKeys.roleCvs.all, "project-catalog"] as const,
+  },
   settings: {
     all: ["settings"] as const,
     current: () => [...queryKeys.settings.all, "current"] as const,
+    scheduleStatus: () =>
+      [...queryKeys.settings.all, "schedule-status"] as const,
   },
   profile: {
     all: ["profile"] as const,

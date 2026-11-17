@@ -171,6 +171,8 @@ export interface JobFilters {
   dateFilter: JobDateFilter;
   sourceFilter: JobSource | "all";
   sponsorFilter: SponsorFilter;
+  /** Only jobs whose employer matches the Target companies setting. */
+  targetCompaniesOnly: boolean;
   salaryFilter: SalaryFilter;
   scoreFilter: ScoreFilter;
   postedWithinDays: number | null;

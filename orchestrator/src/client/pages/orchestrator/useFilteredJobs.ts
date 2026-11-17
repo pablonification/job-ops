@@ -28,6 +28,7 @@ export const useFilteredJobs = (jobs: JobListItem[], filters: JobFilters) => {
     dateFilter,
     sourceFilter,
     sponsorFilter,
+    targetCompaniesOnly,
     salaryFilter,
     scoreFilter,
     postedWithinDays,
@@ -87,6 +88,10 @@ export const useFilteredJobs = (jobs: JobListItem[], filters: JobFilters) => {
       filtered = filtered.filter(
         (job) => getSponsorCategory(job.sponsorMatchScore) === sponsorFilter,
       );
+    }
+
+    if (targetCompaniesOnly) {
+      filtered = filtered.filter((job) => job.isTargetCompany === true);
     }
 
     const hasMin =
@@ -149,6 +154,7 @@ export const useFilteredJobs = (jobs: JobListItem[], filters: JobFilters) => {
     dateFilter,
     sourceFilter,
     sponsorFilter,
+    targetCompaniesOnly,
     salaryFilter,
     scoreFilter,
     postedWithinDays,

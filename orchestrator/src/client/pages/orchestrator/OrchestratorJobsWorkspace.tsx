@@ -40,6 +40,7 @@ interface OrchestratorJobsWorkspaceProps {
   commandBarEnabled: boolean;
   sourceFilter: JobSource | "all";
   sponsorFilter: SponsorFilter;
+  targetCompaniesOnly: boolean;
   salaryFilter: SalaryFilter;
   scoreFilter: ScoreFilter;
   postedWithinDays: number | null;
@@ -60,6 +61,7 @@ interface OrchestratorJobsWorkspaceProps {
   onFiltersOpenChange: (open: boolean) => void;
   onSourceFilterChange: (value: JobSource | "all") => void;
   onSponsorFilterChange: (value: SponsorFilter) => void;
+  onTargetCompaniesOnlyChange: (value: boolean) => void;
   onSalaryFilterChange: (value: SalaryFilter) => void;
   onScoreFilterChange: (value: ScoreFilter) => void;
   onPostedWithinChange: (value: number | null) => void;
@@ -97,6 +99,7 @@ export const OrchestratorJobsWorkspace: React.FC<
   commandBarEnabled,
   sourceFilter,
   sponsorFilter,
+  targetCompaniesOnly,
   salaryFilter,
   scoreFilter,
   postedWithinDays,
@@ -117,6 +120,7 @@ export const OrchestratorJobsWorkspace: React.FC<
   onFiltersOpenChange,
   onSourceFilterChange,
   onSponsorFilterChange,
+  onTargetCompaniesOnlyChange,
   onSalaryFilterChange,
   onScoreFilterChange,
   onPostedWithinChange,
@@ -155,6 +159,8 @@ export const OrchestratorJobsWorkspace: React.FC<
         onSourceFilterChange={onSourceFilterChange}
         sponsorFilter={sponsorFilter}
         onSponsorFilterChange={onSponsorFilterChange}
+        targetCompaniesOnly={targetCompaniesOnly}
+        onTargetCompaniesOnlyChange={onTargetCompaniesOnlyChange}
         salaryFilter={salaryFilter}
         onSalaryFilterChange={onSalaryFilterChange}
         scoreFilter={scoreFilter}

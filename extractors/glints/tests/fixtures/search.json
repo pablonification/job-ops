@@ -1,0 +1,230 @@
+{
+  "data": {
+    "searchJobsV3": {
+      "hasMore": true,
+      "jobsInPage": [
+        {
+          "city": null,
+          "company": {
+            "brandName": null,
+            "id": "2b54431d-6db4-49b6-b31d-05c66d83ec7e",
+            "name": "Pt. Empore Hezer Tama"
+          },
+          "country": {
+            "code": "ID",
+            "name": "Indonesia"
+          },
+          "createdAt": "2026-08-28T10:32:03.899Z",
+          "id": "f8a490b0-7c1f-4409-9667-f7cd127eceec",
+          "location": {
+            "administrativeLevelName": "District",
+            "formattedName": "Kebayoran Baru",
+            "level": 4,
+            "name": "Kebayoran Baru",
+            "parents": [
+              {
+                "administrativeLevelName": "City",
+                "formattedName": "Jakarta Selatan",
+                "level": 3,
+                "name": "Jakarta Selatan"
+              },
+              {
+                "administrativeLevelName": "Province",
+                "formattedName": "DKI Jakarta",
+                "level": 2,
+                "name": "DKI Jakarta"
+              },
+              {
+                "administrativeLevelName": "Country",
+                "formattedName": "Indonesia",
+                "level": 1,
+                "name": "Indonesia"
+              }
+            ]
+          },
+          "maxYearsOfExperience": 3,
+          "minYearsOfExperience": 1,
+          "salaries": [
+            {
+              "CurrencyCode": "IDR",
+              "maxAmount": 18000000,
+              "minAmount": 13500000,
+              "salaryMode": "MONTH",
+              "salaryType": "BASIC"
+            }
+          ],
+          "shouldShowSalary": true,
+          "status": "OPEN",
+          "title": "Golang Backend Developer",
+          "type": "CONTRACT",
+          "updatedAt": "2026-11-17T09:54:57.330869Z",
+          "workArrangementOption": "ONSITE"
+        },
+        {
+          "city": null,
+          "company": {
+            "brandName": null,
+            "id": "94b5eb9d-915c-4628-b1b9-8abbbc83ea54",
+            "name": "Pt. Swadharma Duta Data"
+          },
+          "country": {
+            "code": "ID",
+            "name": "Indonesia"
+          },
+          "createdAt": "2026-10-22T08:54:19.016842Z",
+          "id": "458ddf87-d70a-4aea-967f-640a949c2737",
+          "location": {
+            "administrativeLevelName": "District",
+            "formattedName": "Setiabudi",
+            "level": 4,
+            "name": "Setiabudi",
+            "parents": [
+              {
+                "administrativeLevelName": "City",
+                "formattedName": "Jakarta Selatan",
+                "level": 3,
+                "name": "Jakarta Selatan"
+              },
+              {
+                "administrativeLevelName": "Province",
+                "formattedName": "DKI Jakarta",
+                "level": 2,
+                "name": "DKI Jakarta"
+              },
+              {
+                "administrativeLevelName": "Country",
+                "formattedName": "Indonesia",
+                "level": 1,
+                "name": "Indonesia"
+              }
+            ]
+          },
+          "maxYearsOfExperience": 3,
+          "minYearsOfExperience": 1,
+          "salaries": [
+            {
+              "CurrencyCode": "IDR",
+              "maxAmount": 12000000,
+              "minAmount": 8000000,
+              "salaryMode": "MONTH",
+              "salaryType": "BASIC"
+            }
+          ],
+          "shouldShowSalary": true,
+          "status": "OPEN",
+          "title": "Backend Developer (Java Spring Boot)",
+          "type": "CONTRACT",
+          "updatedAt": "2026-11-17T08:42:10.624459Z",
+          "workArrangementOption": "ONSITE"
+        },
+        {
+          "city": null,
+          "company": {
+            "brandName": null,
+            "id": "09bbc428-e888-4f0a-85f8-0320cfd811b1",
+            "name": "PT Neural Technologies Indonesia (Official)"
+          },
+          "country": {
+            "code": "ID",
+            "name": "Indonesia"
+          },
+          "createdAt": "2026-11-17T07:57:55.85637Z",
+          "id": "6f09dbab-27b3-4583-8ce1-487caf4fce23",
+          "location": {
+            "administrativeLevelName": "District",
+            "formattedName": "Tebet",
+            "level": 4,
+            "name": "Tebet",
+            "parents": [
+              {
+                "administrativeLevelName": "City",
+                "formattedName": "Jakarta Selatan",
+                "level": 3,
+                "name": "Jakarta Selatan"
+              },
+              {
+                "administrativeLevelName": "Province",
+                "formattedName": "DKI Jakarta",
+                "level": 2,
+                "name": "DKI Jakarta"
+              },
+              {
+                "administrativeLevelName": "Country",
+                "formattedName": "Indonesia",
+                "level": 1,
+                "name": "Indonesia"
+              }
+            ]
+          },
+          "maxYearsOfExperience": 3,
+          "minYearsOfExperience": 1,
+          "salaries": null,
+          "shouldShowSalary": false,
+          "status": "OPEN",
+          "title": "Junior Backend Engineer",
+          "type": "CONTRACT",
+          "updatedAt": "2026-11-17T07:57:55.85637Z",
+          "workArrangementOption": "ONSITE"
+        },
+        {
+          "city": null,
+          "company": {
+            "brandName": null,
+            "id": "1cb01218-d1de-4e0c-b7a4-cb7865f3baae",
+            "name": "PT Sigma Global Teknologi"
+          },
+          "country": {
+            "code": "ID",
+            "name": "Indonesia"
+          },
+          "createdAt": "2026-10-27T03:47:35.492538Z",
+          "id": "892ff59d-d5e8-4600-b59e-fc76a3841560",
+          "location": {
+            "administrativeLevelName": "District",
+            "formattedName": "Pondok Aren",
+            "level": 4,
+            "name": "Pondok Aren",
+            "parents": [
+              {
+                "administrativeLevelName": "City",
+                "formattedName": "Tangerang Selatan",
+                "level": 3,
+                "name": "Tangerang Selatan"
+              },
+              {
+                "administrativeLevelName": "Province",
+                "formattedName": "Banten",
+                "level": 2,
+                "name": "Banten"
+              },
+              {
+                "administrativeLevelName": "Country",
+                "formattedName": "Indonesia",
+                "level": 1,
+                "name": "Indonesia"
+              }
+            ]
+          },
+          "maxYearsOfExperience": 10,
+          "minYearsOfExperience": 5,
+          "salaries": [
+            {
+              "CurrencyCode": "IDR",
+              "maxAmount": 15000000,
+              "minAmount": 13000000,
+              "salaryMode": "MONTH",
+              "salaryType": "BASIC"
+            }
+          ],
+          "shouldShowSalary": true,
+          "status": "OPEN",
+          "title": "Backend Developer (Java, Golang)",
+          "type": "CONTRACT",
+          "updatedAt": "2026-11-17T04:09:48.859229Z",
+          "workArrangementOption": "ONSITE"
+        }
+      ]
+    }
+  },
+  "isAuthenticated": false
+}

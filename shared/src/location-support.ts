@@ -348,6 +348,12 @@ const SOURCE_SUPPORTED_COUNTRY_KEYS: Partial<Record<JobSource, string[]>> = {
   naukri: ["india"],
   fiveamsat: ["egypt"],
   wazzuf: ["egypt"],
+  techinasia: ["indonesia"],
+  kalibrr: ["indonesia"],
+  dealls: ["indonesia"],
+  jobstreet: ["indonesia"],
+  glints: ["indonesia"],
+  idbigtech: ["indonesia"],
 };
 
 const SOURCE_SUPPORTED_COUNTRY_KEYS_NORMALIZED: Partial<

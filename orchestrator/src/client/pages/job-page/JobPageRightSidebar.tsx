@@ -25,6 +25,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { getHttpHref } from "@/lib/safe-href";
 import { formatTimestamp } from "@/lib/utils";
 
 type JobPageRightSidebarProps = {
@@ -94,14 +95,18 @@ export const JobPageRightSidebar: React.FC<JobPageRightSidebarProps> = ({
         Actions
       </div>
       <div className="space-y-2">
-        {jobLink && (
+        {getHttpHref(jobLink) && (
           <Button
             asChild
             size="sm"
             variant="outline"
             className="w-full justify-start"
           >
-            <a href={jobLink} target="_blank" rel="noopener noreferrer">
+            <a
+              href={getHttpHref(jobLink) ?? undefined}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
               <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
               Open Job Listing
             </a>

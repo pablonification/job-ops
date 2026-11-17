@@ -1,3 +1,4 @@
+export * from "./access-tokens";
 export * from "./admin";
 export * from "./app-status";
 export * from "./auth";
@@ -8,5 +9,6 @@ export * from "./ghostwriter";
 export * from "./jobs";
 export * from "./pipeline";
 export * from "./post-application";
+export * from "./role-cvs";
 export * from "./settings-profile";
 export * from "./watchlist";

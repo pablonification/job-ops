@@ -3,21 +3,25 @@
  */
 
 import {
+  ACCESS_TOKEN_SCOPES,
   APPLICATION_OUTCOMES,
   APPLICATION_STAGES,
   APPLICATION_TASK_TYPES,
+  DIGEST_DELIVERY_STATUSES,
   HOSTED_USAGE_ACTIONS,
   INTERVIEW_OUTCOMES,
   INTERVIEW_TYPES,
   JOB_CHAT_MESSAGE_ROLES,
   JOB_CHAT_MESSAGE_STATUSES,
   JOB_CHAT_RUN_STATUSES,
+  PIPELINE_RUN_TRIGGERS,
   POST_APPLICATION_INTEGRATION_STATUSES,
   POST_APPLICATION_MESSAGE_TYPES,
   POST_APPLICATION_PROCESSING_STATUSES,
   POST_APPLICATION_PROVIDERS,
   POST_APPLICATION_RELEVANCE_DECISIONS,
   POST_APPLICATION_SYNC_RUN_STATUSES,
+  SCHEDULE_ATTEMPT_OUTCOMES,
   SSO_PROVIDERS,
 } from "@shared/types";
 import { sql } from "drizzle-orm";
@@ -288,6 +292,11 @@ export const jobs = sqliteTable(
       .default(false),
     sponsorMatchScore: real("sponsor_match_score"),
     sponsorMatchNames: text("sponsor_match_names"),
+    // Role CV this job uses. Cleared in code when the Role CV is deleted.
+    roleCvId: text("role_cv_id"),
+    roleCvMatchSource: text("role_cv_match_source", {
+      enum: ["auto", "manual"],
+    }),
 
     // Timestamps
     discoveredAt: text("discovered_at")
@@ -425,6 +434,40 @@ export const pipelineRuns = sqliteTable("pipeline_runs", {
   requestedConfig: text("requested_config", { mode: "json" }),
   effectiveConfig: text("effective_config", { mode: "json" }),
   resultSummary: text("result_summary", { mode: "json" }),
+  trigger: text("run_trigger", { enum: PIPELINE_RUN_TRIGGERS }),
+});
+
+/**
+ * Scheduler bookkeeping, one row per tenant. `lastFiredOccurrence` is the
+ * scheduled instant (ISO, UTC) most recently claimed, and
+ * `lastFiredLocalDate` its local date; a tick only starts a run after moving
+ * both forward, so there is at most one scheduled run per local day, across
+ * restarts too. `ownerUserId` is the user who last saved the
+ * schedule; scheduled runs run as that user while they stay active.
+ */
+export const pipelineScheduleState = sqliteTable("pipeline_schedule_state", {
+  tenantId: text("tenant_id")
+    .primaryKey()
+    .references(() => tenants.id, { onDelete: "cascade" }),
+  ownerUserId: text("owner_user_id").references(() => users.id, {
+    onDelete: "set null",
+  }),
+  lastFiredOccurrence: text("last_fired_occurrence"),
+  /** Local date ("YYYY-MM-DD", schedule's zone) of that occurrence. */
+  lastFiredLocalDate: text("last_fired_local_date"),
+  /** When the schedule settings were last saved; earlier times never fire. */
+  settingsSavedAt: text("settings_saved_at"),
+  /** Invalid time zone already logged, so it is logged once. */
+  reportedInvalidTimeZone: text("reported_invalid_time_zone"),
+  lastAttemptAt: text("last_attempt_at"),
+  lastOutcome: text("last_outcome", { enum: SCHEDULE_ATTEMPT_OUTCOMES }),
+  lastOutcomeDetail: text("last_outcome_detail"),
+  lastDigestAt: text("last_digest_at"),
+  lastDigestStatus: text("last_digest_status", {
+    enum: DIGEST_DELIVERY_STATUSES,
+  }),
+  lastDigestDetail: text("last_digest_detail"),
+  updatedAt: text("updated_at").notNull().default(sql`(datetime('now'))`),
 });
 
 export const pipelineSearchPresets = sqliteTable(
@@ -765,6 +808,34 @@ export const authSessions = sqliteTable(
   }),
 );
 
+export const accessTokens = sqliteTable(
+  "access_tokens",
+  {
+    id: text("id").primaryKey(),
+    tenantId: text("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    tokenPrefix: text("token_prefix").notNull().unique(),
+    tokenHash: text("token_hash").notNull(),
+    scope: text("scope", { enum: ACCESS_TOKEN_SCOPES }).notNull(),
+    expiresAt: text("expires_at"),
+    lastUsedAt: text("last_used_at"),
+    revokedAt: text("revoked_at"),
+    createdAt: text("created_at").notNull().default(sql`(datetime('now'))`),
+    updatedAt: text("updated_at").notNull().default(sql`(datetime('now'))`),
+  },
+  (table) => ({
+    tenantUserIndex: index("idx_access_tokens_tenant_user").on(
+      table.tenantId,
+      table.userId,
+    ),
+  }),
+);
+
 export const ssoIdentities = sqliteTable(
   "sso_identities",
   {
@@ -838,6 +909,42 @@ export const designResumeAssets = sqliteTable(
   (table) => ({
     documentIndex: index("idx_design_resume_assets_document_id").on(
       table.documentId,
+    ),
+  }),
+);
+
+export const roleCvs = sqliteTable(
+  "role_cvs",
+  {
+    id: text("id").primaryKey(),
+    tenantId: text("tenant_id")
+      .notNull()
+      .default("tenant_default")
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    userId: text("user_id").references(() => users.id, {
+      onDelete: "cascade",
+    }),
+    name: text("name").notNull(),
+    roleDescription: text("role_description").notNull().default(""),
+    // Same encodings as the per-job tailoring columns on `jobs`.
+    tailoredHeadline: text("tailored_headline"),
+    tailoredSummary: text("tailored_summary"),
+    tailoredSkills: text("tailored_skills"),
+    selectedProjectIds: text("selected_project_ids"),
+    masterResumeRevision: text("master_resume_revision"),
+    generatedAt: text("generated_at"),
+    pdfPath: text("pdf_path"),
+    pdfFingerprint: text("pdf_fingerprint"),
+    pdfGeneratedAt: text("pdf_generated_at"),
+    pdfRegeneratingSince: text("pdf_regenerating_since"),
+    createdAt: text("created_at").notNull().default(sql`(datetime('now'))`),
+    updatedAt: text("updated_at").notNull().default(sql`(datetime('now'))`),
+  },
+  (table) => ({
+    tenantUserUpdatedIndex: index("idx_role_cvs_tenant_user_updated").on(
+      table.tenantId,
+      table.userId,
+      table.updatedAt,
     ),
   }),
 );
@@ -1108,6 +1215,7 @@ export const tracerClickEvents = sqliteTable(
 
 export type UserRow = typeof users.$inferSelect;
 export type NewUserRow = typeof users.$inferInsert;
+export type AccessTokenRow = typeof accessTokens.$inferSelect;
 export type SsoIdentityRow = typeof ssoIdentities.$inferSelect;
 export type NewSsoIdentityRow = typeof ssoIdentities.$inferInsert;
 export type TenantRow = typeof tenants.$inferSelect;

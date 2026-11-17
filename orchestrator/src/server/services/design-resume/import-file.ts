@@ -13,9 +13,19 @@ import {
   extractPdfText,
   PdfTextExtractionError,
 } from "@server/services/document-text-extraction";
+import { ClaudeAgentSdkClient } from "@server/services/llm/claude-agent-sdk/client";
 import { ClaudeCliClient } from "@server/services/llm/claude-cli/client";
 import { CodexClient } from "@server/services/llm/codex/client";
+import {
+  type ReadyLlmFallback,
+  resolveLlmFallbackEligibility,
+} from "@server/services/llm/failover/eligibility";
+import {
+  type FailoverAttemptResult,
+  runWithLlmFailover,
+} from "@server/services/llm/failover/runner";
 import { GeminiCliClient } from "@server/services/llm/gemini-cli/client";
+import { resolveLlmEndpoint } from "@server/services/llm/provider-endpoint";
 import type { JsonSchemaDefinition } from "@server/services/llm/types";
 import { resolveLlmRuntimeSettings } from "@server/services/modelSelection";
 import { normalizeReactiveResumeV5Document } from "@server/services/rxresume/document";
@@ -49,6 +59,7 @@ type SupportedRuntimeProvider =
   | "gemini"
   | "gemini_cli"
   | "claude_cli"
+  | "claude_agent_sdk"
   | "codex"
   | "openai_compatible"
   | "ollama"
@@ -361,6 +372,7 @@ function normalizeRuntimeProvider(
   if (mapped === "gemini") return "gemini";
   if (mapped === "gemini_cli") return "gemini_cli";
   if (mapped === "claude_cli") return "claude_cli";
+  if (mapped === "claude_agent_sdk") return "claude_agent_sdk";
   if (mapped === "codex") return "codex";
   if (mapped === "openai_compatible") return "openai_compatible";
   if (mapped === "ollama") return "ollama";
@@ -1134,7 +1146,7 @@ function parseReactiveResumeJsonFile(content: string): DesignResumeJson {
 }
 
 function buildCapabilityErrorMessage(provider: string): string {
-  return `Resume file import is not available for the current AI provider (${provider}). Connect OpenAI, Anthropic, OpenRouter, OrcaRouter, Gemini, Gemini (CLI), Codex, OpenAI-compatible, Ollama, or LM Studio to import resumes. PDF and DOCX files can be converted to plain text locally before extraction when native file upload is unavailable.`;
+  return `Resume file import is not available for the current AI provider (${provider}). Connect OpenAI, Anthropic, OpenRouter, OrcaRouter, Gemini, Gemini (CLI), Claude (subscription), Codex, OpenAI-compatible, Ollama, or LM Studio to import resumes. PDF and DOCX files can be converted to plain text locally before extraction when native file upload is unavailable.`;
 }
 
 function isFileCapabilityError(message: string): boolean {
@@ -1220,6 +1232,7 @@ async function extractInitialDocumentText(input: {
     input.mediaType === "application/pdf" &&
     (input.provider === "gemini_cli" ||
       input.provider === "claude_cli" ||
+      input.provider === "claude_agent_sdk" ||
       isTextOnlyImportProvider(input.provider))
   ) {
     return extractResumePdfText(input.decoded);
@@ -1238,6 +1251,7 @@ function shouldFallbackToExtractedPdfText(input: {
     input.documentText ||
     input.provider === "gemini_cli" ||
     input.provider === "claude_cli" ||
+    input.provider === "claude_agent_sdk" ||
     isTextOnlyImportProvider(input.provider)
   ) {
     return false;
@@ -1316,6 +1330,7 @@ async function extractWithOpenAi(args: {
       status: response.status >= 500 ? 502 : 503,
       message: detail || `OpenAI returned ${response.status}.`,
       details: {
+        upstreamStatus: response.status,
         provider: "openai",
         model: args.model,
         requestId: args.requestId ?? null,
@@ -1414,6 +1429,7 @@ async function extractWithOpenRouter(args: {
         status: response.status >= 500 ? 502 : 503,
         message: detail || `OpenRouter returned ${response.status}.`,
         details: {
+          upstreamStatus: response.status,
           provider: "openrouter",
           model: args.model,
           requestId: args.requestId ?? null,
@@ -1514,6 +1530,7 @@ async function extractWithAnthropic(args: {
       status: response.status >= 500 ? 502 : 503,
       message: detail || `Anthropic returned ${response.status}.`,
       details: {
+        upstreamStatus: response.status,
         provider: "anthropic",
         model: args.model,
         requestId: args.requestId ?? null,
@@ -1593,6 +1610,7 @@ async function extractWithGemini(args: {
       status: response.status >= 500 ? 502 : 503,
       message: detail || `Gemini returned ${response.status}.`,
       details: {
+        upstreamStatus: response.status,
         provider: "gemini",
         model: args.model,
         requestId: args.requestId ?? null,
@@ -1678,6 +1696,7 @@ async function extractWithTextChatCompletions(args: {
       status: response.status >= 500 ? 502 : 503,
       message: detail || `${args.provider} returned ${response.status}.`,
       details: {
+        upstreamStatus: response.status,
         provider: args.provider,
         model: args.model,
         requestId: args.requestId ?? null,
@@ -1791,6 +1810,54 @@ async function extractWithClaudeCli(args: {
   }
 }
 
+async function extractWithClaudeAgentSdk(args: {
+  model: string;
+  mediaType: SupportedImportMediaType;
+  fileName: string;
+  documentText: string;
+  requestId: string | undefined;
+}): Promise<string> {
+  const source: "DOCX" | "PDF" =
+    args.mediaType === "application/pdf" ? "PDF" : "DOCX";
+  const userContent = buildTextExtractPrompt(
+    args.documentText,
+    args.fileName,
+    source,
+  );
+  const client = new ClaudeAgentSdkClient();
+  try {
+    const { text } = await client.callJson({
+      model: args.model,
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT },
+        { role: "user", content: userContent },
+      ],
+      jsonSchema: DESIGN_RESUME_IMPORT_CLI_JSON_SCHEMA,
+    });
+    if (!text?.trim()) {
+      throw upstreamError(
+        "Claude (subscription) returned an empty response for resume import.",
+      );
+    }
+    return text;
+  } catch (error) {
+    if (error instanceof AppError) {
+      throw error;
+    }
+    const message = error instanceof Error ? error.message : String(error);
+    throw upstreamError(
+      truncate(message, 500),
+      args.requestId
+        ? {
+            provider: "claude_agent_sdk",
+            model: args.model,
+            requestId: args.requestId,
+          }
+        : { provider: "claude_agent_sdk", model: args.model },
+    );
+  }
+}
+
 async function extractWithCodex(args: {
   model: string;
   mediaType: SupportedImportMediaType;
@@ -1900,6 +1967,21 @@ async function extractResumeFromProvider(args: {
       requestId: args.requestId,
     });
   }
+  if (args.provider === "claude_agent_sdk") {
+    const text = args.documentText?.trim();
+    if (!text) {
+      throw badRequest(
+        "Claude (subscription) resume import requires plain-text resume content (DOCX or extracted PDF text).",
+      );
+    }
+    return extractWithClaudeAgentSdk({
+      model: args.model,
+      mediaType: args.mediaType,
+      fileName: args.fileName,
+      documentText: text,
+      requestId: args.requestId,
+    });
+  }
   if (args.provider === "codex") {
     const text = args.documentText?.trim();
     if (!text) {
@@ -1950,6 +2032,93 @@ async function extractResumeFromProvider(args: {
     });
   }
   return extractWithGemini(args);
+}
+
+type ImportTarget = {
+  provider: SupportedRuntimeProvider;
+  apiKey: string;
+  baseUrl: string | null;
+  model: string;
+};
+
+/**
+ * The fallback for resume import, when one is configured, usable, a provider
+ * import supports, and not the same endpoint as the primary.
+ */
+function resolveImportFallback(primary: {
+  provider: SupportedRuntimeProvider;
+  baseUrl: string | null;
+}): {
+  config: ReadyLlmFallback;
+  target: ImportTarget;
+  primaryBaseUrl: string;
+} | null {
+  // Same endpoint normalisation and eligibility rule as LlmService, so the
+  // breaker key and the same-endpoint check agree with the rest of the app.
+  const endpoint = resolveLlmEndpoint({
+    provider: primary.provider,
+    baseUrl: primary.baseUrl,
+  });
+  const eligibility = resolveLlmFallbackEligibility(endpoint);
+  if (eligibility.state !== "active") return null;
+  const { config } = eligibility;
+  const provider = normalizeRuntimeProvider(config.target.provider);
+  if (!provider) {
+    logger.info("Fallback LLM provider does not support resume import", {
+      fallbackProvider: config.target.provider,
+    });
+    return null;
+  }
+  return {
+    config,
+    primaryBaseUrl: endpoint.baseUrl,
+    target: {
+      provider,
+      apiKey: config.target.apiKey ?? "",
+      baseUrl: config.target.baseUrl,
+      model: config.target.model,
+    },
+  };
+}
+
+/**
+ * The error to throw when import failed with a fallback configured: the
+ * failover layer's sanitised, truncated message, keeping the original
+ * error's status and details.
+ */
+function toImportFailoverError(error: unknown, message: string): AppError {
+  if (error instanceof AppError) {
+    return new AppError({
+      status: error.status,
+      code: error.code,
+      message,
+      details: error.details,
+    });
+  }
+  return upstreamError(message);
+}
+
+/** Map an import failure into the shared failover vocabulary. */
+function toImportFailoverAttempt(
+  error: unknown,
+): Extract<FailoverAttemptResult<string>, { success: false }> {
+  const message = error instanceof Error ? error.message : String(error);
+  if (error instanceof AppError) {
+    const details = error.details as { upstreamStatus?: unknown } | undefined;
+    if (typeof details?.upstreamStatus === "number") {
+      return { success: false, error: message, status: details.upstreamStatus };
+    }
+    // Our own input validation (for example a PDF with no extractable
+    // text): another provider would get the same input.
+    if (error.status === 400) {
+      return { success: false, error: message, failureKind: "bad_request" };
+    }
+  }
+  if (isFileCapabilityError(message)) {
+    // The primary model cannot take this file; the fallback may.
+    return { success: false, error: message, failureKind: "configuration" };
+  }
+  return { success: false, error: message };
 }
 
 export async function importDesignResumeFromFile(
@@ -2048,7 +2217,7 @@ export async function importDesignResumeFromFile(
 
   try {
     const textExtractionStartedAt = Date.now();
-    let documentText = await extractInitialDocumentText({
+    const documentText = await extractInitialDocumentText({
       provider,
       mediaType,
       decoded,
@@ -2065,94 +2234,153 @@ export async function importDesignResumeFromFile(
       usedLocalTextExtraction: Boolean(documentText),
     });
 
-    let rawText: string;
-    try {
-      const providerExtractionStartedAt = Date.now();
-      rawText = await extractResumeFromProvider({
-        provider,
-        apiKey: runtime.apiKey ?? "",
-        baseUrl: runtime.baseUrl,
-        model: runtime.model,
-        mediaType,
-        fileName,
-        dataBase64: normalizedBase64,
-        documentText,
-        requestId,
-      });
-      logger.info("Design resume file import provider extraction completed", {
-        requestId: requestId ?? null,
-        provider,
-        model: runtime.model,
-        fileName,
-        mediaType,
-        durationMs: elapsedMs(providerExtractionStartedAt),
-        totalElapsedMs: elapsedMs(importStartedAt),
-        outputChars: rawText.length,
-      });
-    } catch (error) {
-      if (
-        !shouldFallbackToExtractedPdfText({
-          provider,
+    const extractWithTarget = async (
+      target: ImportTarget,
+      initialDocumentText: string | null,
+    ): Promise<string> => {
+      let targetDocumentText = initialDocumentText;
+      try {
+        const providerExtractionStartedAt = Date.now();
+        const text = await extractResumeFromProvider({
+          provider: target.provider,
+          apiKey: target.apiKey,
+          baseUrl: target.baseUrl,
+          model: target.model,
           mediaType,
-          documentText,
-          error,
-        })
-      ) {
-        throw error;
+          fileName,
+          dataBase64: normalizedBase64,
+          documentText: targetDocumentText,
+          requestId,
+        });
+        logger.info("Design resume file import provider extraction completed", {
+          requestId: requestId ?? null,
+          provider: target.provider,
+          model: target.model,
+          fileName,
+          mediaType,
+          durationMs: elapsedMs(providerExtractionStartedAt),
+          totalElapsedMs: elapsedMs(importStartedAt),
+          outputChars: text.length,
+        });
+        return text;
+      } catch (error) {
+        if (
+          !shouldFallbackToExtractedPdfText({
+            provider: target.provider,
+            mediaType,
+            documentText: targetDocumentText,
+            error,
+          })
+        ) {
+          throw error;
+        }
+
+        logger.info(
+          "Retrying design resume file import with extracted PDF text",
+          {
+            requestId: requestId ?? null,
+            provider: target.provider,
+            model: target.model,
+            fileName,
+            mediaType,
+            totalElapsedMs: elapsedMs(importStartedAt),
+          },
+        );
+
+        const fallbackTextExtractionStartedAt = Date.now();
+        targetDocumentText = await extractResumePdfText(decoded);
+        logger.info(
+          "Design resume file import fallback text extraction completed",
+          {
+            requestId: requestId ?? null,
+            provider: target.provider,
+            model: target.model,
+            fileName,
+            mediaType,
+            durationMs: elapsedMs(fallbackTextExtractionStartedAt),
+            totalElapsedMs: elapsedMs(importStartedAt),
+            documentTextChars: targetDocumentText.length,
+          },
+        );
+        const fallbackProviderExtractionStartedAt = Date.now();
+        const text = await extractResumeFromProvider({
+          provider: target.provider,
+          apiKey: target.apiKey,
+          baseUrl: target.baseUrl,
+          model: target.model,
+          mediaType,
+          fileName,
+          dataBase64: normalizedBase64,
+          documentText: targetDocumentText,
+          requestId,
+        });
+        logger.info(
+          "Design resume file import fallback provider extraction completed",
+          {
+            requestId: requestId ?? null,
+            provider: target.provider,
+            model: target.model,
+            fileName,
+            mediaType,
+            durationMs: elapsedMs(fallbackProviderExtractionStartedAt),
+            totalElapsedMs: elapsedMs(importStartedAt),
+            outputChars: text.length,
+          },
+        );
+        return text;
       }
+    };
 
-      logger.info(
-        "Retrying design resume file import with extracted PDF text",
-        {
-          requestId: requestId ?? null,
+    const primaryTarget: ImportTarget = {
+      provider,
+      apiKey: runtime.apiKey ?? "",
+      baseUrl: runtime.baseUrl,
+      model: runtime.model,
+    };
+    const fallback = resolveImportFallback({
+      provider,
+      baseUrl: runtime.baseUrl,
+    });
+    let rawText: string;
+    if (!fallback) {
+      rawText = await extractWithTarget(primaryTarget, documentText);
+    } else {
+      // Same failover decision as LlmService.callJson; the import keeps its
+      // own per-provider extraction, so the decision is shared, not the call.
+      let lastError: unknown = null;
+      const attempt = async (
+        run: () => Promise<string>,
+      ): Promise<FailoverAttemptResult<string>> => {
+        try {
+          return { success: true, data: await run() };
+        } catch (error) {
+          lastError = error;
+          return toImportFailoverAttempt(error);
+        }
+      };
+      const result = await runWithLlmFailover<string>({
+        operation: "resume-import",
+        primary: {
           provider,
-          model: runtime.model,
-          fileName,
-          mediaType,
-          totalElapsedMs: elapsedMs(importStartedAt),
+          baseUrl: fallback.primaryBaseUrl,
+          apiKey: runtime.apiKey,
         },
-      );
-
-      const fallbackTextExtractionStartedAt = Date.now();
-      documentText = await extractResumePdfText(decoded);
-      logger.info(
-        "Design resume file import fallback text extraction completed",
-        {
-          requestId: requestId ?? null,
-          provider,
-          model: runtime.model,
-          fileName,
-          mediaType,
-          durationMs: elapsedMs(fallbackTextExtractionStartedAt),
-          totalElapsedMs: elapsedMs(importStartedAt),
-          documentTextChars: documentText.length,
-        },
-      );
-      const fallbackProviderExtractionStartedAt = Date.now();
-      rawText = await extractResumeFromProvider({
-        provider,
-        apiKey: runtime.apiKey ?? "",
-        baseUrl: runtime.baseUrl,
-        model: runtime.model,
-        mediaType,
-        fileName,
-        dataBase64: normalizedBase64,
-        documentText,
-        requestId,
+        fallback: fallback.config,
+        callPrimary: () =>
+          attempt(() => extractWithTarget(primaryTarget, documentText)),
+        callFallback: () =>
+          attempt(async () => {
+            const target = fallback.target;
+            const targetDocumentText = await extractInitialDocumentText({
+              provider: target.provider,
+              mediaType,
+              decoded,
+            });
+            return extractWithTarget(target, targetDocumentText);
+          }),
       });
-      logger.info(
-        "Design resume file import fallback provider extraction completed",
-        {
-          requestId: requestId ?? null,
-          provider,
-          model: runtime.model,
-          fileName,
-          mediaType,
-          durationMs: elapsedMs(fallbackProviderExtractionStartedAt),
-          totalElapsedMs: elapsedMs(importStartedAt),
-          outputChars: rawText.length,
-        },
-      );
+      if (!result.success) throw toImportFailoverError(lastError, result.error);
+      rawText = result.data;
     }
     const parseStartedAt = Date.now();
     const parsed = parseImportedResumeJson(rawText);

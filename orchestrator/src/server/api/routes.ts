@@ -3,6 +3,7 @@
  */
 
 import { Router } from "express";
+import { accessTokensRouter } from "./routes/access-tokens";
 import { appStatusRouter } from "./routes/app-status";
 import { authRouter } from "./routes/auth";
 import { authSsoRouter } from "./routes/auth-sso";
@@ -20,6 +21,7 @@ import { pipelineRouter } from "./routes/pipeline";
 import { postApplicationProvidersRouter } from "./routes/post-application-providers";
 import { postApplicationReviewRouter } from "./routes/post-application-review";
 import { profileRouter } from "./routes/profile";
+import { roleCvsRouter } from "./routes/role-cvs";
 import { settingsRouter } from "./routes/settings";
 import { tracerLinksRouter } from "./routes/tracer-links";
 import { visaSponsorsRouter } from "./routes/visa-sponsors";
@@ -44,12 +46,14 @@ apiRouter.use("/webhook", webhookRouter);
 apiRouter.use("/profile", profileRouter);
 apiRouter.use("/database", databaseRouter);
 apiRouter.use("/design-resume", designResumeRouter);
+apiRouter.use("/role-cvs", roleCvsRouter);
 apiRouter.use("/visa-sponsors", visaSponsorsRouter);
 apiRouter.use("/onboarding", onboardingRouter);
 apiRouter.use("/backups", backupRouter);
 apiRouter.use("/tracer-links", tracerLinksRouter);
 apiRouter.use("/workspaces", workspacesRouter);
 apiRouter.use("/auth/sso", authSsoRouter);
+apiRouter.use("/auth/tokens", accessTokensRouter);
 apiRouter.use("/auth", authRouter);
 apiRouter.use("/workday", workdayRouter);
 apiRouter.use("/watchlist", watchlistRouter);

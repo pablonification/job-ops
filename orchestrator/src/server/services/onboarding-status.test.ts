@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   getSetting: vi.fn(),
   isDemoMode: vi.fn(),
   validateLlmCredentials: vi.fn(),
+  resolveLlmFallbackEligibility: vi.fn(),
   validateResumeSchema: vi.fn(),
   validateRxResumeCredentials: vi.fn(),
 }));
@@ -52,6 +53,10 @@ vi.mock("@server/services/llm/service", () => ({
       validateCredentials: mocks.validateLlmCredentials,
     };
   }),
+}));
+
+vi.mock("@server/services/llm/failover/eligibility", () => ({
+  resolveLlmFallbackEligibility: mocks.resolveLlmFallbackEligibility,
 }));
 
 vi.mock("@server/services/profile", () => ({
@@ -97,6 +102,7 @@ import {
 describe("onboarding status engine", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.resolveLlmFallbackEligibility.mockReturnValue({ state: "absent" });
     mocks.getJobOpsAppStatus.mockReturnValue({
       appMode: "local",
       capabilities: {
@@ -256,6 +262,132 @@ describe("onboarding status engine", () => {
       primaryAction: "connect_model",
     });
     expect(status.requirements[1]?.message).toMatch(/access token expired/i);
+  });
+
+  it("asks to reconnect when the Claude subscription token stops working", async () => {
+    mocks.getSetting.mockImplementation(async (key: string) => {
+      const values: Record<string, string | null> = {
+        llmApiKey: null,
+        llmProvider: "claude_agent_sdk",
+        llmBaseUrl: "",
+        model: "sonnet",
+        onboardingProfileCompleted: "1",
+        onboardingLlmCompleted: "1",
+        onboardingResumeConfirmedSource: "local:doc-1",
+      };
+      return values[key] ?? null;
+    });
+    mocks.validateLlmCredentials.mockResolvedValue({
+      valid: false,
+      message:
+        "Claude (subscription) is not authenticated: CLAUDE_CODE_OAUTH_TOKEN is not set.",
+    });
+
+    const status = await getOnboardingStatus();
+
+    expect(status.complete).toBe(false);
+    expect(status.nextRequirementId).toBe("model");
+    expect(status.requirements[1]).toMatchObject({
+      id: "model",
+      status: "needs_action",
+      title: "Reconnect your Claude subscription",
+      primaryAction: "connect_model",
+      details: { provider: "claude_agent_sdk", baseUrl: null },
+    });
+    expect(status.requirements[1]?.message).toMatch(/not authenticated/);
+  });
+
+  it("checks the fallback, not the Claude subscription, when the fallback is forced", async () => {
+    mocks.getSetting.mockImplementation(async (key: string) => {
+      const values: Record<string, string | null> = {
+        llmApiKey: null,
+        llmProvider: "claude_agent_sdk",
+        llmBaseUrl: "",
+        model: "sonnet",
+        onboardingProfileCompleted: "1",
+        onboardingLlmCompleted: "1",
+        onboardingResumeConfirmedSource: "local:doc-1",
+      };
+      return values[key] ?? null;
+    });
+    mocks.resolveLlmFallbackEligibility.mockReturnValue({
+      state: "active",
+      config: {
+        state: "ready",
+        forced: true,
+        target: {
+          provider: "openai_compatible",
+          model: "muse-spark-1.2",
+          baseUrl: "https://api.meta.ai/v1",
+          apiKey: "muse-key",
+        },
+        breaker: { threshold: 3, cooldownMs: 300_000 },
+      },
+      primary: { provider: "claude_agent_sdk", baseUrl: "" },
+      fallback: {
+        provider: "openai_compatible",
+        baseUrl: "https://api.meta.ai/v1",
+      },
+    });
+    mocks.validateLlmCredentials.mockResolvedValue({
+      valid: false,
+      message: "Invalid LLM API key. Check the key and try again.",
+    });
+
+    const status = await getOnboardingStatus();
+
+    expect(status.requirements[1]).toMatchObject({
+      id: "model",
+      status: "needs_action",
+      title: "Fix the fallback model",
+      details: { provider: "openai_compatible", baseUrl: null },
+    });
+    expect(JSON.stringify(status)).not.toContain(
+      "Reconnect your Claude subscription",
+    );
+  });
+
+  it("does not ask to reconnect Claude while forced to a working fallback", async () => {
+    mocks.getSetting.mockImplementation(async (key: string) => {
+      const values: Record<string, string | null> = {
+        llmApiKey: null,
+        llmProvider: "claude_agent_sdk",
+        llmBaseUrl: "",
+        model: "sonnet",
+        onboardingProfileCompleted: "1",
+        onboardingLlmCompleted: "1",
+        onboardingResumeConfirmedSource: "local:doc-1",
+      };
+      return values[key] ?? null;
+    });
+    mocks.resolveLlmFallbackEligibility.mockReturnValue({
+      state: "active",
+      config: {
+        state: "ready",
+        forced: true,
+        target: {
+          provider: "openai_compatible",
+          model: "muse-spark-1.2",
+          baseUrl: "https://api.meta.ai/v1",
+          apiKey: "muse-key",
+        },
+        breaker: { threshold: 3, cooldownMs: 300_000 },
+      },
+      primary: { provider: "claude_agent_sdk", baseUrl: "" },
+      fallback: {
+        provider: "openai_compatible",
+        baseUrl: "https://api.meta.ai/v1",
+      },
+    });
+    mocks.validateLlmCredentials.mockResolvedValue({
+      valid: true,
+      message: null,
+    });
+
+    const status = await getOnboardingStatus();
+
+    expect(status.requirements[1]).toMatchObject({ id: "model" });
+    expect(status.requirements[1]?.status).not.toBe("needs_action");
   });
 
   it("returns resume as next when no resume is ready", async () => {

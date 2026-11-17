@@ -1,10 +1,37 @@
 import { z } from "zod";
 import {
+  ID_BIG_TECH_COMPANY_IDS,
+  type IdBigTechCompanyId,
+  parseIdBigTechCompanies,
+} from "./extractors/indonesia/big-tech";
+import {
   LOCATION_INPUT_MODE_VALUES,
   LOCATION_MATCH_STRICTNESS_VALUES,
   LOCATION_SEARCH_SCOPE_VALUES,
 } from "./location-preferences";
+import {
+  DEFAULT_DIGEST_MAX_JOBS,
+  DEFAULT_DIGEST_MODE,
+  DEFAULT_SCHEDULE_CATCH_UP_MINUTES,
+  DEFAULT_SCHEDULE_TIME,
+  DEFAULT_SCHEDULE_TIME_ZONE,
+  DIGEST_MODE_VALUES,
+  type DigestMode,
+  isValidScheduleTime,
+  isValidTimeZone,
+  MAX_DIGEST_MAX_JOBS,
+  MAX_SCHEDULE_CATCH_UP_MINUTES,
+  SCHEDULE_WEEKDAY_VALUES,
+  type ScheduleWeekday,
+  TELEGRAM_BOT_TOKEN_PATTERN,
+  TELEGRAM_CHAT_ID_PATTERN,
+} from "./pipeline-schedule";
 import { getDefaultPromptTemplate } from "./prompt-template-definitions";
+import { normalizeTargetCompanyLines } from "./target-companies";
+import {
+  ROLE_CV_PIPELINE_MODE_VALUES,
+  type RoleCvPipelineMode,
+} from "./types/role-cvs";
 import {
   CHAT_STYLE_LANGUAGE_MODE_VALUES,
   CHAT_STYLE_MANUAL_LANGUAGE_VALUES,
@@ -90,6 +117,7 @@ export const DEFAULT_ANTHROPIC_MODEL = "claude-sonnet-4-6";
 export const DEFAULT_GLM_MODEL = "glm-5.1";
 export const DEFAULT_CODEX_MODEL = "gpt-5.4-mini";
 export const DEFAULT_CLAUDE_CLI_MODEL = "claude-sonnet-5";
+export const DEFAULT_CLAUDE_AGENT_SDK_MODEL = "sonnet";
 
 export function getDefaultModelForProvider(
   provider: string | null | undefined,
@@ -127,6 +155,10 @@ export function getDefaultModelForProvider(
 
   if (normalizedProvider === "claude_cli") {
     return DEFAULT_CLAUDE_CLI_MODEL;
+  }
+
+  if (normalizedProvider === "claude_agent_sdk") {
+    return DEFAULT_CLAUDE_AGENT_SDK_MODEL;
   }
 
   if (normalizedProvider === "glm") {
@@ -254,6 +286,20 @@ const parseLocationSearchScopeOrNull = createEnumParser(
 const parseLocationMatchStrictnessOrNull = createEnumParser(
   LOCATION_MATCH_STRICTNESS_VALUES,
 );
+const parseScheduleWeekdaysOrNull = createEnumArrayParser(
+  SCHEDULE_WEEKDAY_VALUES,
+);
+const parseDigestModeOrNull = createEnumParser(DIGEST_MODE_VALUES);
+
+function parseBoundedIntOrNull(
+  raw: string | undefined,
+  min: number,
+  max: number,
+): number | null {
+  const parsed = raw ? parseInt(raw, 10) : NaN;
+  if (Number.isNaN(parsed)) return null;
+  return Math.min(max, Math.max(min, parsed));
+}
 
 function parseJsonObjectOrNull<T>(raw: string | undefined): T | null {
   if (!raw) return null;
@@ -542,6 +588,16 @@ export const settingsRegistry = {
     parse: parseIntOrNull,
     serialize: serializeNullableNumber,
   },
+  idbigtechCompanies: {
+    kind: "typed" as const,
+    schema: z
+      .array(z.enum(ID_BIG_TECH_COMPANY_IDS))
+      .min(1)
+      .max(ID_BIG_TECH_COMPANY_IDS.length),
+    default: (): IdBigTechCompanyId[] => [...ID_BIG_TECH_COMPANY_IDS],
+    parse: parseIdBigTechCompanies,
+    serialize: serializeNullableJsonArray,
+  },
   searchTerms: {
     kind: "typed" as const,
     schema: z.array(z.string().trim().min(1).max(200)).max(100),
@@ -611,6 +667,30 @@ export const settingsRegistry = {
     serialize: (value: string | null | undefined): string | null =>
       value ?? null,
   },
+  // One company per line; aliases on a line are separated by "|". Blank
+  // lines are accepted (the Settings textarea sends them while typing) and
+  // dropped when saved.
+  targetCompanies: {
+    kind: "typed" as const,
+    schema: z.array(z.string().trim().max(500)).max(200),
+    default: (): string[] => [],
+    parse: (raw: string | undefined): string[] | null => {
+      const parsed = parseJsonArrayOrNull(raw);
+      return parsed ? normalizeTargetCompanyLines(parsed) : null;
+    },
+    serialize: (value: string[] | null | undefined): string | null => {
+      const normalized = normalizeTargetCompanyLines(value);
+      return normalized.length > 0 ? JSON.stringify(normalized) : null;
+    },
+  },
+  dealbreakers: {
+    kind: "typed" as const,
+    schema: z.string().trim().max(4000),
+    default: (): string => "",
+    parse: parseNonEmptyStringOrNull,
+    serialize: (value: string | null | undefined): string | null =>
+      value?.trim() ? value.trim() : null,
+  },
   ghostwriterSystemPromptTemplate: {
     kind: "typed" as const,
     schema: z.string().trim().max(12000),
@@ -633,6 +713,23 @@ export const settingsRegistry = {
     default: (): string => getDefaultPromptTemplate("tailoringPromptTemplate"),
     parse: parseNonEmptyStringOrNull,
     serialize: (value: string | null | undefined): string | null =>
+      value ?? null,
+  },
+  roleCvPromptTemplate: {
+    kind: "typed" as const,
+    schema: z.string().trim().max(12000),
+    default: (): string => getDefaultPromptTemplate("roleCvPromptTemplate"),
+    parse: parseNonEmptyStringOrNull,
+    serialize: (value: string | null | undefined): string | null =>
+      value ?? null,
+  },
+  roleCvPipelineMode: {
+    kind: "typed" as const,
+    schema: z.enum(ROLE_CV_PIPELINE_MODE_VALUES),
+    // Refine only takes effect once at least one Role CV exists.
+    default: (): RoleCvPipelineMode => "refine",
+    parse: createEnumParser(ROLE_CV_PIPELINE_MODE_VALUES),
+    serialize: (value: RoleCvPipelineMode | null | undefined): string | null =>
       value ?? null,
   },
   scoringPromptTemplate: {
@@ -859,6 +956,97 @@ export const settingsRegistry = {
     },
     serialize: serializeNullableNumber,
   },
+  // --- Scheduled runs and the run digest ---
+  // Admin-only, unavailable in hosted and demo mode. The time is "HH:MM" in
+  // the IANA time zone; the scheduler re-checks the zone, since a stored
+  // value can stop being valid after a runtime upgrade.
+  scheduleEnabled: {
+    kind: "typed" as const,
+    schema: z.boolean(),
+    default: (): boolean => false,
+    parse: parseBitBoolOrNull,
+    serialize: serializeBitBool,
+  },
+  scheduleTime: {
+    kind: "typed" as const,
+    schema: z.string().trim().refine(isValidScheduleTime, {
+      message: "Use a 24-hour time such as 08:00",
+    }),
+    default: (): string => DEFAULT_SCHEDULE_TIME,
+    parse: parseNonEmptyStringOrNull,
+    serialize: (value: string | null | undefined): string | null =>
+      value?.trim() || null,
+  },
+  scheduleTimeZone: {
+    kind: "typed" as const,
+    schema: z.string().trim().max(100).refine(isValidTimeZone, {
+      message: "Use a time zone name such as Asia/Jakarta",
+    }),
+    default: (): string => DEFAULT_SCHEDULE_TIME_ZONE,
+    parse: parseNonEmptyStringOrNull,
+    serialize: (value: string | null | undefined): string | null =>
+      value?.trim() || null,
+  },
+  scheduleWeekdays: {
+    kind: "typed" as const,
+    schema: z.array(z.enum(SCHEDULE_WEEKDAY_VALUES)).min(1).max(7),
+    default: (): ScheduleWeekday[] => [...SCHEDULE_WEEKDAY_VALUES],
+    parse: parseScheduleWeekdaysOrNull,
+    serialize: (value: ScheduleWeekday[] | null | undefined): string | null =>
+      value && value.length > 0
+        ? JSON.stringify(
+            SCHEDULE_WEEKDAY_VALUES.filter((day) => value.includes(day)),
+          )
+        : null,
+  },
+  // How late a missed run may still start, e.g. after a restart.
+  scheduleCatchUpMinutes: {
+    kind: "typed" as const,
+    schema: z.number().int().min(1).max(MAX_SCHEDULE_CATCH_UP_MINUTES),
+    default: (): number => DEFAULT_SCHEDULE_CATCH_UP_MINUTES,
+    parse: (raw: string | undefined): number | null =>
+      parseBoundedIntOrNull(raw, 1, MAX_SCHEDULE_CATCH_UP_MINUTES),
+    serialize: serializeNullableNumber,
+  },
+  // Saved search to run; empty means the most recently used saved search.
+  scheduleSearchPresetId: {
+    kind: "typed" as const,
+    schema: z.string().trim().max(200),
+    default: (): string => "",
+    parse: parseNonEmptyStringOrNull,
+    serialize: (value: string | null | undefined): string | null =>
+      value?.trim() || null,
+  },
+  digestMode: {
+    kind: "typed" as const,
+    schema: z.enum(DIGEST_MODE_VALUES),
+    default: (): DigestMode => DEFAULT_DIGEST_MODE,
+    parse: parseDigestModeOrNull,
+    serialize: (value: DigestMode | null | undefined): string | null =>
+      value ?? null,
+  },
+  digestMaxJobs: {
+    kind: "typed" as const,
+    schema: z.number().int().min(1).max(MAX_DIGEST_MAX_JOBS),
+    default: (): number => DEFAULT_DIGEST_MAX_JOBS,
+    parse: (raw: string | undefined): number | null =>
+      parseBoundedIntOrNull(raw, 1, MAX_DIGEST_MAX_JOBS),
+    serialize: serializeNullableNumber,
+  },
+  // Where the digest goes. Not a secret, but it says where data is sent.
+  telegramChatId: {
+    kind: "typed" as const,
+    schema: z
+      .string()
+      .trim()
+      .refine((value) => value === "" || TELEGRAM_CHAT_ID_PATTERN.test(value), {
+        message: "Use a numeric chat id such as 123456789, or @channelname",
+      }),
+    default: (): string => "",
+    parse: parseNonEmptyStringOrNull,
+    serialize: (value: string | null | undefined): string | null =>
+      value?.trim() || null,
+  },
   penalizeMissingSalary: {
     kind: "typed" as const,
     schema: z.boolean(),
@@ -978,6 +1166,19 @@ export const settingsRegistry = {
     kind: "secret" as const,
     envKey: "WEBHOOK_SECRET",
     schema: z.string().trim().max(2000),
+  },
+
+  telegramBotToken: {
+    kind: "secret" as const,
+    envKey: "TELEGRAM_BOT_TOKEN",
+    schema: z
+      .string()
+      .trim()
+      .max(200)
+      .refine(
+        (value) => value === "" || TELEGRAM_BOT_TOKEN_PATTERN.test(value),
+        { message: "A bot token looks like 123456789:AAH... (from BotFather)" },
+      ),
   },
 
   // --- Aliases ---

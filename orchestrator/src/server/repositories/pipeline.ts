@@ -9,6 +9,7 @@ import type {
   PipelineRunInsights,
   PipelineRunResultSummary,
   PipelineRunSavedDetails,
+  PipelineRunTrigger,
 } from "@shared/types";
 import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
 import { db, schema } from "../db/index";
@@ -39,6 +40,7 @@ function mapRowToPipelineRun(
     jobsProcessed: row.jobsProcessed,
     errorMessage: row.errorMessage,
     configSnapshot: parseConfigSnapshot(row.configSnapshot),
+    trigger: row.trigger ?? null,
   };
 }
 
@@ -83,6 +85,7 @@ function parseConfigSnapshot(
 export async function createPipelineRun(args?: {
   configSnapshot?: PipelineRunConfigSnapshot | null;
   savedDetails?: PipelineRunSavedDetails | null;
+  trigger?: PipelineRunTrigger | null;
 }): Promise<PipelineRun> {
   const id = randomUUID();
   const now = new Date().toISOString();
@@ -98,6 +101,7 @@ export async function createPipelineRun(args?: {
     requestedConfig: args?.savedDetails?.requestedConfig ?? null,
     effectiveConfig: args?.savedDetails?.effectiveConfig ?? null,
     resultSummary: args?.savedDetails?.resultSummary ?? null,
+    trigger: args?.trigger ?? null,
   });
 
   return {
@@ -109,6 +113,7 @@ export async function createPipelineRun(args?: {
     jobsProcessed: 0,
     errorMessage: null,
     configSnapshot: args?.configSnapshot ?? null,
+    trigger: args?.trigger ?? null,
   };
 }
 
@@ -174,6 +179,47 @@ export async function getRecentPipelineRuns(
     .limit(limit);
 
   return rows.map(mapRowToPipelineRun);
+}
+
+/**
+ * One page of pipeline runs, newest first, with the total count.
+ */
+export async function listPipelineRunsPage(input: {
+  limit: number;
+  offset: number;
+}): Promise<{ runs: PipelineRun[]; total: number }> {
+  const [rows, [countRow]] = await Promise.all([
+    db
+      .select()
+      .from(pipelineRuns)
+      .where(pipelineRunsScopeFilter())
+      .orderBy(desc(pipelineRuns.startedAt))
+      .limit(input.limit)
+      .offset(input.offset),
+    db
+      .select({ count: sql<number>`count(*)` })
+      .from(pipelineRuns)
+      .where(pipelineRunsScopeFilter()),
+  ]);
+
+  return {
+    runs: rows.map(mapRowToPipelineRun),
+    total: Number(countRow?.count ?? 0),
+  };
+}
+
+/** The newest run started with this trigger, e.g. the last scheduled run. */
+export async function getLatestPipelineRunByTrigger(
+  trigger: PipelineRunTrigger,
+): Promise<PipelineRun | null> {
+  const [row] = await db
+    .select()
+    .from(pipelineRuns)
+    .where(and(pipelineRunsScopeFilter(), eq(pipelineRuns.trigger, trigger)))
+    .orderBy(desc(pipelineRuns.startedAt))
+    .limit(1);
+
+  return row ? mapRowToPipelineRun(row) : null;
 }
 
 export async function getPipelineRunById(

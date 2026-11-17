@@ -1,3 +1,4 @@
+import { ID_BIG_TECH_COMPANY_IDS } from "../extractors/indonesia/big-tech";
 import { getDefaultPromptTemplate } from "../prompt-template-definitions";
 import type {
   ApplicationTask,
@@ -38,6 +39,8 @@ export const createJob = (overrides: Partial<Job> = {}): Job => ({
   tailoredHeadline: null,
   tailoredSkills: null,
   selectedProjectIds: null,
+  roleCvId: null,
+  roleCvMatchSource: null,
   pdfPath: null,
   pdfSource: null,
   pdfRegenerating: false,
@@ -150,6 +153,18 @@ export const createAppSettings = (
   pipelineWebhookUrl: { value: "", default: "", override: null },
   jobCompleteWebhookUrl: { value: "", default: "", override: null },
   profileProjects: [],
+  llmFallback: {
+    configured: false,
+    active: false,
+    provider: null,
+    model: null,
+    forced: false,
+    tripped: false,
+    trippedUntil: null,
+    trippedPurposes: [],
+    inactiveReason: null,
+    lastFailover: null,
+  },
   resumeProjects: {
     value: { maxProjects: 3, lockedProjectIds: [], aiSelectableProjectIds: [] },
     default: {
@@ -217,7 +232,22 @@ export const createAppSettings = (
     default: [],
     override: null,
   },
+  idbigtechCompanies: {
+    value: [...ID_BIG_TECH_COMPANY_IDS],
+    default: [...ID_BIG_TECH_COMPANY_IDS],
+    override: null,
+  },
   scoringInstructions: {
+    value: "",
+    default: "",
+    override: null,
+  },
+  targetCompanies: {
+    value: [],
+    default: [],
+    override: null,
+  },
+  dealbreakers: {
     value: "",
     default: "",
     override: null,
@@ -235,6 +265,16 @@ export const createAppSettings = (
   tailoringPromptTemplate: {
     value: getDefaultPromptTemplate("tailoringPromptTemplate"),
     default: getDefaultPromptTemplate("tailoringPromptTemplate"),
+    override: null,
+  },
+  roleCvPromptTemplate: {
+    value: getDefaultPromptTemplate("roleCvPromptTemplate"),
+    default: getDefaultPromptTemplate("roleCvPromptTemplate"),
+    override: null,
+  },
+  roleCvPipelineMode: {
+    value: "refine",
+    default: "refine",
     override: null,
   },
   scoringPromptTemplate: {
@@ -312,6 +352,20 @@ export const createAppSettings = (
   adzunaAppKeyHint: null,
   apifyTokenHint: null,
   webhookSecretHint: null,
+  telegramBotTokenHint: null,
+  scheduleEnabled: { value: false, default: false, override: null },
+  scheduleTime: { value: "08:00", default: "08:00", override: null },
+  scheduleTimeZone: { value: "UTC", default: "UTC", override: null },
+  scheduleWeekdays: {
+    value: ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
+    default: ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
+    override: null,
+  },
+  scheduleCatchUpMinutes: { value: 15, default: 15, override: null },
+  scheduleSearchPresetId: { value: "", default: "", override: null },
+  digestMode: { value: "scheduled", default: "scheduled", override: null },
+  digestMaxJobs: { value: 5, default: 5, override: null },
+  telegramChatId: { value: "", default: "", override: null },
   backupEnabled: { value: false, default: false, override: null },
   backupHour: { value: 3, default: 3, override: null },
   backupMaxCount: { value: 7, default: 7, override: null },

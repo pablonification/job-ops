@@ -1,0 +1,258 @@
+{
+  "data": [
+    {
+      "id": "ee637b19-6657-46c1-9cf4-87b1df0f1e53",
+      "status": "published",
+      "title": "QA Automation",
+      "is_remote": false,
+      "work_arrangement": "on-site",
+      "tz_offset_min": null,
+      "tz_offset_max": null,
+      "is_salary_visible": true,
+      "salary_min": 7000000,
+      "salary_max": 10000000,
+      "period": "MONTHLY",
+      "has_equity": false,
+      "vacancy_count": 1,
+      "experience_min": 3,
+      "experience_max": 3,
+      "description": "<ul>\n  <li>Minimum 3 Years experience as IT QA Automation</li>\n  <li>Experienced in creating and running test based on test script</li>\n  <li>Having knowledge in query language to check data in database, postman to check data in API.</li>\n  <li>Strong debug skill to check data communication via browser's developer tools or any similar tools to find fault in quality</li>\n  <li>Know automation concept, methods and tools to optimizes QA test result </li>\n  <li>Having experience in setup and config load test or stress test case</li>\n  <li>Having a humourous and good attitude, can work in multiple project, following latest     trend in testing area</li>\n  <li>Willing to client Office</li>\n</ul>\n<p><br></p>",
+      "external_link": "",
+      "published_at": "2026-11-16 07:08:26",
+      "updated_at": "2026-11-16 07:08:26",
+      "expires_at": "2027-01-15 07:08:26",
+      "is_featured": "unavailable",
+      "is_saved": false,
+      "is_using_paid_quota": false,
+      "saved_job_id": null,
+      "applied_job_id": null,
+      "application_status": null,
+      "city": {
+        "id": "4bfed6fc-8ba2-48b5-b70b-c0050a3a9d41",
+        "name": "Jakarta",
+        "locode": "ID JKT",
+        "country": {
+          "id": "365832f3-641f-4f3a-b8c6-6932d1deb5fe",
+          "alpha2": "ID",
+          "alpha3": "IDN",
+          "name": "Indonesia",
+          "continent": "Asia",
+          "country_code": 62
+        },
+        "state": {
+          "id": "0915085d-5c74-4ed6-913f-c835252dd587",
+          "name": "Jakarta Raya",
+          "subdiv_code": "JK"
+        }
+      },
+      "company": {
+        "id": "7b48b7b6-9593-456a-9b89-9b83faca7950",
+        "name": "Daya Wira Performa",
+        "employee_min_count": 11,
+        "employee_max_count": 50,
+        "pitch": "Partners who inspire your digital transformation.\r\n\r\nEmpowering change through trusted teams and technology.\r\n\r\nAssess, develop, deploy, and improve your digital initiatives.\r\n",
+        "entity": {
+          "id": "05643f50-2b0c-45a1-b5aa-ef8f462e67db",
+          "entityable_type": "company",
+          "entityable_id": "7b48b7b6-9593-456a-9b89-9b83faca7950",
+          "slug": "daya-wira-performa",
+          "claimed": 2,
+          "images": [
+            {
+              "id": "2cacdf38-4a76-49a3-95c8-a9c9c4294e65",
+              "url": "https://cdn.techinasia.com/data/images/dDhJG9W9TI42RZD0POKbYyDzIKcoFtH2Zf8tj3hN.png",
+              "type": "avatar"
+            }
+          ],
+          "industries": [
+            {
+              "id": "b5cb1ce9-536e-4d65-9b3e-4d5a9680a6fd",
+              "name": "Outsourcing",
+              "slug": "outsourcing-2",
+              "description": ""
+            }
+          ],
+          "sites": [
+            {
+              "id": "5a902bf2-77cf-457d-b602-2665d8be0f10",
+              "site": {
+                "id": "0dd8d02e-1255-492a-b484-150e47be1385",
+                "name": "Website",
+                "company_order": 1,
+                "order": 17,
+                "prefix": "",
+                "is_prefix_editable": true
+              },
+              "url": "https://dayawiraperforma.com/"
+            }
+          ]
+        }
+      },
+      "currency": {
+        "id": "4886deb5-ba2b-4234-b7a2-f0776e1c9eb0",
+        "name": "Indonesian Rupiahs",
+        "currency_code": "IDR",
+        "currency_symbol": "Rp"
+      },
+      "job_skills": [
+        {
+          "id": "0f5b2774-4545-4ebd-aef8-fa4411ba40ba",
+          "name": "Test Automation"
+        },
+        {
+          "id": "1d500545-0318-46fa-b599-4303fa4173e4",
+          "name": "Automation"
+        },
+        {
+          "id": "263a0315-9275-4b15-bfa5-93951e137a81",
+          "name": "QA"
+        }
+      ],
+      "job_type": {
+        "id": "c083592d-7d77-476f-8682-f62007c93851",
+        "name": "Contract",
+        "sequence": 3
+      },
+      "position": {
+        "id": "d3134686-fffd-11e6-92bf-06a2e72c5bb9",
+        "name": "QA & Testing"
+      }
+    },
+    {
+      "id": "fd3381d0-707e-40fd-ad8f-6246ce857916",
+      "status": "published",
+      "title": "Business Assurance & Performance ",
+      "is_remote": false,
+      "work_arrangement": "on-site",
+      "tz_offset_min": null,
+      "tz_offset_max": null,
+      "is_salary_visible": true,
+      "salary_min": 0,
+      "salary_max": 0,
+      "period": "MONTHLY",
+      "has_equity": false,
+      "vacancy_count": 1,
+      "experience_min": 1,
+      "experience_max": 4,
+      "description": "<p>Job Desc : </p>\n<ul>\n  <li>Plan, execute, and optimize end-to-end CRM and customer engagement initiatives. </li>\n  <li>Manage customer communication campaigns across multiple CRM channels. </li>\n  <li>Develop campaigns based on customer lifecycle, behavioral segmentation, and business objectives. </li>\n  <li>Monitor campaign performance and analyze results to identify opportunities for improvement. </li>\n  <li>Conduct testing and optimization to improve customer engagement and campaign effectiveness. </li>\n  <li>Collaborate with relevant teams to ensure smooth execution of CRM initiatives.</li>\n</ul>\n<p>Requirements:</p>\n<ul>\n  <li>Bachelor’s degree in Marketing, Business Administration, Data Analytics, Communications, or a related field. </li>\n  <li>2–4 years of hands-on experience in CRM, Lifecycle Marketing, Direct Response Marketing, or a related field. </li>\n  <li>Strong understanding of customer lifecycle and behavioral segmentation. </li>\n  <li>Analytical mindset with the ability to interpret campaign performance and translate insights into actionable improvements. </li>\n  <li>Strong communication and collaboration skills.</li>\n</ul>\n<p><br></p>",
+      "external_link": "",
+      "published_at": "2026-11-16 03:49:42",
+      "updated_at": "2026-11-16 04:12:59",
+      "expires_at": "2027-01-15 03:49:42",
+      "is_featured": "featured",
+      "is_saved": false,
+      "is_using_paid_quota": false,
+      "saved_job_id": null,
+      "applied_job_id": null,
+      "application_status": null,
+      "city": {
+        "id": "4bfed6fc-8ba2-48b5-b70b-c0050a3a9d41",
+        "name": "Jakarta",
+        "locode": "ID JKT",
+        "country": {
+          "id": "365832f3-641f-4f3a-b8c6-6932d1deb5fe",
+          "alpha2": "ID",
+          "alpha3": "IDN",
+          "name": "Indonesia",
+          "continent": "Asia",
+          "country_code": 62
+        },
+        "state": {
+          "id": "0915085d-5c74-4ed6-913f-c835252dd587",
+          "name": "Jakarta Raya",
+          "subdiv_code": "JK"
+        }
+      },
+      "company": {
+        "id": "108a2053-6e21-491f-a5fd-dc46c43252df",
+        "name": "PT Allo Bank Indonesia Tbk",
+        "employee_min_count": 201,
+        "employee_max_count": 500,
+        "pitch": "PT Allo Bank Indonesia Tbk is providing digital financial products to help Indonesians with a seamless experience in Digital Banking to live simply.",
+        "entity": {
+          "id": "810938a9-ed3b-487f-9bde-0226bc7eb1fd",
+          "entityable_type": "company",
+          "entityable_id": "108a2053-6e21-491f-a5fd-dc46c43252df",
+          "slug": "pt-allo-bank-indonesia-tbk",
+          "claimed": 6,
+          "images": [
+            {
+              "id": "0addba46-c202-4c0b-abda-d6705576a40a",
+              "url": "https://cdn.techinasia.com/data/images/ORVeatbieD94KPpsFf9yrDebRMgqXGqfymZiNaNd.png",
+              "type": "avatar"
+            }
+          ],
+          "industries": [
+            {
+              "id": "2f0c6efb-ddc6-444f-9375-ae571f76276a",
+              "name": "Digital bank",
+              "slug": "digital-bank",
+              "description": null
+            }
+          ],
+          "sites": [
+            {
+              "id": "5ebc57a6-ecb5-48ca-b776-b0155e0a3b37",
+              "site": {
+                "id": "0dd8d02e-1255-492a-b484-150e47be1385",
+                "name": "Website",
+                "company_order": 1,
+                "order": 17,
+                "prefix": "",
+                "is_prefix_editable": true
+              },
+              "url": "https://allobank.com/"
+            }
+          ]
+        }
+      },
+      "currency": {
+        "id": "4886deb5-ba2b-4234-b7a2-f0776e1c9eb0",
+        "name": "Indonesian Rupiahs",
+        "currency_code": "IDR",
+        "currency_symbol": "Rp"
+      },
+      "job_skills": [
+        {
+          "id": "44b9bc04-3626-42bd-b9d2-fd61363ac317",
+          "name": "Data Visualization"
+        },
+        {
+          "id": "49da0a2f-9538-4206-a50f-9cdf0047516a",
+          "name": "Microsoft Dynamics CRM"
+        },
+        {
+          "id": "9a37e984-ba0f-4195-9f46-7754515e8f36",
+          "name": "CRM"
+        },
+        {
+          "id": "da2e638c-ed28-4832-b624-017b016c6482",
+          "name": "Data Analysis"
+        },
+        {
+          "id": "f6ce96f7-3b51-4867-bab4-5a50aabc4a8c",
+          "name": "Sales & Marketing"
+        }
+      ],
+      "job_type": {
+        "id": "5124b71a-19ad-42ee-8779-de3433bf7f88",
+        "name": "Full-time",
+        "sequence": 1
+      },
+      "position": {
+        "id": "8ba29919-9179-4981-8570-ab185d14f915",
+        "name": "Marketing & PR"
+      }
+    }
+  ],
+  "current_page": 1,
+  "from": 1,
+  "last_page": 61,
+  "next_page_url": "https://www.techinasia.com/api/2.0/job-postings?query=software%20engineer&per_page=5&country_name%5B0%5D=Indonesia&page=2",
+  "per_page": 5,
+  "prev_page_url": null,
+  "to": 5,
+  "total": 303,
+  "after": "1794564800",
+  "before": "1794812906"
+}

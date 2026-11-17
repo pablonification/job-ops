@@ -153,6 +153,50 @@ const HEALTH_PROBE_CONFIG_BY_SOURCE: Record<
     selectedCountry: DEFAULT_HEALTH_SELECTED_COUNTRY,
     settings: {},
   },
+  techinasia: {
+    searchTerm: DEFAULT_HEALTH_SEARCH_TERM,
+    selectedCountry: "indonesia",
+    settings: {
+      jobspyResultsWanted: "1",
+    },
+  },
+  kalibrr: {
+    searchTerm: DEFAULT_HEALTH_SEARCH_TERM,
+    selectedCountry: "indonesia",
+    settings: {
+      jobspyResultsWanted: "1",
+    },
+  },
+  dealls: {
+    searchTerm: DEFAULT_HEALTH_SEARCH_TERM,
+    selectedCountry: "indonesia",
+    settings: {
+      jobspyResultsWanted: "1",
+    },
+  },
+  jobstreet: {
+    searchTerm: DEFAULT_HEALTH_SEARCH_TERM,
+    selectedCountry: "indonesia",
+    settings: {
+      jobspyResultsWanted: "1",
+    },
+  },
+  glints: {
+    searchTerm: DEFAULT_HEALTH_SEARCH_TERM,
+    selectedCountry: "indonesia",
+    settings: {
+      jobspyResultsWanted: "1",
+    },
+  },
+  idbigtech: {
+    searchTerm: DEFAULT_HEALTH_SEARCH_TERM,
+    selectedCountry: "indonesia",
+    settings: {
+      jobspyResultsWanted: "1",
+      // One company keeps the probe to a list request plus one detail request.
+      idbigtechCompanies: JSON.stringify(["grab"]),
+    },
+  },
 };
 
 const extractorHealthCache = new Map<
@@ -404,7 +448,29 @@ async function runFreshHealthCheck(args: {
   }
 }
 
-export async function checkExtractorHealth(
+/**
+ * Health checks run a live search and the route is public, so parallel
+ * requests for one source share a single check instead of each starting one.
+ * Keyed by source, like the result cache above.
+ */
+const inFlightHealthChecks = new Map<
+  ExtractorSourceId,
+  Promise<ExtractorHealthCheckResult | null>
+>();
+
+export function checkExtractorHealth(
+  source: ExtractorSourceId,
+): Promise<ExtractorHealthCheckResult | null> {
+  const running = inFlightHealthChecks.get(source);
+  if (running) return running;
+  const started = runExtractorHealthCheck(source).finally(() => {
+    inFlightHealthChecks.delete(source);
+  });
+  inFlightHealthChecks.set(source, started);
+  return started;
+}
+
+async function runExtractorHealthCheck(
   source: ExtractorSourceId,
 ): Promise<ExtractorHealthCheckResult | null> {
   const now = Date.now();

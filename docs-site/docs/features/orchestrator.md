@@ -56,11 +56,12 @@ See [Find jobs](/docs/next/features/pipeline-run) for the search review flow.
 1. Manual flow:
    1. Job starts in `discovered`.
    2. Open the job and choose Tailor.
-   3. Edit JD/tailored fields/project picks.
-   4. Click **Finalize & Move to Ready**.
+   3. Optional: in the **Role CV** box, **Apply as is** or **Refine for this job** to start from one of your [Role CVs](/docs/next/features/role-cvs).
+   4. Edit JD/tailored fields/project picks.
+   5. Click **Finalize & Move to Ready**.
 2. Auto flow:
    1. Pipeline scores discovered jobs.
-   2. Top jobs above threshold are auto-processed.
+   2. Top jobs above threshold are auto-processed. If you have Role CVs, each job gets the best-fitting one, used as set in **Settings → Display → Role CVs when auto-tailoring** (refine by default).
    3. Jobs move directly to `ready` with generated PDFs.
 
 When you select a job, the detail panel shows the available title, employer,
@@ -77,10 +78,13 @@ Use it when you need to narrow the current tab without changing tabs.
 What the panel includes:
 
 - source filters
+- a `Target companies` switch that shows only jobs at the companies listed in **Settings → Scoring Settings** (see [Target Companies and Dealbreakers](/docs/next/features/target-companies))
 - sponsor status filters
 - salary filters
 - date filters
 - sorting controls
+
+Job rows at a target company show a `Target` badge.
 
 Job rows and the detail header can also show a `Previously Applied` warning when JobOps finds a high-confidence fuzzy match against one of your past applied or in-progress jobs using title and company, not just URL dedupe. To avoid flagging genuinely new openings, JobOps only shows this warning when the matched historical application falls within 30 days of the current job's discovery date.
 
@@ -173,7 +177,7 @@ PDF generation uses:
 
 - base resume selected from RxResume
 - job description
-- tailored summary/headline/skills/projects
+- tailored summary/headline/skills/projects (copied from or refined from a [Role CV](/docs/next/features/role-cvs) when you use one)
 - the configured PDF renderer (`rxresume` export or local LaTeX via `tectonic`)
 
 Common paths:

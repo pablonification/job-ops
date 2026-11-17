@@ -9,7 +9,7 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import { fileURLToPath } from "node:url";
-import { unauthorized } from "@infra/errors";
+import { forbidden, unauthorized } from "@infra/errors";
 import {
   apiErrorHandler,
   fail,
@@ -17,17 +17,28 @@ import {
   requestContextMiddleware,
 } from "@infra/http";
 import { logger } from "@infra/logger";
-import { runWithRequestContext } from "@infra/request-context";
+import {
+  type RequestAuthMethod,
+  runWithRequestContext,
+} from "@infra/request-context";
 import { sanitizeUnknown } from "@infra/sanitize";
 import { verifyToken } from "@server/auth/jwt";
 import { getJobOpsAppConfig } from "@server/config/app-mode";
 import { isDemoMode } from "@server/config/demo";
 import * as usersRepo from "@server/repositories/users";
+import {
+  authenticateAccessToken,
+  isAccessTokenCandidate,
+} from "@server/services/access-tokens";
 import { proxyChallengeViewerRequest } from "@server/services/challenge-viewer";
 import { DEFAULT_TENANT_ID } from "@server/tenancy/constants";
+import { isExtractorSourceId } from "@shared/extractors";
+import type { AccessTokenScope } from "@shared/types";
 import cors from "cors";
 import express from "express";
 import { apiRouter } from "./api/index";
+import { isMcpRoute, MCP_PATH } from "./mcp/endpoint";
+import { mcpHandler } from "./mcp/http";
 import { ojcpManifestHandler, ojcpMcpHandler } from "./ojcp";
 import { resolveTracerRedirect } from "./services/tracer-links";
 
@@ -158,28 +169,56 @@ function buildUmamiProxyHeaders(req: express.Request): Headers {
   return headers;
 }
 
+/**
+ * The only REST requests a personal access token may make. Agents work
+ * through `/mcp`, where every tool applies its own scope and rules; over REST
+ * a token can only download the files MCP tools hand out links to, and ask
+ * who it is. Anything else would let a token step around the MCP rules (for
+ * example changing connection settings that tools refuse to touch).
+ */
+const ACCESS_TOKEN_REST_ALLOWLIST: ReadonlyArray<RegExp> = [
+  /^\/api\/jobs\/[^/]+\/pdf$/,
+  /^\/api\/role-cvs\/[^/]+\/pdf$/,
+  /^\/api\/auth\/me$/,
+];
+
+type AuthorizationContext = {
+  userId: string;
+  tenantId: string;
+  username: string;
+  isSystemAdmin: boolean;
+  authMethod: RequestAuthMethod;
+  accessTokenId?: string;
+  accessTokenScope?: AccessTokenScope;
+};
+
 export function createAuthGuard() {
   const testAuthBypassEnabled =
     process.env.NODE_ENV === "test" &&
     process.env.JOBOPS_TEST_AUTH_BYPASS === "1";
 
-  async function getAuthorizationContext(req: express.Request): Promise<{
-    userId: string;
-    tenantId: string;
-    username: string;
-    isSystemAdmin: boolean;
-  } | null> {
+  async function getAuthorizationContext(
+    req: express.Request,
+  ): Promise<AuthorizationContext | null> {
     const authHeader = req.headers.authorization || "";
     if (!authHeader.startsWith("Bearer ")) return null;
     const token = authHeader.slice("Bearer ".length).trim();
     try {
-      const payload = await verifyToken(token);
-      const user = await usersRepo.getUserById(payload.userId);
+      // Personal access tokens resolve to the same context a session would,
+      // through the same account checks below.
+      const accessToken = isAccessTokenCandidate(token)
+        ? await authenticateAccessToken(token)
+        : null;
+      if (isAccessTokenCandidate(token) && !accessToken) return null;
+      const credential = accessToken
+        ? { userId: accessToken.userId, tenantId: accessToken.tenantId }
+        : await verifyToken(token);
+      const user = await usersRepo.getUserById(credential.userId);
       const appConfig = getJobOpsAppConfig();
       if (
         !user ||
         user.isDisabled ||
-        user.workspaceId !== payload.tenantId ||
+        user.workspaceId !== credential.tenantId ||
         (appConfig.appMode === "hosted" &&
           user.workspaceId !== appConfig.hostedTenantId)
       ) {
@@ -190,10 +229,44 @@ export function createAuthGuard() {
         tenantId: user.workspaceId,
         username: user.username,
         isSystemAdmin: user.isSystemAdmin,
+        ...(accessToken
+          ? {
+              authMethod: "access_token" as const,
+              accessTokenId: accessToken.tokenId,
+              accessTokenScope: accessToken.scope,
+            }
+          : { authMethod: "session" as const }),
       };
     } catch {
       return null;
     }
+  }
+
+  /**
+   * Limits on what a personal access token may do over the REST API. MCP
+   * tools enforce scopes per tool instead.
+   */
+  function getAccessTokenRestriction(
+    method: string,
+    path: string,
+    context: AuthorizationContext,
+  ): string | null {
+    if (context.authMethod !== "access_token") return null;
+    // Express routing is case-insensitive, so compare lower-cased paths.
+    const normalizedPath = (path.split("?")[0] || path).toLowerCase();
+    if (!normalizedPath.startsWith("/api/") && normalizedPath !== "/api") {
+      return null;
+    }
+    const isRead = ["GET", "HEAD"].includes(method.toUpperCase());
+    if (
+      isRead &&
+      ACCESS_TOKEN_REST_ALLOWLIST.some((pattern) =>
+        pattern.test(normalizedPath),
+      )
+    ) {
+      return null;
+    }
+    return "Access tokens can only download PDFs over the REST API. Use the MCP endpoint (/mcp) for everything else, or sign in to the web app.";
   }
 
   function isPublicReadOnlyRoute(method: string, path: string): boolean {
@@ -254,11 +327,12 @@ export function createAuthGuard() {
       /^\/api\/design-resume\/assets\/[^/]+\/content$/.test(normalizedPath)
     )
       return getJobOpsAppConfig().appMode !== "hosted";
-    if (
-      ["GET", "HEAD"].includes(normalizedMethod) &&
-      /^\/api\/[^/]+\/health$/.test(normalizedPath)
-    )
-      return true;
+    if (["GET", "HEAD"].includes(normalizedMethod)) {
+      // Source health checks are public, but only for real source ids, so
+      // "/api/jobs/health" is not read as public.
+      const healthSource = /^\/api\/([^/]+)\/health$/.exec(normalizedPath)?.[1];
+      if (healthSource && isExtractorSourceId(healthSource)) return true;
+    }
 
     return false;
   }
@@ -291,6 +365,9 @@ export function createAuthGuard() {
   }
 
   function requiresAuth(method: string, path: string): boolean {
+    // The agent endpoint is private for every method, including GET (the
+    // generic rule below would leave non-API GETs public).
+    if (isMcpRoute(path)) return method.toUpperCase() !== "OPTIONS";
     if (isPublicReadOnlyRoute(method, path)) return false;
     if (isPublicDemoRoute(path)) return false;
     // OPTIONS is always exempt for CORS preflight.
@@ -322,7 +399,11 @@ export function createAuthGuard() {
     next: express.NextFunction,
   ) => {
     void (async () => {
-      if (!requiresAuth(req.method, req.path)) {
+      // Express matches routes case-insensitively, so every path rule in this
+      // guard runs on the lower-cased path. Without this, "/API/jobs" would
+      // reach the jobs route while being treated as a public non-API page.
+      const guardPath = req.path.toLowerCase();
+      if (!requiresAuth(req.method, guardPath)) {
         next();
         return;
       }
@@ -334,6 +415,7 @@ export function createAuthGuard() {
             tenantId: DEFAULT_TENANT_ID,
             username: "test",
             isSystemAdmin: true,
+            authMethod: "session",
           },
           () => next(),
         );
@@ -355,6 +437,15 @@ export function createAuthGuard() {
 
       const authContext = await getAuthorizationContext(req);
       if (authContext) {
+        const restriction = getAccessTokenRestriction(
+          req.method,
+          guardPath,
+          authContext,
+        );
+        if (restriction) {
+          fail(res, forbidden(restriction));
+          return;
+        }
         runWithRequestContext(authContext, () => next());
         return;
       }
@@ -475,6 +566,7 @@ export function createApp() {
 
   app.get("/.well-known/ojcp.json", ojcpManifestHandler);
   app.all("/ojcp/mcp", ojcpMcpHandler);
+  app.all(MCP_PATH, mcpHandler);
 
   // API routes
   app.use("/api", apiRouter);

@@ -297,6 +297,73 @@ describe.sequential("Jobs API routes", () => {
     expect(typeof defaultBody.data.revision).toBe("string");
   });
 
+  it("flags target-company jobs from the current setting in list and detail payloads", async () => {
+    const { createJob } = await import("@server/repositories/jobs");
+    const target = await createJob({
+      source: "manual",
+      title: "Backend Intern",
+      employer: "PT GoTo Gojek Tokopedia Tbk",
+      jobUrl: "https://example.com/job/goto",
+    });
+    const other = await createJob({
+      source: "manual",
+      title: "Backend Intern",
+      employer: "Grabango",
+      jobUrl: "https://example.com/job/grabango",
+    });
+
+    const flagsFor = async (view: "list" | "full") => {
+      const res = await fetch(`${baseUrl}/api/jobs?view=${view}`);
+      const body = await res.json();
+      expect(body.ok).toBe(true);
+      return Object.fromEntries(
+        body.data.jobs.map((job: { id: string; isTargetCompany: boolean }) => [
+          job.id,
+          job.isTargetCompany,
+        ]),
+      );
+    };
+    const detailFlag = async (id: string) => {
+      const res = await fetch(`${baseUrl}/api/jobs/${id}`);
+      const body = await res.json();
+      expect(body.ok).toBe(true);
+      return body.data.isTargetCompany;
+    };
+    const patchSettings = async (body: Record<string, unknown>) => {
+      const res = await fetch(`${baseUrl}/api/settings`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      expect(res.status).toBe(200);
+    };
+
+    // Empty setting: the flag is present and false.
+    expect(await flagsFor("list")).toEqual({
+      [target.id]: false,
+      [other.id]: false,
+    });
+    expect(await detailFlag(target.id)).toBe(false);
+
+    await patchSettings({ targetCompanies: ["Gojek | GoTo", "Grab"] });
+    for (const view of ["list", "full"] as const) {
+      expect(await flagsFor(view)).toEqual({
+        [target.id]: true,
+        [other.id]: false,
+      });
+    }
+    expect(await detailFlag(target.id)).toBe(true);
+    expect(await detailFlag(other.id)).toBe(false);
+
+    // Computed, not stored: clearing the setting clears the flag at once.
+    await patchSettings({ targetCompanies: null });
+    expect(await flagsFor("list")).toEqual({
+      [target.id]: false,
+      [other.id]: false,
+    });
+    expect(await detailFlag(target.id)).toBe(false);
+  });
+
   it("keeps the jobs list response contract unchanged in benchmark mode", async () => {
     await stopServer({ server, closeDb, tempDir });
     ({ server, baseUrl, closeDb, tempDir } = await startServer({
@@ -1632,6 +1699,43 @@ describe.sequential("Jobs API routes", () => {
         process.env.JOBOPS_PUBLIC_BASE_URL = previousBaseUrl;
       }
     }
+  });
+
+  it("reports a failed move_to_ready with the pipeline's own error", async () => {
+    const { createJob } = await import("@server/repositories/jobs");
+    const { processJob } = await import("@server/pipeline/index");
+    const job = await createJob({
+      source: "manual",
+      title: "Process Failure Route",
+      employer: "Acme",
+      jobUrl: "https://example.com/job/process-failure-1",
+      jobDescription: "Test description",
+    });
+
+    vi.mocked(processJob).mockResolvedValueOnce({
+      success: false,
+      error: "LLM is not configured",
+    });
+    const failed = await fetch(`${baseUrl}/api/jobs/${job.id}/process`, {
+      method: "POST",
+    });
+    const failedBody = await failed.json();
+    expect(failed.status).toBe(502);
+    expect(failedBody.error).toEqual({
+      code: "UPSTREAM_ERROR",
+      message: "LLM is not configured",
+    });
+
+    vi.mocked(processJob).mockResolvedValueOnce({
+      success: false,
+      error: "PDF regeneration is already in progress for this job.",
+      errorCode: "CONFLICT",
+    });
+    const busy = await fetch(`${baseUrl}/api/jobs/${job.id}/process`, {
+      method: "POST",
+    });
+    expect(busy.status).toBe(409);
+    expect((await busy.json()).error.code).toBe("CONFLICT");
   });
 
   it("runs rescore action with partial failures", async () => {

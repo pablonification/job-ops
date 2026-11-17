@@ -130,6 +130,12 @@ export interface LocationEvidence {
   evidenceQuality?: LocationEvidenceQuality;
   sourceNotes?: readonly string[] | null;
   source?: string | null;
+  /**
+   * The posting is known to be in `country` but does not say which city
+   * (a country-restricted careers site listing "2 Locations"). A city filter
+   * keeps such a job instead of treating the unknown city as a mismatch.
+   */
+  cityUnknown?: boolean | null;
   [index: number]: unknown;
 }
 

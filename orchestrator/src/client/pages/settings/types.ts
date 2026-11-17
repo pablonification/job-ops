@@ -1,8 +1,12 @@
+import type { IdBigTechCompanyId } from "@shared/extractors/indonesia/big-tech.js";
+import type { DigestMode, ScheduleWeekday } from "@shared/pipeline-schedule.js";
 import type {
   ChatStyleLanguageMode,
   ChatStyleManualLanguage,
+  LlmFallbackStatus,
   LlmPurposeApiKeyHints,
   LlmPurposeOverrides,
+  RoleCvPipelineMode,
 } from "@shared/types.js";
 
 export type EffectiveDefault<T> = {
@@ -19,6 +23,7 @@ export type ModelValues = EffectiveDefault<string> & {
   llmApiKeyHint: string | null;
   llmPurposeOverrides: LlmPurposeOverrides;
   llmPurposeApiKeyHints: LlmPurposeApiKeyHints;
+  llmFallback: LlmFallbackStatus | null;
 };
 
 export type WebhookValues = EffectiveDefault<string>;
@@ -26,6 +31,7 @@ export type DisplayValues = {
   showSponsorInfo: EffectiveDefault<boolean>;
   renderMarkdownInJobDescriptions: EffectiveDefault<boolean>;
   autoTailorOnManualImport: EffectiveDefault<boolean>;
+  roleCvPipelineMode: EffectiveDefault<RoleCvPipelineMode>;
 };
 export type ChatValues = {
   tone: EffectiveDefault<string>;
@@ -51,6 +57,22 @@ export type EnvSettingsValues = {
   };
 };
 
+export type SourceSettingsValues = {
+  idbigtechCompanies: EffectiveDefault<IdBigTechCompanyId[]>;
+};
+
+export type ScheduleValues = {
+  scheduleEnabled: EffectiveDefault<boolean>;
+  scheduleTime: EffectiveDefault<string>;
+  scheduleTimeZone: EffectiveDefault<string>;
+  scheduleWeekdays: EffectiveDefault<ScheduleWeekday[]>;
+  scheduleCatchUpMinutes: EffectiveDefault<number>;
+  scheduleSearchPresetId: EffectiveDefault<string>;
+  digestMode: EffectiveDefault<DigestMode>;
+  digestMaxJobs: EffectiveDefault<number>;
+  telegramChatId: EffectiveDefault<string>;
+};
+
 export type BackupValues = {
   backupEnabled: EffectiveDefault<boolean>;
   backupHour: EffectiveDefault<number>;
@@ -62,10 +84,13 @@ export type ScoringValues = {
   missingSalaryPenalty: EffectiveDefault<number>;
   autoSkipScoreThreshold: EffectiveDefault<number | null>;
   blockedCompanyKeywords: EffectiveDefault<string[]>;
+  targetCompanies: EffectiveDefault<string[]>;
+  dealbreakers: EffectiveDefault<string>;
 };
 
 export type PromptTemplatesValues = {
   ghostwriterSystemPromptTemplate: EffectiveDefault<string>;
   tailoringPromptTemplate: EffectiveDefault<string>;
+  roleCvPromptTemplate: EffectiveDefault<string>;
   scoringPromptTemplate: EffectiveDefault<string>;
 };
