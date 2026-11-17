@@ -7,18 +7,21 @@ import {
   APPLICATION_OUTCOMES,
   APPLICATION_STAGES,
   APPLICATION_TASK_TYPES,
+  DIGEST_DELIVERY_STATUSES,
   HOSTED_USAGE_ACTIONS,
   INTERVIEW_OUTCOMES,
   INTERVIEW_TYPES,
   JOB_CHAT_MESSAGE_ROLES,
   JOB_CHAT_MESSAGE_STATUSES,
   JOB_CHAT_RUN_STATUSES,
+  PIPELINE_RUN_TRIGGERS,
   POST_APPLICATION_INTEGRATION_STATUSES,
   POST_APPLICATION_MESSAGE_TYPES,
   POST_APPLICATION_PROCESSING_STATUSES,
   POST_APPLICATION_PROVIDERS,
   POST_APPLICATION_RELEVANCE_DECISIONS,
   POST_APPLICATION_SYNC_RUN_STATUSES,
+  SCHEDULE_ATTEMPT_OUTCOMES,
   SSO_PROVIDERS,
 } from "@shared/types";
 import { sql } from "drizzle-orm";
@@ -431,6 +434,33 @@ export const pipelineRuns = sqliteTable("pipeline_runs", {
   requestedConfig: text("requested_config", { mode: "json" }),
   effectiveConfig: text("effective_config", { mode: "json" }),
   resultSummary: text("result_summary", { mode: "json" }),
+  trigger: text("run_trigger", { enum: PIPELINE_RUN_TRIGGERS }),
+});
+
+/**
+ * Scheduler bookkeeping, one row per tenant. `lastFiredOccurrence` is the
+ * scheduled instant (ISO, UTC) most recently claimed; a tick only starts a
+ * run after moving it forward, so the same scheduled minute never fires
+ * twice, across restarts too. `ownerUserId` is the user who last saved the
+ * schedule; scheduled runs run as that user while they stay active.
+ */
+export const pipelineScheduleState = sqliteTable("pipeline_schedule_state", {
+  tenantId: text("tenant_id")
+    .primaryKey()
+    .references(() => tenants.id, { onDelete: "cascade" }),
+  ownerUserId: text("owner_user_id").references(() => users.id, {
+    onDelete: "set null",
+  }),
+  lastFiredOccurrence: text("last_fired_occurrence"),
+  lastAttemptAt: text("last_attempt_at"),
+  lastOutcome: text("last_outcome", { enum: SCHEDULE_ATTEMPT_OUTCOMES }),
+  lastOutcomeDetail: text("last_outcome_detail"),
+  lastDigestAt: text("last_digest_at"),
+  lastDigestStatus: text("last_digest_status", {
+    enum: DIGEST_DELIVERY_STATUSES,
+  }),
+  lastDigestDetail: text("last_digest_detail"),
+  updatedAt: text("updated_at").notNull().default(sql`(datetime('now'))`),
 });
 
 export const pipelineSearchPresets = sqliteTable(

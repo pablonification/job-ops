@@ -427,6 +427,47 @@ export async function listJobSummariesByIds(jobIds: string[]): Promise<
 }
 
 /**
+ * Title, employer and score of the given jobs, for the run digest. Jobs
+ * outside the current scope are left out.
+ */
+export async function listJobDigestRowsByIds(jobIds: string[]): Promise<
+  Array<{
+    id: string;
+    title: string;
+    employer: string;
+    suitabilityScore: number | null;
+  }>
+> {
+  if (jobIds.length === 0) return [];
+  const rows: Array<{
+    id: string;
+    title: string;
+    employer: string;
+    suitabilityScore: number | null;
+  }> = [];
+  // Stay well under SQLite's bound-parameter limit on very large runs.
+  for (let start = 0; start < jobIds.length; start += 500) {
+    rows.push(
+      ...(await db
+        .select({
+          id: jobs.id,
+          title: jobs.title,
+          employer: jobs.employer,
+          suitabilityScore: jobs.suitabilityScore,
+        })
+        .from(jobs)
+        .where(
+          and(
+            jobsScopeFilter(),
+            inArray(jobs.id, jobIds.slice(start, start + 500)),
+          ),
+        )),
+    );
+  }
+  return rows;
+}
+
+/**
  * Get a job by its URL (for deduplication).
  */
 export async function getJobByUrl(jobUrl: string): Promise<Job | null> {
@@ -558,11 +599,13 @@ export async function createJobs(input: CreateJobInput): Promise<Job>;
 export async function createJobs(
   inputs: CreateJobInput[],
   onProgress?: (input: CreateJobInput, index: number, total: number) => void,
-): Promise<{ created: number; skipped: number }>;
+): Promise<{ created: number; skipped: number; createdJobIds: string[] }>;
 export async function createJobs(
   inputOrInputs: CreateJobInput | CreateJobInput[],
   onProgress?: (input: CreateJobInput, index: number, total: number) => void,
-): Promise<Job | { created: number; skipped: number }> {
+): Promise<
+  Job | { created: number; skipped: number; createdJobIds: string[] }
+> {
   if (!Array.isArray(inputOrInputs)) {
     const inserted = await tryInsertJob(inputOrInputs);
     if (inserted) return inserted;
@@ -591,10 +634,11 @@ export async function createJobs(
   let created = 0;
   let skipped = 0;
   let processed = 0;
+  const createdJobIds: string[] = [];
 
   const uniqueUrls = Array.from(byUrl.keys());
   if (uniqueUrls.length === 0) {
-    return { created, skipped };
+    return { created, skipped, createdJobIds };
   }
 
   const existingRows = await db
@@ -619,10 +663,11 @@ export async function createJobs(
     }
 
     created += 1;
+    createdJobIds.push(inserted.id);
     skipped += count - 1;
   }
 
-  return { created, skipped };
+  return { created, skipped, createdJobIds };
 }
 
 /**
