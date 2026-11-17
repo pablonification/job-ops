@@ -131,6 +131,65 @@ CLAUDE_AGENT_SDK_MAX_TURNS=4
 
 Anthropic's terms say third-party products should not offer claude.ai sign-in or subscription limits to their users. Use this provider only with your own token, on your own single-user install.
 
+#### Fallback provider
+
+A fallback provider keeps AI features working when the provider you selected above fails. It is configured only in the environment, is ignored in hosted mode, and with none set JobOps behaves exactly as before.
+
+**Your data goes to the fallback when it is used.** Every request the fallback serves carries the same prompt your selected provider would have received, which includes resume and job content. Only configure a fallback provider you are willing to send that data to.
+
+When a request to your selected provider fails for a provider-side reason, JobOps retries that one request once on the fallback, using the fallback's own model, base URL and API key. The model, base URL and key of your selected provider (including any per-purpose model override) are never sent to the fallback. This covers every AI feature, including Ghostwriter and resume import (for resume import the fallback must be a provider import supports, so `atlascloud`, `requesty` and `api_route` fallbacks are not used there).
+
+What fails over and what does not:
+
+| Fails over | Does not fail over |
+| --- | --- |
+| Not authenticated, rejected key, unknown model or endpoint (`401`, `403`, `404`, and similar) | You cancelled the request |
+| Usage, quota or billing limit (`402`, "usage limit reached") | The request itself is wrong: `400`, `413`, `422` (bad schema, prompt or context too long), or Claude (subscription) reporting `invalid_request` or an API error 400/413/422 |
+| Rate limit (`429`) | |
+| Timeout | |
+| Server error (`5xx`, overloaded) or provider unreachable | |
+| A CLI or Claude (subscription) process crashing | |
+| Output that still is not valid JSON after the request's retries | |
+
+A `400` whose error message starts by naming an unknown model or a bad key counts as a configuration problem and fails over. The fallback is tried once. If it also fails, that failure is what you see (shortened, with keys and credentials removed), and both reasons are written to the server log.
+
+After 3 provider-side failures in a row, your selected provider is skipped for 5 minutes and requests go straight to the fallback. Output that is not valid JSON still fails over but does not count toward those 3, since it does not mean the provider is down. After the cool-down, one request tries your selected provider again; if it works, everything goes back to it. This state is kept per workspace and per provider endpoint in the server process and resets on restart.
+
+With a fallback configured, a "not authenticated" error from your selected provider no longer pauses the pipeline: the run continues on the fallback. If the fallback then fails as well (for any reason), the run pauses, because your selected provider's credentials still need fixing.
+
+**Settings → Models** shows the fallback provider and model under the model fields, and says when the fallback is answering every request (forced, or a provider is being skipped, naming the purpose such as scoring when only a purpose override is affected) and when it last took over and whether that worked. The API key is never shown. `GET /api/settings` returns the same information as `llmFallback`.
+
+**Forced mode never contacts your selected provider.** With `LLM_FORCE_FALLBACK=true`, requests, the connection check in Settings and the onboarding status all use the fallback only; an expired Claude token does not ask you to reconnect while forced.
+
+Environment variables:
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `LLM_FALLBACK_PROVIDER` | none | Exact provider id, for example `openai_compatible`, `openrouter`, `claude_agent_sdk`. Aliases are not accepted (`claude` is rejected rather than read as `anthropic`) |
+| `LLM_FALLBACK_MODEL` | none | Model sent to the fallback. Required |
+| `LLM_FALLBACK_BASE_URL` | provider default | Required for `openai_compatible` |
+| `LLM_FALLBACK_API_KEY` | none | Required for providers that need a key. `LLM_API_KEY` is never used for the fallback |
+| `LLM_FORCE_FALLBACK` | `false` | `true` sends every request to the fallback without trying your selected provider |
+| `LLM_FALLBACK_BREAKER_THRESHOLD` | `3` | Provider-side failures in a row before your selected provider is skipped |
+| `LLM_FALLBACK_BREAKER_COOLDOWN_MS` | `300000` | How long it is skipped (5 minutes) |
+
+Example: Claude (subscription) with Meta's Muse Spark (an OpenAI-compatible endpoint) behind it. In `.env`:
+
+```bash
+LLM_PROVIDER=claude_agent_sdk
+MODEL=sonnet
+CLAUDE_CODE_OAUTH_TOKEN=paste-the-token-here
+
+LLM_FALLBACK_PROVIDER=openai_compatible
+LLM_FALLBACK_BASE_URL=https://api.meta.ai/v1
+LLM_FALLBACK_MODEL=muse-spark-1.2-contributor
+LLM_FALLBACK_API_KEY=paste-your-meta-api-key-here
+```
+
+The Muse Spark model name depends on your Meta account; use the one your account lists (it may not be `muse-spark-1.2-contributor`). Restart JobOps. To go back to Muse Spark for everything, add `LLM_FORCE_FALLBACK=true` and restart; remove it to return to Claude.
+
+If the fallback is set but unusable (unknown provider, missing model, missing key or base URL, or the same provider and endpoint as your selected one), JobOps ignores it and Settings says why. It never stops the app from starting.
+
 ### Webhooks
 
 ![Webhooks settings section](/img/features/settings-webhooks-section.png)
@@ -433,11 +492,20 @@ curl -X POST "http://localhost:3001/api/backups"
 - Check that `CLAUDE_CODE_OAUTH_TOKEN` is set in the environment JobOps runs with (for Docker, in `.env`), then restart.
 - Tokens from `claude setup-token` last about a year. If it expired or was revoked, run `claude setup-token` again and replace the value.
 - The pipeline pauses on this error instead of failing every job. Fix the token, then start the run again.
+- With a [fallback provider](#fallback-provider) configured, the run continues on the fallback instead of pausing.
 
 ### Claude (subscription) says "usage limit reached" or "rate limit reached"
 
 - Your plan's session or weekly limit is used up, or Anthropic is throttling requests. Wait for the limit to reset, or switch provider in **Settings → Models**.
 - Lower `CLAUDE_AGENT_SDK_MAX_CONCURRENCY` (for example to `1`) if large pipeline runs hit rate limits often.
+- Configure a [fallback provider](#fallback-provider) so requests move to another model automatically until the limit resets.
+
+### Settings says the fallback model is not active
+
+- Read the reason under the model fields. It names the missing or wrong variable, for example `LLM_FALLBACK_MODEL is not set.`
+- `openai_compatible` needs `LLM_FALLBACK_BASE_URL` and `LLM_FALLBACK_API_KEY`; the fallback never borrows `LLM_BASE_URL` or `LLM_API_KEY`.
+- A fallback with the same provider and endpoint as your selected provider is ignored, because it cannot help.
+- Environment changes need a restart. In hosted mode the fallback is always off.
 
 ## Related pages
 

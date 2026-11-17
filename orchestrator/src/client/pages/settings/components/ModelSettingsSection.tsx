@@ -1,4 +1,5 @@
 import { LlmModelConfiguration } from "@client/components/llmmodelconfiguration/LlmModelConfiguration";
+import { LlmFallbackStatusNote } from "@client/pages/settings/components/LlmFallbackStatusNote";
 import { SettingsSectionFrame } from "@client/pages/settings/components/SettingsSectionFrame";
 import type { ModelValues } from "@client/pages/settings/types";
 import {
@@ -147,6 +148,7 @@ export const ModelSettingsSection: React.FC<ModelSettingsSectionProps> = ({
           onApiKeyChange: setPurposeApiKey,
         }}
       />
+      <LlmFallbackStatusNote status={values.llmFallback} />
     </SettingsSectionFrame>
   );
 };

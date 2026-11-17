@@ -4,6 +4,10 @@ import * as settingsRepo from "@server/repositories/settings";
 import { getCurrentAccountEntitlements } from "@server/services/account-entitlements";
 import { getOriginalEnvValue } from "@server/services/envSettings";
 import {
+  describeLlmFallbackStatus,
+  type LlmStatusPrimary,
+} from "@server/services/llm/failover/status";
+import {
   getDefaultModelForProvider,
   settingsRegistry,
 } from "@shared/settings-registry";
@@ -368,6 +372,32 @@ export async function getEffectiveSettings(): Promise<AppSettings> {
 
   // Always expose the effective base resume id for the active RxResume mode.
   result.rxresumeBaseResumeId = rxresumeBaseResumeId;
+
+  // Status covers the default provider and every purpose that overrides it,
+  // mirroring how modelSelection resolves each purpose's endpoint.
+  const defaultLlmBaseUrl = result.llmBaseUrl?.value ?? null;
+  const fallbackPrimaries: LlmStatusPrimary[] = [
+    {
+      purpose: "default",
+      provider: effectiveLlmProvider,
+      baseUrl: defaultLlmBaseUrl,
+    },
+  ];
+  for (const purpose of LLM_PURPOSE_VALUES) {
+    const override = purposeOverrides[purpose];
+    if (!override?.provider && !override?.baseUrl) continue;
+    const provider = override.provider || effectiveLlmProvider;
+    fallbackPrimaries.push({
+      purpose,
+      provider,
+      baseUrl:
+        override.baseUrl ||
+        (provider === effectiveLlmProvider ? defaultLlmBaseUrl : null),
+    });
+  }
+  result.llmFallback = describeLlmFallbackStatus({
+    primaries: fallbackPrimaries,
+  });
 
   return result as AppSettings;
 }

@@ -252,6 +252,36 @@ export interface DemoInfoResponse {
 export type Resolved<T> = { value: T; default: T; override: T | null };
 export type ModelResolved = { value: string; override: string | null };
 
+/**
+ * Read-only status of the environment-configured fallback LLM provider
+ * (`LLM_FALLBACK_*`). Never carries the fallback API key.
+ */
+export interface LlmFallbackStatus {
+  /** A complete fallback configuration is present. */
+  configured: boolean;
+  /** Configured and usable for the current primary provider. */
+  active: boolean;
+  provider: string | null;
+  model: string | null;
+  /** `LLM_FORCE_FALLBACK` is on: every call goes to the fallback. */
+  forced: boolean;
+  /** Some primary (default or a purpose override) is being skipped after repeated provider-side failures. */
+  tripped: boolean;
+  /** When the skipped primary will next be retried (ISO time, the latest if several). */
+  trippedUntil: string | null;
+  /** Which model purposes are on the fallback because their primary is skipped ("default", "scoring", ...). */
+  trippedPurposes: string[];
+  /** Why the fallback is not active, when something is set but unusable. */
+  inactiveReason: string | null;
+  /** The most recent call the fallback took over after a primary failed. */
+  lastFailover: {
+    at: string;
+    reason: string;
+    outcome: "succeeded" | "failed";
+    purposes: string[];
+  } | null;
+}
+
 export interface AppSettings {
   // Typed settings (Resolved):
   model: Resolved<string>;
@@ -337,4 +367,5 @@ export interface AppSettings {
 
   // Computed:
   profileProjects: ResumeProjectCatalogItem[];
+  llmFallback: LlmFallbackStatus;
 }

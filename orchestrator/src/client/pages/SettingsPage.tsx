@@ -713,6 +713,7 @@ const getDerivedSettings = (settings: AppSettings | null) => {
       llmApiKeyHint: settings?.llmApiKeyHint ?? null,
       llmPurposeOverrides: settings?.llmPurposeOverrides?.value ?? {},
       llmPurposeApiKeyHints: settings?.llmPurposeApiKeyHints ?? {},
+      llmFallback: settings?.llmFallback ?? null,
     },
     pipelineWebhook: {
       effective: settings?.pipelineWebhookUrl?.value ?? "",
