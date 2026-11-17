@@ -33,7 +33,7 @@ const descriptorCache = new WeakMap<
 >();
 
 export function toToolDescriptor(tool: McpToolDefinition): Tool {
-  const isRead = tool.scope === "read";
+  const isRead = tool.scope === "read" && tool.readOnly !== false;
   return {
     name: tool.name,
     title: tool.title,

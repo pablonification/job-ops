@@ -117,12 +117,19 @@ export const mcpHandler: RequestHandler = async (req, res) => {
     return;
   }
 
+  // Lets long tools (Ghostwriter) stop when the client goes away.
+  const disconnect = new AbortController();
+  res.on("close", () => {
+    if (!res.writableFinished) disconnect.abort();
+  });
+
   const server = createJobOpsMcpServer({
     requestContext,
     toolContext: {
       scope: requestContext.accessTokenScope ?? "write",
       requestId: requestContext.requestId ?? null,
       requestOrigin: resolveRequestOrigin(req),
+      signal: disconnect.signal,
     },
   });
   try {
