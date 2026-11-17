@@ -8,8 +8,8 @@ import {
 const OWNER_LIST = [
   "GoTo | Gojek | Tokopedia",
   "Grab",
-  "TikTok",
-  "Shopee | Sea",
+  "TikTok | ByteDance",
+  "Shopee | Sea Limited | SPX Express",
   "Traveloka",
   "tiket.com",
   "Blibli",
@@ -25,19 +25,34 @@ describe("createTargetCompanyMatcher", () => {
     ["GOJEK", "GoTo"],
     ["Tokopedia", "GoTo"],
     ["PT Tokopedia", "GoTo"],
+    ["GoTo", "GoTo"],
+    ["Goto", "GoTo"],
+    ["GOTO", "GoTo"],
+    ["GoTo Group", "GoTo"],
     ["GoTo Financial", "GoTo"],
-    ["Go To Group", "GoTo"],
     ["Grab", "Grab"],
+    ["Grab Indonesia", "Grab"],
     ["GrabTaxi Holdings", "Grab"],
+    ["GrabFood", "Grab"],
+    ["GrabExpress", "Grab"],
     ["Grab Holdings Inc.", "Grab"],
     ["PT Shopee International Indonesia", "Shopee"],
     ["Shopee", "Shopee"],
+    ["Shopee Indonesia", "Shopee"],
+    ["ShopeePay", "Shopee"],
+    ["ShopeeFood", "Shopee"],
     ["Sea Limited", "Shopee"],
+    ["SPX Express", "Shopee"],
     ["TikTok", "TikTok"],
+    ["TIKTOK", "TikTok"],
+    ["TikTok Shop", "TikTok"],
+    ["Tiktok Indonesia", "TikTok"],
     ["Tiktok Pte. Ltd.", "TikTok"],
+    ["ByteDance", "TikTok"],
     ["tiket.com", "tiket.com"],
     ["PT Global Tiket Network", "tiket.com"],
     ["Traveloka Indonesia", "Traveloka"],
+    ["Traveloka Services Pte Ltd", "Traveloka"],
     ["traveloka", "Traveloka"],
     ["Blibli.com", "Blibli"],
     ["PT Global Digital Niaga (Blibli)", "Blibli"],
@@ -53,6 +68,12 @@ describe("createTargetCompanyMatcher", () => {
     "Research Partners",
     "Overseas Staffing",
     "Gotoh Industries",
+    "Go To Market Specialist Agency",
+    "Go To Group",
+    "Sea Food Restaurant",
+    "Red Sea Shipping",
+    "SeaBank",
+    "Seabank",
     "Shopeefy",
     "Travel Okay",
     "Bukalapak",
@@ -69,19 +90,51 @@ describe("createTargetCompanyMatcher", () => {
   });
 
   it.each([
-    ["PT Shopee Indonesia", "Shopee"],
-    ["Traveloka Indonesia", "Traveloka"],
-    ["GrabTaxi Holdings Pte Ltd", "Grab Taxi"],
+    ["PT Shopee", "Shopee Indonesia"],
     ["Tokopedia, PT", "Tokopedia"],
-  ])("ignores affixes in the typed name %j (employer %j)", (typed, employer) => {
+    ["Xendit Pte. Ltd.", "Xendit"],
+    ["PT GoTo Gojek Tokopedia Tbk", "PT GoTo Gojek Tokopedia Tbk"],
+  ])("ignores legal forms in the typed name %j (employer %j)", (typed, employer) => {
     expect(createTargetCompanyMatcher([typed]).matches(employer)).toBe(true);
   });
 
-  it("matches case-insensitively and across spacing", () => {
+  it("keeps other typed words, so a full name does not shrink to one word", () => {
+    const bank = createTargetCompanyMatcher(["Bank Indonesia"]);
+    expect(bank.matches("Bank Indonesia")).toBe(true);
+    expect(bank.matches("PT Bank Mandiri Tbk")).toBe(false);
+
+    const airline = createTargetCompanyMatcher(["Singapore Airlines"]);
+    expect(airline.matches("Singapore Airlines Ltd")).toBe(true);
+    expect(airline.matches("Garuda Airlines")).toBe(false);
+
+    const sea = createTargetCompanyMatcher(["Sea Limited"]);
+    expect(sea.matches("Sea Limited")).toBe(true);
+    expect(sea.matches("Sea Food Restaurant")).toBe(false);
+  });
+
+  it("matches a short name as a whole word only", () => {
+    const short = createTargetCompanyMatcher(["Sea", "Pay", "OVO"]);
+    expect(short.matches("Sea Limited")).toBe(true);
+    expect(short.matches("OVO (PT Visionet Internasional)")).toBe(true);
+    expect(short.matches("SeaBank")).toBe(false);
+    expect(short.matches("PayPal")).toBe(false);
+  });
+
+  it("matches case-insensitively and across spacing you typed", () => {
     expect(createTargetCompanyMatcher(["goto"]).matches("GoTo")).toBe(true);
     expect(createTargetCompanyMatcher(["Go To"]).matches("Goto")).toBe(true);
-    expect(createTargetCompanyMatcher(["tiktok"]).matches("Tik Tok")).toBe(
+    expect(createTargetCompanyMatcher(["Go To"]).matches("Go To Group")).toBe(
       true,
+    );
+    expect(createTargetCompanyMatcher(["Tik Tok"]).matches("TikTok")).toBe(
+      true,
+    );
+    expect(createTargetCompanyMatcher(["Grab Taxi"]).matches("GrabTaxi")).toBe(
+      true,
+    );
+    // One typed word never spans separate employer words.
+    expect(createTargetCompanyMatcher(["tiktok"]).matches("Tik Tok")).toBe(
+      false,
     );
   });
 

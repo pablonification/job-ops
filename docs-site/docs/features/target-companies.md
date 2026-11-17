@@ -27,7 +27,7 @@ When time is short, the jobs you care most about should come first and the ones 
    GoTo | Gojek | Tokopedia
    Grab
    TikTok
-   Shopee | Sea
+   Shopee | Sea Limited | SPX Express
    Traveloka
    tiket.com
    Blibli
@@ -50,10 +50,12 @@ The Target badge and filter use your current list every time the jobs list loads
 ### How company names match
 
 - Case, accents and punctuation do not matter.
-- Legal and regional words around a name are ignored: `PT`, `Tbk`, `Pte Ltd`, `Inc`, `Holdings`, `Group`, `Indonesia`, and similar. `PT Shopee International Indonesia` matches `Shopee`.
+- Extra words in the employer name never matter: `Shopee` matches `PT Shopee International Indonesia`, and `Grab` matches `Grab Indonesia`.
 - Website endings are ignored: `tiket.com` matches the employer `PT Global Tiket Network`.
-- Names match whole words only. `Grab` matches `GrabTaxi Holdings` (a capital letter starts a new word) but not `Grabango` or `Telegraph`. `Sea` does not match `Research`.
-- Spaces inside a name do not matter: `GoTo` matches `Go To`.
+- Names match whole words only. `Grab` does not match `Grabango` or `Telegraph`, and `Sea` does not match `Research`.
+- A one-word name of four letters or more also matches the start of a joined name: `Grab` matches `GrabTaxi` and `GrabFood`, and `Shopee` matches `ShopeePay`. Shorter names do not, so `Sea` does not match `SeaBank`.
+- A one-word name does not match across separate words: `GoTo` matches `GoTo`, `Goto` and `GOTO`, but not `Go To Market Agency`. If an employer is written `Go To`, add `Go To` as another name on the line.
+- Legal forms you type are ignored: `PT Tokopedia` is the same as `Tokopedia`. Other words are kept, so `Bank Indonesia` matches only employers with both words together.
 - All names on one line count as the same company. The badge and the scoring prompt use the first name.
 
 ### How scoring uses them
@@ -78,7 +80,7 @@ The `list_jobs` tool returns `isTargetCompany` for each job and takes a `targetC
 
 ### A job is flagged that should not be
 
-- Short names match any employer containing them as a whole word. Use a longer name, for example `Sea Limited` instead of `Sea`.
+- A short name such as `Sea` matches every employer with that word in its name (`Sea Food Restaurant`). Type the fuller name instead, for example `Sea Limited`; it then matches only employers with both words together.
 
 ### Scores did not change after editing the lists
 

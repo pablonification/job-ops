@@ -7,16 +7,21 @@
  *
  * Matching rules:
  * - Case, accents and punctuation are ignored; names are compared as words.
- *   CamelCase counts as a word break ("GrabTaxi" is "Grab Taxi").
  * - Domain endings are dropped ("tiket.com" is "tiket").
- * - Legal and regional affixes at the start or end of a name you type are
- *   ignored ("PT Shopee Indonesia" is "Shopee"). Extra words in the employer
- *   name never prevent a match ("PT GoTo Gojek Tokopedia Tbk" contains
- *   "Gojek").
- * - A name matches only on whole words: "Grab" matches "GrabTaxi Holdings"
- *   but not "Grabango" or "Telegraph"; "Sea" does not match "Research".
- * - Spacing inside a name does not matter: "GoTo" matches "Go To" and the
- *   reverse.
+ * - Extra words in the employer name never prevent a match ("PT GoTo Gojek
+ *   Tokopedia Tbk" contains "Gojek"; "Grab Indonesia" contains "Grab").
+ * - A name matches whole words only: "Grab" does not match "Grabango" or
+ *   "Telegraph"; "Sea" does not match "Research".
+ * - A one-word name also matches the leading part of a CamelCase employer
+ *   word ("Grab" matches "GrabTaxi", "Shopee" matches "ShopeePay"), but only
+ *   for names of four letters or more, so "Sea" does not match "SeaBank".
+ * - A one-word name never matches across separate employer words: "GoTo"
+ *   matches "GoTo", "Goto" and "GOTO" but not "Go To Market Agency". A name
+ *   typed as several words ("Go To", "SPX Express") matches those words in a
+ *   row, or the same letters written as one word.
+ * - Legal forms around a name you type are ignored ("PT Tokopedia" is
+ *   "Tokopedia"). Other words you type are kept, so "Bank Indonesia" matches
+ *   only employers containing both words in a row.
  */
 
 /** One target company: a display label plus every name that counts for it. */
@@ -37,8 +42,8 @@ export type TargetCompanyMatcher = {
   matches: (employer: string | null | undefined) => boolean;
 };
 
-/** Words that describe a legal form or region rather than the company. */
-const AFFIX_WORDS = new Set([
+/** Legal forms. Ignored around a name the user types. */
+const LEGAL_FORM_WORDS = new Set([
   "pt",
   "tbk",
   "persero",
@@ -59,6 +64,14 @@ const AFFIX_WORDS = new Set([
   "bv",
   "sdn",
   "bhd",
+]);
+
+/**
+ * Words too generic to be a target on their own. They are kept inside a
+ * longer name ("Bank Indonesia"), but a name made only of them is ignored.
+ */
+const GENERIC_WORDS = new Set([
+  ...LEGAL_FORM_WORDS,
   "holding",
   "holdings",
   "group",
@@ -68,60 +81,109 @@ const AFFIX_WORDS = new Set([
   "international",
 ]);
 
+/** Shortest one-word name allowed to match part of a CamelCase word. */
+const MIN_CAMEL_PREFIX_LENGTH = 4;
+
 const DOMAIN_SUFFIX_PATTERN =
   /([\p{L}\p{N}])\.(?:co\.id|com|co|id|io|net|org|ai|app|sg|my)(?![\p{L}\p{N}])/gu;
 
 const ALIAS_SEPARATOR = "|";
 
-function tokenize(value: string): string[] {
+/** Words as written (case kept), without accents, apostrophes or domains. */
+function splitWords(value: string): string[] {
   return (
     value
       .normalize("NFKD")
       .replace(/\p{M}+/gu, "")
       // "tiket.com" -> "tiket", "Shopee.co.id" -> "Shopee"
       .replace(DOMAIN_SUFFIX_PATTERN, "$1")
-      // "GrabTaxi" -> "Grab Taxi", "TikTok" -> "Tik Tok"
-      .replace(/([\p{Ll}\p{N}])(\p{Lu})/gu, "$1 $2")
       .replace(/['’]/g, "")
-      .toLowerCase()
       .split(/[^\p{L}\p{N}]+/u)
       .filter(Boolean)
   );
 }
 
-/** Drop affix words from both ends, keeping at least one word. */
-function stripEdgeAffixes(tokens: string[]): string[] {
-  let start = 0;
-  let end = tokens.length;
-  while (end - start > 1 && AFFIX_WORDS.has(tokens[start])) start += 1;
-  while (end - start > 1 && AFFIX_WORDS.has(tokens[end - 1])) end -= 1;
-  return tokens.slice(start, end);
+type EmployerWord = {
+  /** The whole word, lower-cased. */
+  word: string;
+  /** Its CamelCase parts, lower-cased ("GrabTaxi" -> ["grab", "taxi"]). */
+  camelParts: string[];
+};
+
+function toEmployerWords(employer: string): EmployerWord[] {
+  return splitWords(employer).map((raw) => ({
+    word: raw.toLowerCase(),
+    camelParts: raw
+      .replace(/([\p{Ll}\p{N}])(\p{Lu})/gu, "$1 $2")
+      .toLowerCase()
+      .split(" "),
+  }));
 }
+
+type NameKey = {
+  /** The typed words joined without spaces. */
+  key: string;
+  /** True when the name was typed as more than one word. */
+  isPhrase: boolean;
+};
 
 /** The comparable form of a name the user typed, or null if unusable. */
-function toNameKey(name: string): string | null {
-  const tokens = stripEdgeAffixes(tokenize(name));
-  if (tokens.length === 0) return null;
-  // A name made only of affix words ("PT", "Holdings") would match far too
-  // much; ignore it.
-  if (tokens.length === 1 && AFFIX_WORDS.has(tokens[0])) return null;
-  return tokens.join("");
+function toNameKey(name: string): NameKey | null {
+  let words = splitWords(name).map((word) => word.toLowerCase());
+  // A name made only of generic words ("PT", "Holdings", "PT Indonesia")
+  // would match far too much; ignore it.
+  if (words.every((word) => GENERIC_WORDS.has(word))) return null;
+
+  while (words.length > 1 && LEGAL_FORM_WORDS.has(words[0])) {
+    words = words.slice(1);
+  }
+  // Drop trailing legal forms unless that leaves a very short name: "Sea
+  // Limited" stays two words so it does not match everything called "Sea".
+  let end = words.length;
+  while (end > 1 && LEGAL_FORM_WORDS.has(words[end - 1])) end -= 1;
+  if (words.slice(0, end).join("").length >= MIN_CAMEL_PREFIX_LENGTH) {
+    words = words.slice(0, end);
+  }
+
+  const key = words.join("");
+  return key ? { key, isPhrase: words.length > 1 } : null;
 }
 
-/**
- * True when some run of whole employer words, joined without spaces, equals
- * the key. Runs start and end on word boundaries, so a key never matches
- * inside a word.
- */
-function containsKey(employerTokens: string[], key: string): boolean {
-  for (let start = 0; start < employerTokens.length; start += 1) {
+function matchesName(employerWords: EmployerWord[], name: NameKey): boolean {
+  const { key, isPhrase } = name;
+
+  // The name is one employer word: "goto" in "PT GoTo Gojek Tokopedia Tbk".
+  if (employerWords.some((entry) => entry.word === key)) return true;
+
+  // A one-word name leads a CamelCase word: "grab" in "GrabTaxi".
+  if (
+    key.length >= MIN_CAMEL_PREFIX_LENGTH &&
+    employerWords.some((entry) => leadsCamelWord(entry.camelParts, key))
+  ) {
+    return true;
+  }
+
+  // A name typed as several words matches those words in a row.
+  if (!isPhrase) return false;
+  for (let start = 0; start < employerWords.length; start += 1) {
     let joined = "";
-    for (let end = start; end < employerTokens.length; end += 1) {
-      joined += employerTokens[end];
-      if (joined.length > key.length) break;
-      if (!key.startsWith(joined)) break;
+    for (let end = start; end < employerWords.length; end += 1) {
+      joined += employerWords[end].word;
       if (joined === key) return true;
+      if (joined.length >= key.length || !key.startsWith(joined)) break;
     }
+  }
+  return false;
+}
+
+/** True when the first CamelCase parts of a word, joined, equal the key. */
+function leadsCamelWord(camelParts: string[], key: string): boolean {
+  let joined = "";
+  // Stop before the last part: the whole word is handled as an exact match.
+  for (let index = 0; index < camelParts.length - 1; index += 1) {
+    joined += camelParts[index];
+    if (joined === key) return true;
+    if (joined.length >= key.length) return false;
   }
   return false;
 }
@@ -141,17 +203,13 @@ export function parseTargetCompanyLine(line: string): string[] {
 export function createTargetCompanyMatcher(
   lines: readonly string[] | null | undefined,
 ): TargetCompanyMatcher {
-  const compiled: Array<{ group: TargetCompanyGroup; keys: string[] }> = [];
+  const compiled: Array<{ group: TargetCompanyGroup; keys: NameKey[] }> = [];
 
   for (const line of lines ?? []) {
     const names = parseTargetCompanyLine(line);
-    const keys = [
-      ...new Set(
-        names
-          .map(toNameKey)
-          .filter((key): key is string => key !== null && key.length > 0),
-      ),
-    ];
+    const keys = names
+      .map(toNameKey)
+      .filter((name): name is NameKey => name !== null);
     if (names.length === 0 || keys.length === 0) continue;
     compiled.push({ group: { label: names[0], names }, keys });
   }
@@ -160,10 +218,10 @@ export function createTargetCompanyMatcher(
     employer: string | null | undefined,
   ): TargetCompanyGroup | null => {
     if (compiled.length === 0 || !employer?.trim()) return null;
-    const employerTokens = tokenize(employer);
-    if (employerTokens.length === 0) return null;
+    const employerWords = toEmployerWords(employer);
+    if (employerWords.length === 0) return null;
     for (const entry of compiled) {
-      if (entry.keys.some((key) => containsKey(employerTokens, key))) {
+      if (entry.keys.some((name) => matchesName(employerWords, name))) {
         return entry.group;
       }
     }
