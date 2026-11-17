@@ -3,6 +3,7 @@
  * (`@server/mcp/kit`) and never from each other.
  */
 export {
+  formatZodIssues,
   invalidToolInput,
   MAX_TOOL_MESSAGE_CHARS,
   toToolErrorResult,
@@ -31,6 +32,16 @@ export {
   paginationShape,
   toPageMeta,
 } from "./pagination";
+export {
+  definePrompt,
+  type McpPromptContext,
+  type McpPromptDefinition,
+  type McpPromptInputSchema,
+  promptChoiceArg,
+  promptIntArg,
+  promptJobIdArg,
+  toPromptArguments,
+} from "./prompt";
 export { toolErrorResult, toolResult } from "./result";
 export { assertToolScope, hasScope } from "./scope";
 export { loadTargetCompanyMatcher } from "./target-companies";

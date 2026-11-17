@@ -27,8 +27,17 @@
  *    call the same services and repositories the REST routes use.
  * 6. Never expose database wipe, user/workspace admin, backup deletion,
  *    provider login flows or billing.
+ *
+ * Playbooks (MCP prompts) live in `./prompts`; see `./prompts/index.ts`.
+ * They name tools, so renaming a tool or argument means updating them (the
+ * prompt test fails otherwise).
  */
-import type { McpToolDefinition, McpToolGroup } from "./kit";
+import type {
+  McpPromptDefinition,
+  McpToolDefinition,
+  McpToolGroup,
+} from "./kit";
+import { MCP_PROMPTS } from "./prompts";
 import { appReadToolGroup } from "./tools/app-read";
 import { applicationsToolGroup } from "./tools/applications";
 import { ghostwriterToolGroup } from "./tools/ghostwriter";
@@ -85,4 +94,30 @@ let registeredTools: ReadonlyMap<string, McpToolDefinition> | null = null;
 export function getRegisteredTools(): ReadonlyMap<string, McpToolDefinition> {
   registeredTools ??= collectTools(MCP_TOOL_GROUPS);
   return registeredTools;
+}
+
+export function collectPrompts(
+  prompts: readonly McpPromptDefinition[],
+): ReadonlyMap<string, McpPromptDefinition> {
+  const byName = new Map<string, McpPromptDefinition>();
+  for (const prompt of prompts) {
+    if (!TOOL_NAME_PATTERN.test(prompt.name)) {
+      throw new Error(`MCP prompt name must be snake_case: ${prompt.name}`);
+    }
+    if (byName.has(prompt.name)) {
+      throw new Error(`Duplicate MCP prompt name "${prompt.name}"`);
+    }
+    byName.set(prompt.name, prompt);
+  }
+  return byName;
+}
+
+let registeredPrompts: ReadonlyMap<string, McpPromptDefinition> | null = null;
+
+export function getRegisteredPrompts(): ReadonlyMap<
+  string,
+  McpPromptDefinition
+> {
+  registeredPrompts ??= collectPrompts(MCP_PROMPTS);
+  return registeredPrompts;
 }
