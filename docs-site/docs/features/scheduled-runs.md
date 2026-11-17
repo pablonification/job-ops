@@ -47,13 +47,16 @@ Defaults and rules:
 | Days | every day | At least one day |
 | Catch-up window | 15 minutes | 1 to 720 |
 
-- **One run per scheduled time.** The time is checked once a minute. A scheduled time never starts two runs, even if the server restarts in that minute.
+- **At most one scheduled run a day.** The time is checked once a minute. Each day (in your time zone) starts at most one scheduled run, even if the server restarts, and even if you move the time later after that day's run: the new time applies from the next day.
+- **Editing does not start a run.** A time that has already passed when you save the schedule does not run that day. Turning the schedule on at 08:05 with a time of 08:00 runs tomorrow at 08:00.
 - **Already running?** If a run is going at the scheduled time (one you started, or an agent's), the scheduled run is skipped, not queued. Settings shows `skipped, a run was already active`.
 - **Server was off?** If JobOps comes back within the catch-up window after the scheduled time, it runs then. Later than that, it waits for the next scheduled day.
+- **Server stopped at the scheduled time?** JobOps marks the day's run as taken just before starting it. If the server stops in between, that day's run is skipped and no message is sent.
+- **Search terms.** Like any run, a scheduled run saves its search terms as your default search terms.
 - **Daylight saving.** A time that does not exist on a day (clocks jump forward) runs once, just after the jump. A time that happens twice (clocks go back) runs once, the first time.
 - **Who it runs as.** A scheduled run runs as the person who last saved the schedule, so their saved searches are used. If that account is disabled, it runs as the workspace's first active system admin. On a single-user install that is you.
 - Scheduled runs show a **Scheduled** badge in the run history on the **Overview** page.
-- Only system admins can change these settings.
+- Only system admins can change these settings or see their status.
 
 ### 3. Create a Telegram bot
 
@@ -117,6 +120,7 @@ https://jobs.example.com/jobs/all
 ```
 
 - **New** means found by this run for the first time. Jobs already in JobOps are counted in "Found" but not listed.
+- Jobs scoring under your auto-skip score are counted ("2 new (1 auto-skipped)") but not listed. If every new job was skipped, the digest says so instead of listing jobs.
 - No new jobs: nothing is sent.
 - The run failed: a short notice with the reason is sent instead.
 - The run is waiting for you, because a job site asked for a bot check or no AI model is set up: a short notice says what to do.
@@ -125,7 +129,15 @@ https://jobs.example.com/jobs/all
 
 Sending the digest never fails or slows down a run. Problems are logged on the server and shown in Settings as **Last digest failed**.
 
-What leaves your server: job titles, employers, scores and links, sent to Telegram (`api.telegram.org`) for the chat you set. Nothing else from your profile or resume.
+What leaves your server, sent to Telegram (`api.telegram.org`) for the chat you set:
+
+- run counts, and job titles, employers, scores and links to the jobs in JobOps;
+- when a run fails or cannot start: the reason, shortened, with web addresses cut to their host and anything that looks like a key or token removed;
+- when a job site asks for a bot check: the names of those job sites.
+
+Nothing else from your profile or resume.
+
+If Telegram answers that it is busy (HTTP 429), JobOps waits the time Telegram asks for, up to 30 seconds, and tries once more. If that fails too, the digest for that run is not sent and Settings shows **Last digest failed**. **Send test message** does not wait: it reports the error at once.
 
 ## Common problems
 
