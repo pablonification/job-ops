@@ -227,7 +227,7 @@ Readiness requires:
   - UKVisaJobs email/password
   - Adzuna app ID/app key
 - Choose job source options:
-  - **Indonesia Big Tech**: which company career sites the source checks (all eight by default, at least one stays on). See [Indonesia Big Tech](/docs/next/extractors/idbigtech).
+  - **Indonesia Big Tech**: which company career sites the source checks (all eight by default, at least one stays on). If the stored value is empty or unreadable, the source checks all eight. See [Indonesia Big Tech](/docs/next/extractors/idbigtech).
 - Manage workspace users when signed in as a system admin:
   - create a user with a private workspace
   - disable a user
