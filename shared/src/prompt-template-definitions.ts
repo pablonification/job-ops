@@ -158,7 +158,7 @@ OUTPUT FORMAT (JSON):
   scoringPromptTemplate: {
     label: "Job scoring prompt",
     description:
-      "Controls how suitability scoring evaluates the candidate profile. Minified source job JSON and the output contract are appended automatically.",
+      "Controls how suitability scoring evaluates the candidate profile. Minified source job JSON and the output contract are appended automatically. Target companies and dealbreakers are appended too when the template leaves out their placeholders.",
     placeholders: [
       "profileJson",
       "jobTitle",
@@ -169,6 +169,8 @@ OUTPUT FORMAT (JSON):
       "disciplines",
       "jobDescription",
       "scoringInstructionsText",
+      "targetCompaniesSection",
+      "dealbreakersSection",
     ] as const,
     defaultTemplate: `
 You are evaluating a job listing for a candidate. Score how suitable this job is for the candidate on a scale of 0-100.
@@ -184,7 +186,7 @@ CANDIDATE PROFILE:
 {{profileJson}}
 
 SCORING INSTRUCTIONS:
-{{scoringInstructionsText}}
+{{scoringInstructionsText}}{{targetCompaniesSection}}{{dealbreakersSection}}
 `.trim(),
   },
 } as const;
