@@ -237,6 +237,11 @@ export const createAppSettings = (
     default: getDefaultPromptTemplate("tailoringPromptTemplate"),
     override: null,
   },
+  roleCvPromptTemplate: {
+    value: getDefaultPromptTemplate("roleCvPromptTemplate"),
+    default: getDefaultPromptTemplate("roleCvPromptTemplate"),
+    override: null,
+  },
   scoringPromptTemplate: {
     value: getDefaultPromptTemplate("scoringPromptTemplate"),
     default: getDefaultPromptTemplate("scoringPromptTemplate"),

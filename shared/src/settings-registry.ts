@@ -635,6 +635,14 @@ export const settingsRegistry = {
     serialize: (value: string | null | undefined): string | null =>
       value ?? null,
   },
+  roleCvPromptTemplate: {
+    kind: "typed" as const,
+    schema: z.string().trim().max(12000),
+    default: (): string => getDefaultPromptTemplate("roleCvPromptTemplate"),
+    parse: parseNonEmptyStringOrNull,
+    serialize: (value: string | null | undefined): string | null =>
+      value ?? null,
+  },
   scoringPromptTemplate: {
     kind: "typed" as const,
     schema: z.string().trim().max(12000),

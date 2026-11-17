@@ -11,6 +11,7 @@ const PromptTemplatesHarness = () => {
     defaultValues: {
       ghostwriterSystemPromptTemplate: "Custom Ghostwriter",
       tailoringPromptTemplate: "Custom Tailoring",
+      roleCvPromptTemplate: "Custom Role CV",
       scoringPromptTemplate: "Custom Scoring",
     },
   });
@@ -29,6 +30,10 @@ const PromptTemplatesHarness = () => {
             tailoringPromptTemplate: {
               effective: "Custom Tailoring",
               default: getDefaultPromptTemplate("tailoringPromptTemplate"),
+            },
+            roleCvPromptTemplate: {
+              effective: "Custom Role CV",
+              default: getDefaultPromptTemplate("roleCvPromptTemplate"),
             },
             scoringPromptTemplate: {
               effective: "Custom Scoring",
@@ -77,6 +82,9 @@ describe("PromptTemplatesSection", () => {
     );
     expect(screen.getByLabelText(/resume tailoring prompt/i)).toHaveValue(
       getDefaultPromptTemplate("tailoringPromptTemplate"),
+    );
+    expect(screen.getByLabelText(/role cv prompt/i)).toHaveValue(
+      getDefaultPromptTemplate("roleCvPromptTemplate"),
     );
     expect(screen.getByLabelText(/job scoring prompt/i)).toHaveValue(
       getDefaultPromptTemplate("scoringPromptTemplate"),
