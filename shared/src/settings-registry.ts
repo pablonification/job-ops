@@ -1,5 +1,9 @@
 import { z } from "zod";
 import {
+  ID_BIG_TECH_COMPANY_IDS,
+  type IdBigTechCompanyId,
+} from "./extractors/indonesia/big-tech";
+import {
   LOCATION_INPUT_MODE_VALUES,
   LOCATION_MATCH_STRICTNESS_VALUES,
   LOCATION_SEARCH_SCOPE_VALUES,
@@ -541,6 +545,21 @@ export const settingsRegistry = {
       ),
     parse: parseIntOrNull,
     serialize: serializeNullableNumber,
+  },
+  idbigtechCompanies: {
+    kind: "typed" as const,
+    schema: z
+      .array(z.enum(ID_BIG_TECH_COMPANY_IDS))
+      .min(1)
+      .max(ID_BIG_TECH_COMPANY_IDS.length),
+    default: (): IdBigTechCompanyId[] => [...ID_BIG_TECH_COMPANY_IDS],
+    parse: (raw: string | undefined): IdBigTechCompanyId[] | null => {
+      const parsed = parseJsonArrayOrNull(raw);
+      if (!parsed) return null;
+      const known = ID_BIG_TECH_COMPANY_IDS.filter((id) => parsed.includes(id));
+      return known.length > 0 ? known : null;
+    },
+    serialize: serializeNullableJsonArray,
   },
   searchTerms: {
     kind: "typed" as const,

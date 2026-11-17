@@ -37,6 +37,7 @@ import {
   resumeProjectsEqual,
 } from "@client/pages/settings/utils";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { ID_BIG_TECH_COMPANY_IDS } from "@shared/extractors/indonesia/big-tech.js";
 import { normalizeStringArray } from "@shared/normalize-string-array.js";
 import {
   type UpdateSettingsInput,
@@ -110,6 +111,7 @@ const DEFAULT_FORM_VALUES: UpdateSettingsInput = {
   missingSalaryPenalty: null,
   autoSkipScoreThreshold: null,
   blockedCompanyKeywords: [],
+  idbigtechCompanies: null,
   ghostwriterSystemPromptTemplate: "",
   tailoringPromptTemplate: "",
   roleCvPromptTemplate: "",
@@ -262,12 +264,26 @@ const SETTINGS_NAV_GROUPS: SettingsNavGroup[] = [
       {
         id: "environment",
         label: "Workspace Access",
-        description: "Service credentials and authentication protection.",
+        description:
+          "Service credentials, job source options and authentication protection.",
         searchTerms: [
           "security",
           "auth",
           "adzuna",
           "ukvisajobs",
+          "job sources",
+          "indonesia big tech",
+          "companies",
+          "grab",
+          "gojek",
+          "goto",
+          "tokopedia",
+          "tiktok",
+          "shopee",
+          "traveloka",
+          "tiket",
+          "blibli",
+          "xendit",
           "sso",
           "single sign-on",
           "oidc",
@@ -382,6 +398,7 @@ const SECTION_FIELD_MAP: Record<
     "ukvisajobsPassword",
     "adzunaAppId",
     "adzunaAppKey",
+    "idbigtechCompanies",
   ],
   "agent-access": [],
   display: [
@@ -488,6 +505,7 @@ const NULL_SETTINGS_PAYLOAD: UpdateSettingsInput = {
   missingSalaryPenalty: null,
   autoSkipScoreThreshold: null,
   blockedCompanyKeywords: null,
+  idbigtechCompanies: null,
   ghostwriterSystemPromptTemplate: null,
   tailoringPromptTemplate: null,
   roleCvPromptTemplate: null,
@@ -558,6 +576,8 @@ const mapSettingsToForm = (data: AppSettings): UpdateSettingsInput => ({
   missingSalaryPenalty: data.missingSalaryPenalty.override,
   autoSkipScoreThreshold: data.autoSkipScoreThreshold.override,
   blockedCompanyKeywords: data.blockedCompanyKeywords.override ?? [],
+  idbigtechCompanies:
+    data.idbigtechCompanies?.override ?? data.idbigtechCompanies?.value ?? null,
   ghostwriterSystemPromptTemplate:
     data.ghostwriterSystemPromptTemplate.value ?? "",
   tailoringPromptTemplate: data.tailoringPromptTemplate.value ?? "",
@@ -762,6 +782,16 @@ const getDerivedSettings = (settings: AppSettings | null) => {
         ukvisajobsPasswordHint: settings?.ukvisajobsPasswordHint ?? null,
         adzunaAppKeyHint: settings?.adzunaAppKeyHint ?? null,
         webhookSecretHint: settings?.webhookSecretHint ?? null,
+      },
+    },
+    sources: {
+      idbigtechCompanies: {
+        effective: settings?.idbigtechCompanies?.value ?? [
+          ...ID_BIG_TECH_COMPANY_IDS,
+        ],
+        default: settings?.idbigtechCompanies?.default ?? [
+          ...ID_BIG_TECH_COMPANY_IDS,
+        ],
       },
     },
     defaultResumeProjects: settings?.resumeProjects?.default ?? null,
@@ -1008,6 +1038,7 @@ export const SettingsPage: React.FC = () => {
     display,
     chat,
     envSettings,
+    sources,
     defaultResumeProjects,
     profileProjects,
     backup,
@@ -1337,6 +1368,13 @@ export const SettingsPage: React.FC = () => {
           return stringArraysEqual(normalized, normalizedDefault)
             ? null
             : normalized;
+        })(),
+        idbigtechCompanies: (() => {
+          const selected = data.idbigtechCompanies ?? [];
+          return selected.length === 0 ||
+            stringArraysEqual(selected, sources.idbigtechCompanies.default)
+            ? null
+            : selected;
         })(),
         ghostwriterSystemPromptTemplate: nullIfSame(
           normalizeString(data.ghostwriterSystemPromptTemplate),
@@ -1773,6 +1811,7 @@ export const SettingsPage: React.FC = () => {
       activeSectionContent = (
         <EnvironmentSettingsSection
           values={envSettings}
+          sourceValues={sources}
           isLoading={isLoading}
           isSaving={isSaving}
           layoutMode="panel"

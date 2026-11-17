@@ -1,8 +1,12 @@
 import * as api from "@client/api";
 import { ConnectedAccountsSection } from "@client/pages/settings/components/ConnectedAccountsSection";
+import { IdBigTechCompaniesField } from "@client/pages/settings/components/IdBigTechCompaniesField";
 import { SettingsInput } from "@client/pages/settings/components/SettingsInput";
 import { SettingsSectionFrame } from "@client/pages/settings/components/SettingsSectionFrame";
-import type { EnvSettingsValues } from "@client/pages/settings/types";
+import type {
+  EnvSettingsValues,
+  SourceSettingsValues,
+} from "@client/pages/settings/types";
 import { formatSecretHint } from "@client/pages/settings/utils";
 import type { UpdateSettingsInput } from "@shared/settings-schema.js";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -19,6 +23,7 @@ import { Separator } from "@/components/ui/separator";
 
 type EnvironmentSettingsSectionProps = {
   values: EnvSettingsValues;
+  sourceValues: SourceSettingsValues;
   isLoading: boolean;
   isSaving: boolean;
   layoutMode?: "accordion" | "panel";
@@ -235,7 +240,7 @@ function AccountManagementSection() {
 
 export const EnvironmentSettingsSection: React.FC<
   EnvironmentSettingsSectionProps
-> = ({ values, isLoading, isSaving, layoutMode }) => {
+> = ({ values, sourceValues, isLoading, isSaving, layoutMode }) => {
   const {
     register,
     formState: { errors },
@@ -297,6 +302,18 @@ export const EnvironmentSettingsSection: React.FC<
               />
             </div>
           </div>
+        </div>
+
+        <Separator />
+
+        <div className="space-y-4">
+          <div className="text-sm font-bold uppercase tracking-wider text-muted-foreground">
+            Job Sources
+          </div>
+          <IdBigTechCompaniesField
+            values={sourceValues.idbigtechCompanies}
+            disabled={isLoading || isSaving}
+          />
         </div>
 
         <Separator />

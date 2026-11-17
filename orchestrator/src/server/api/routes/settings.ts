@@ -90,6 +90,7 @@ const NON_ADMIN_SEARCH_SETTING_KEYS = new Set<keyof UpdateSettingsInput>([
   "jobindexMaxJobsPerTerm",
   "seekMaxJobsPerTerm",
   "naukriMaxJobsPerTerm",
+  "idbigtechCompanies",
   "jobspyCountryIndeed",
   "searchCities",
   "jobspyLocation",
