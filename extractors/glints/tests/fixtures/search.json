@@ -6,120 +6,6 @@
         {
           "city": null,
           "company": {
-            "brandName": "AKSION DIGITAL INDONESIA",
-            "id": "aa271a70-e4ad-414c-9320-c8db2855ae6f",
-            "name": "AKSION DIGITAL INDONESIA"
-          },
-          "country": {
-            "code": "ID",
-            "name": "Indonesia"
-          },
-          "createdAt": "2026-11-16T08:39:30.38099Z",
-          "id": "55a19578-f3d7-4588-a77e-28c201108fa4",
-          "location": {
-            "administrativeLevelName": "District",
-            "formattedName": "Pagedangan",
-            "level": 4,
-            "name": "Pagedangan",
-            "parents": [
-              {
-                "administrativeLevelName": "Kabupaten",
-                "formattedName": "Kab. Tangerang",
-                "level": 3,
-                "name": "Tangerang"
-              },
-              {
-                "administrativeLevelName": "Province",
-                "formattedName": "Banten",
-                "level": 2,
-                "name": "Banten"
-              },
-              {
-                "administrativeLevelName": "Country",
-                "formattedName": "Indonesia",
-                "level": 1,
-                "name": "Indonesia"
-              }
-            ]
-          },
-          "maxYearsOfExperience": 1,
-          "minYearsOfExperience": 0,
-          "salaries": [
-            {
-              "CurrencyCode": "IDR",
-              "maxAmount": 1000000,
-              "minAmount": 800000,
-              "salaryMode": "MONTH",
-              "salaryType": "BASIC"
-            }
-          ],
-          "shouldShowSalary": true,
-          "title": "Software Engineer Intern",
-          "type": "INTERNSHIP",
-          "updatedAt": "2026-11-16T08:39:30.38099Z",
-          "workArrangementOption": "REMOTE",
-          "status": "OPEN"
-        },
-        {
-          "city": null,
-          "company": {
-            "brandName": "Sigma Data Nusa",
-            "id": "ce6f15d7-6486-41f3-af86-e8c63a67398a",
-            "name": "Sigma Data Nusa"
-          },
-          "country": {
-            "code": "ID",
-            "name": "Indonesia"
-          },
-          "createdAt": "2026-11-10T02:58:08.625065Z",
-          "id": "ea76539c-d68c-4dd8-ba98-cce10defe770",
-          "location": {
-            "name": "Sumbersari",
-            "formattedName": "Sumbersari",
-            "administrativeLevelName": "District",
-            "level": 4,
-            "parents": [
-              {
-                "name": "Jember",
-                "formattedName": "Kab. Jember",
-                "administrativeLevelName": "Kabupaten",
-                "level": 3
-              },
-              {
-                "name": "Jawa Timur",
-                "formattedName": "Jawa Timur",
-                "administrativeLevelName": "Province",
-                "level": 2
-              },
-              {
-                "name": "Indonesia",
-                "formattedName": "Indonesia",
-                "administrativeLevelName": "Country",
-                "level": 1
-              }
-            ]
-          },
-          "maxYearsOfExperience": 3,
-          "minYearsOfExperience": 1,
-          "salaries": [
-            {
-              "CurrencyCode": "IDR",
-              "maxAmount": null,
-              "minAmount": 2000000,
-              "salaryMode": "MONTH",
-              "salaryType": "BASIC"
-            }
-          ],
-          "shouldShowSalary": true,
-          "title": "Software Developer",
-          "type": "PROJECT_BASED",
-          "updatedAt": "2026-11-10T02:58:08.625065Z",
-          "workArrangementOption": "HYBRID",
-          "status": "OPEN"
-        },
-        {
-          "city": null,
-          "company": {
             "brandName": null,
             "id": "2b54431d-6db4-49b6-b31d-05c66d83ec7e",
             "name": "Pt. Empore Hezer Tama"
@@ -229,6 +115,112 @@
           "title": "Backend Developer (Java Spring Boot)",
           "type": "CONTRACT",
           "updatedAt": "2026-11-17T08:42:10.624459Z",
+          "workArrangementOption": "ONSITE"
+        },
+        {
+          "city": null,
+          "company": {
+            "brandName": null,
+            "id": "09bbc428-e888-4f0a-85f8-0320cfd811b1",
+            "name": "PT Neural Technologies Indonesia (Official)"
+          },
+          "country": {
+            "code": "ID",
+            "name": "Indonesia"
+          },
+          "createdAt": "2026-11-17T07:57:55.85637Z",
+          "id": "6f09dbab-27b3-4583-8ce1-487caf4fce23",
+          "location": {
+            "administrativeLevelName": "District",
+            "formattedName": "Tebet",
+            "level": 4,
+            "name": "Tebet",
+            "parents": [
+              {
+                "administrativeLevelName": "City",
+                "formattedName": "Jakarta Selatan",
+                "level": 3,
+                "name": "Jakarta Selatan"
+              },
+              {
+                "administrativeLevelName": "Province",
+                "formattedName": "DKI Jakarta",
+                "level": 2,
+                "name": "DKI Jakarta"
+              },
+              {
+                "administrativeLevelName": "Country",
+                "formattedName": "Indonesia",
+                "level": 1,
+                "name": "Indonesia"
+              }
+            ]
+          },
+          "maxYearsOfExperience": 3,
+          "minYearsOfExperience": 1,
+          "salaries": null,
+          "shouldShowSalary": false,
+          "status": "OPEN",
+          "title": "Junior Backend Engineer",
+          "type": "CONTRACT",
+          "updatedAt": "2026-11-17T07:57:55.85637Z",
+          "workArrangementOption": "ONSITE"
+        },
+        {
+          "city": null,
+          "company": {
+            "brandName": null,
+            "id": "1cb01218-d1de-4e0c-b7a4-cb7865f3baae",
+            "name": "PT Sigma Global Teknologi"
+          },
+          "country": {
+            "code": "ID",
+            "name": "Indonesia"
+          },
+          "createdAt": "2026-10-27T03:47:35.492538Z",
+          "id": "892ff59d-d5e8-4600-b59e-fc76a3841560",
+          "location": {
+            "administrativeLevelName": "District",
+            "formattedName": "Pondok Aren",
+            "level": 4,
+            "name": "Pondok Aren",
+            "parents": [
+              {
+                "administrativeLevelName": "City",
+                "formattedName": "Tangerang Selatan",
+                "level": 3,
+                "name": "Tangerang Selatan"
+              },
+              {
+                "administrativeLevelName": "Province",
+                "formattedName": "Banten",
+                "level": 2,
+                "name": "Banten"
+              },
+              {
+                "administrativeLevelName": "Country",
+                "formattedName": "Indonesia",
+                "level": 1,
+                "name": "Indonesia"
+              }
+            ]
+          },
+          "maxYearsOfExperience": 10,
+          "minYearsOfExperience": 5,
+          "salaries": [
+            {
+              "CurrencyCode": "IDR",
+              "maxAmount": 15000000,
+              "minAmount": 13000000,
+              "salaryMode": "MONTH",
+              "salaryType": "BASIC"
+            }
+          ],
+          "shouldShowSalary": true,
+          "status": "OPEN",
+          "title": "Backend Developer (Java, Golang)",
+          "type": "CONTRACT",
+          "updatedAt": "2026-11-17T04:09:48.859229Z",
           "workArrangementOption": "ONSITE"
         }
       ]

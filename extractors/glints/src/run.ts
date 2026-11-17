@@ -13,6 +13,7 @@ import {
   INDONESIA_COUNTRY_NAME,
   isRelevantJobTitle,
   type JobBoardRunOptions,
+  PoliteRequestError,
   runJobBoard,
   toWorkplaceType,
   type UnknownRecord,
@@ -27,10 +28,12 @@ export const GLINTS_LABEL = "Glints";
 const GLINTS_ORIGIN = "https://glints.com";
 const GLINTS_GRAPHQL_URL = `${GLINTS_ORIGIN}/api/v2/graphql`;
 const GLINTS_JOB_URL = `${GLINTS_ORIGIN}/id/opportunities/jobs/`;
-/** Largest page Glints serves; without login only page 1 is served. */
+/**
+ * Largest page Glints serves; without login only page 1 is served. The page
+ * costs one request whatever its size, so every term asks for all of it: the
+ * cap limits what is imported, not what is scanned.
+ */
 const MAX_PAGE_SIZE = 50;
-/** The title and city filters run after the request, so ask for more than the cap. */
-const PAGE_SIZE_PER_WANTED_JOB = 3;
 
 const WORK_ARRANGEMENTS: Record<LocationWorkplaceType, string> = {
   remote: "REMOTE",
@@ -38,18 +41,30 @@ const WORK_ARRANGEMENTS: Record<LocationWorkplaceType, string> = {
   onsite: "ONSITE",
 };
 
-const JOB_TYPE_LABELS: Record<string, string> = {
-  FULL_TIME: "Full-time",
-  PART_TIME: "Part-time",
-  CONTRACT: "Contract",
-  INTERNSHIP: "Internship",
-  FREELANCE: "Freelance",
-  PROJECT_BASED: "Project-based",
-  DAILY: "Daily",
-};
+// A Map, so an upstream value such as "constructor" never hits a prototype key.
+const JOB_TYPE_LABELS = new Map<string, string>([
+  ["FULL_TIME", "Full-time"],
+  ["PART_TIME", "Part-time"],
+  ["CONTRACT", "Contract"],
+  ["INTERNSHIP", "Internship"],
+  ["FREELANCE", "Freelance"],
+  ["PROJECT_BASED", "Project-based"],
+  ["DAILY", "Daily"],
+]);
 
-// Fields shared by the search and detail queries. `location` is the place
-// hierarchy (district -> city -> province -> country).
+/** Error codes Glints' GraphQL server uses for a rejected variable. */
+const REJECTED_INPUT_CODES = new Set([
+  "GRAPHQL_VALIDATION_FAILED",
+  "BAD_USER_INPUT",
+]);
+
+// Fields shared by the search and detail queries. The recorded research
+// samples only asked for `location { formattedName }` (a district such as
+// "Pagedangan", with `city: null`). The place hierarchy below (`name`,
+// `level`, `parents`: district -> city or regency -> province -> country)
+// and `status` were confirmed by live searchJobsV3 and getJobById requests
+// on 2026-11-17; the test fixtures are trimmed copies of those responses.
+// A job whose hierarchy is missing still maps, marked city-unknown.
 const JOB_FIELDS =
   "id title type workArrangementOption status createdAt updatedAt minYearsOfExperience maxYearsOfExperience shouldShowSalary salaries { salaryType salaryMode maxAmount minAmount CurrencyCode } company { id name brandName } city { name } country { code name } location { name formattedName administrativeLevelName level parents { name formattedName administrativeLevelName level } }";
 const SEARCH_QUERY = `query searchJobsV3($data: JobSearchConditionInput!) { searchJobsV3(data: $data) { hasMore jobsInPage { ${JOB_FIELDS} } } }`;
@@ -134,27 +149,41 @@ function placeAtLevel(location: UnknownRecord | null, level: number) {
   return undefined;
 }
 
+/**
+ * Display location and evidence from Glints' place hierarchy. Without a
+ * city (no hierarchy, as in the recorded samples, or one that stops above
+ * city level) the place is shown as Glints names it and the evidence is
+ * marked city-unknown, so a city filter keeps the job instead of dropping it.
+ */
 function buildLocation(
   row: UnknownRecord,
   workplaceType: LocationWorkplaceType | null,
 ) {
   const place = asRecord(row.location);
   // Levels: 1 country, 2 province, 3 city or regency, 4 district.
+  const level = asNumber(place?.level);
   const district =
-    (asNumber(place?.level) ?? 0) >= 4 ? asString(place?.name) : undefined;
+    level !== undefined && level >= 4 ? asString(place?.name) : undefined;
+  const city = placeAtLevel(place, 3) ?? asString(asRecord(row.city)?.name);
   const built = buildIndonesianLocation({
-    city: placeAtLevel(place, 3) ?? asString(asRecord(row.city)?.name),
+    city,
     region: placeAtLevel(place, 2),
     country: INDONESIA_COUNTRY_NAME,
     workplaceType,
     source: GLINTS_SOURCE,
   });
-  if (!district) return built;
+  const named = city
+    ? district
+    : (district ?? asString(place?.formattedName) ?? asString(place?.name));
+  const shown = built.location.toLowerCase().split(", ");
+  const prefix =
+    named && !shown.includes(named.toLowerCase()) ? `${named}, ` : "";
   return {
-    location: `${district}, ${built.location}`,
+    location: `${prefix}${built.location}`,
     locationEvidence: {
       ...built.locationEvidence,
-      location: `${district}, ${built.locationEvidence.location}`,
+      location: `${prefix}${built.locationEvidence.location}`,
+      ...(city ? {} : { cityUnknown: true }),
     },
   };
 }
@@ -220,7 +249,7 @@ export function mapGlintsJob(
     jobDescription,
     datePosted: asString(row.createdAt) ?? asString(row.updatedAt),
     ...buildSalary(row),
-    jobType: type ? (JOB_TYPE_LABELS[type] ?? type) : undefined,
+    jobType: type ? (JOB_TYPE_LABELS.get(type) ?? type) : undefined,
     experienceRange: formatRange(
       asNumber(row.minYearsOfExperience),
       asNumber(row.maxYearsOfExperience),
@@ -231,15 +260,35 @@ export function mapGlintsJob(
   };
 }
 
+/** True when Glints refused the search because of one of its variables. */
+function isRejectedInput(error: unknown, payload: UnknownRecord | null) {
+  if (error instanceof PoliteRequestError) {
+    return error.kind === "status" && error.status === 400;
+  }
+  if (!Array.isArray(payload?.errors)) return false;
+  return payload.errors.some((entry) => {
+    const record = asRecord(entry);
+    const code = asString(asRecord(record?.extensions)?.code);
+    // The message is only inspected here, never reported.
+    return (
+      (code !== undefined && REJECTED_INPUT_CODES.has(code)) ||
+      /workArrangement/i.test(asString(record?.message) ?? "")
+    );
+  });
+}
+
 /**
  * Searches Glints newest first with a per-run `deviceid` cookie (without it
  * Glints ignores the search term). Only the first page is served without
- * login, so each term makes one search request for up to 50 jobs. Glints'
- * search also returns unrelated titles, so titles must match the term;
- * cities are filtered here. Each new job gets one detail request for its
- * Draft.js description; a job whose detail request fails is not imported,
- * and one whose description cannot be read is imported without it and
- * reported as a source error.
+ * login, so each term makes one search request for the whole first page (50
+ * jobs) and reports a note when that page was full. Glints' search also
+ * returns unrelated titles, so titles must match the term (the posting's job
+ * type counts as a level); cities are filtered here. A narrower workplace
+ * choice goes to Glints' filter; if Glints rejects it, the term is retried
+ * once without it and the choice is applied here for the rest of the run.
+ * Each new job gets one detail request for its Draft.js description; a job
+ * whose detail request fails is not imported, and one whose description
+ * cannot be read is imported without it and reported as a source error.
  */
 export async function runGlints(
   options: RunGlintsOptions = {},
@@ -248,52 +297,88 @@ export async function runGlints(
   const requestOptions = {
     headers: { Cookie: `deviceid=${options.deviceId ?? randomUUID()}` },
   };
-  const wanted = Math.max(1, Math.floor(options.maxJobsPerTerm ?? 50));
+  const workplaceTypes = [...new Set(options.workplaceTypes ?? [])];
+  const narrowWorkplace =
+    workplaceTypes.length > 0 && workplaceTypes.length < 3;
+  let sendWorkplaceFilter = narrowWorkplace;
 
   return runJobBoard({
     label: GLINTS_LABEL,
-    options: {
-      ...options,
-      pageSize: options.pageSize ?? wanted * PAGE_SIZE_PER_WANTED_JOB,
-    },
+    options,
     maxPageSize: MAX_PAGE_SIZE,
     runTerm: async (context) => {
       const { candidates, consume } =
         createDetailCandidates<UnknownRecord>(context);
-      await collectPages(context, {
-        toJob: (item) => mapGlintsJob(item),
-        consume: (job, item) =>
-          isRelevantJobTitle(job.title, context.searchTerm)
-            ? consume(job, item)
-            : "filtered",
-        fetchPage: async ({ limit }) => {
-          const payload = asRecord(
+
+      const search = async (limit: number) => {
+        const withFilter = sendWorkplaceFilter;
+        let payload: UnknownRecord | null = null;
+        let failure: unknown;
+        try {
+          payload = asRecord(
             await context.client.postJson(
               graphqlUrl("searchJobsV3"),
               buildGlintsSearchRequest({
                 searchTerm: context.searchTerm,
                 pageSize: limit,
-                workplaceTypes: options.workplaceTypes,
+                workplaceTypes: withFilter ? workplaceTypes : [],
               }),
               requestOptions,
             ),
           );
-          const items = asRecord(
-            asRecord(payload?.data)?.searchJobsV3,
-          )?.jobsInPage;
-          if (!Array.isArray(items)) {
-            const code = graphqlErrorCode(payload);
-            throw new Error(
-              code
-                ? `${GLINTS_LABEL} search returned GraphQL error ${code}`
-                : `${GLINTS_LABEL} returned an invalid jobs response`,
+        } catch (error) {
+          failure = error;
+        }
+        const result = asRecord(asRecord(payload?.data)?.searchJobsV3);
+        if (Array.isArray(result?.jobsInPage)) return result;
+        if (withFilter && isRejectedInput(failure, payload)) {
+          sendWorkplaceFilter = false;
+          context.reportNote(
+            `${GLINTS_LABEL}: Glints rejected its work-arrangement filter, so job-ops now filters workplace types itself`,
+          );
+          return search(limit);
+        }
+        if (failure) throw failure;
+        const code = graphqlErrorCode(payload);
+        throw new Error(
+          code
+            ? `${GLINTS_LABEL} search returned GraphQL error ${code}`
+            : `${GLINTS_LABEL} returned an invalid jobs response`,
+        );
+      };
+
+      await collectPages(context, {
+        toJob: (item) => mapGlintsJob(item),
+        consume: (job, item) => {
+          if (
+            !isRelevantJobTitle(job.title, context.searchTerm, {
+              levelHint: job.jobType,
+            })
+          ) {
+            return "filtered";
+          }
+          if (
+            narrowWorkplace &&
+            !sendWorkplaceFilter &&
+            job.workFromHomeType &&
+            !(workplaceTypes as string[]).includes(job.workFromHomeType)
+          ) {
+            return "filtered";
+          }
+          return consume(job, item);
+        },
+        fetchPage: async ({ limit }) => {
+          const result = await search(limit);
+          const items = (result?.jobsInPage ?? []) as unknown[];
+          if (items.length >= limit && result?.hasMore !== false) {
+            context.reportNote(
+              `${GLINTS_LABEL}: results were limited to the first page (${items.length} jobs), the most Glints serves without login`,
             );
           }
           // Later pages need a login, so the first page is the last.
           return { items, hasMore: false };
         },
       });
-
       let unreadableDescriptions = 0;
       await acceptWithDetails(context, candidates, {
         label: GLINTS_LABEL,
@@ -310,6 +395,9 @@ export async function runGlints(
           if (!detail) {
             throw new Error(`${GLINTS_LABEL} returned an invalid job detail`);
           }
+          // A closed job is dropped before its description is looked at.
+          const mapped = mapGlintsJob(item, detail);
+          if (!mapped) return null;
           let description: string | undefined;
           try {
             description =
@@ -319,7 +407,7 @@ export async function runGlints(
             if (!(error instanceof DraftJsParseError)) throw error;
             unreadableDescriptions += 1;
           }
-          return mapGlintsJob(item, detail, description);
+          return { ...mapped, jobDescription: description };
         },
       });
 

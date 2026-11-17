@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { DraftJsParseError, draftJsToHtml } from "../src/draft";
+import {
+  DraftJsParseError,
+  draftJsToHtml,
+  MAX_DRAFT_BLOCKS,
+  MAX_DRAFT_TEXT_LENGTH,
+} from "../src/draft";
 import detailSample from "./fixtures/detail.json";
 
 function block(text: string, extra: Record<string, unknown> = {}) {
@@ -118,6 +123,49 @@ describe("Draft.js descriptions", () => {
         ]),
       ),
     ).toBe("<ul><li>a</li></ul>\n<ol><li>b</li></ol>");
+  });
+
+  it("never emits prototype members for block, style or entity names", () => {
+    const html = draftJsToHtml(
+      draft(
+        [
+          block("a", { type: "constructor" }),
+          block("b", { type: "toString" }),
+          block("c", {
+            type: "__proto__",
+            inlineStyleRanges: [{ style: "constructor", offset: 0, length: 1 }],
+            entityRanges: [{ key: "toString", offset: 0, length: 1 }],
+          }),
+        ],
+        {},
+      ),
+    );
+
+    expect(html).toBe("<p>a</p>\n<p>b</p>\n<p>c</p>");
+  });
+
+  it("cuts off a huge description instead of converting all of it", () => {
+    const manyBlocks = draftJsToHtml(
+      draft(
+        Array.from({ length: MAX_DRAFT_BLOCKS + 5 }, (_, n) => block(`b${n}`)),
+      ),
+    );
+    expect(manyBlocks.match(/<p>b\d+<\/p>/g)).toHaveLength(MAX_DRAFT_BLOCKS);
+    expect(manyBlocks.endsWith("<p>…</p>")).toBe(true);
+
+    const longText = draftJsToHtml(
+      draft([
+        block("x".repeat(MAX_DRAFT_TEXT_LENGTH - 2)),
+        block("🚀🚀🚀🚀"),
+        block("never shown"),
+      ]),
+    );
+    expect(longText).toBe(
+      `<p>${"x".repeat(MAX_DRAFT_TEXT_LENGTH - 2)}</p>\n<p>🚀🚀</p>\n<p>…</p>`,
+    );
+
+    const exact = draftJsToHtml(draft([block("x".repeat(10))]));
+    expect(exact).toBe(`<p>${"x".repeat(10)}</p>`);
   });
 
   it("throws a parse error for malformed input", () => {

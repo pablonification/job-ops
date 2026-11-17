@@ -13,29 +13,34 @@ export class DraftJsParseError extends Error {
   }
 }
 
-const BLOCK_TAGS: Record<string, string> = {
-  unstyled: "p",
-  paragraph: "p",
-  "header-one": "h1",
-  "header-two": "h2",
-  "header-three": "h3",
-  "header-four": "h4",
-  "header-five": "h5",
-  "header-six": "h6",
-  blockquote: "blockquote",
-  "code-block": "pre",
-};
+/** Longest description converted; anything after it is cut off. */
+export const MAX_DRAFT_BLOCKS = 1_000;
+export const MAX_DRAFT_TEXT_LENGTH = 50_000;
 
-const LIST_TAGS: Record<string, "ul" | "ol"> = {
-  "unordered-list-item": "ul",
-  "ordered-list-item": "ol",
-};
+// Maps, so an upstream type such as "constructor" never hits a prototype key.
+const BLOCK_TAGS = new Map<string, string>([
+  ["unstyled", "p"],
+  ["paragraph", "p"],
+  ["header-one", "h1"],
+  ["header-two", "h2"],
+  ["header-three", "h3"],
+  ["header-four", "h4"],
+  ["header-five", "h5"],
+  ["header-six", "h6"],
+  ["blockquote", "blockquote"],
+  ["code-block", "pre"],
+]);
 
-const STYLE_TAGS: Record<string, string> = {
-  BOLD: "strong",
-  ITALIC: "em",
-  UNDERLINE: "u",
-};
+const LIST_TAGS = new Map<string, "ul" | "ol">([
+  ["unordered-list-item", "ul"],
+  ["ordered-list-item", "ol"],
+]);
+
+const STYLE_TAGS = new Map<string, string>([
+  ["BOLD", "strong"],
+  ["ITALIC", "em"],
+  ["UNDERLINE", "u"],
+]);
 
 function escapeHtml(value: string): string {
   return value
@@ -68,8 +73,11 @@ function ranges(value: unknown): UnknownRecord[] {
  * Renders one block's text with its inline styles and links. Draft.js
  * offsets count Unicode code points, so the text is split the same way.
  */
-function renderInline(block: UnknownRecord, entityMap: UnknownRecord): string {
-  const chars = Array.from(typeof block.text === "string" ? block.text : "");
+function renderInline(
+  block: UnknownRecord,
+  chars: readonly string[],
+  entityMap: UnknownRecord,
+): string {
   if (chars.length === 0) return "";
   const styles: Array<Set<string>> = chars.map(() => new Set());
   const links: Array<string | undefined> = chars.map(() => undefined);
@@ -80,13 +88,16 @@ function renderInline(block: UnknownRecord, entityMap: UnknownRecord): string {
   };
 
   for (const range of ranges(block.inlineStyleRanges)) {
-    const tag = STYLE_TAGS[asString(range.style) ?? ""];
+    const tag = STYLE_TAGS.get(asString(range.style) ?? "");
     if (!tag) continue;
     const { offset, end } = spans(range);
     for (let index = offset; index < end; index += 1) styles[index].add(tag);
   }
   for (const range of ranges(block.entityRanges)) {
-    const entity = asRecord(entityMap[String(range.key)]);
+    const key = String(range.key);
+    const entity = Object.hasOwn(entityMap, key)
+      ? asRecord(entityMap[key])
+      : null;
     if (asString(entity?.type)?.toUpperCase() !== "LINK") continue;
     const data = asRecord(entity?.data);
     const url = safeLinkUrl(data?.url) ?? safeLinkUrl(data?.href);
@@ -108,7 +119,7 @@ function renderInline(block: UnknownRecord, entityMap: UnknownRecord): string {
       /\n/g,
       "<br>",
     );
-    for (const tag of Object.values(STYLE_TAGS)) {
+    for (const tag of STYLE_TAGS.values()) {
       if (styles[start].has(tag)) run = `<${tag}>${run}</${tag}>`;
     }
     if (links[start]) {
@@ -124,7 +135,9 @@ function renderInline(block: UnknownRecord, entityMap: UnknownRecord): string {
  * Converts a Draft.js description (Glints' `descriptionJsonString`) into
  * simple HTML: paragraphs, headings, nested bullet and numbered lists, bold,
  * italic, underline and http(s)/mailto links. Unknown block types become
- * plain paragraphs and blank blocks are dropped. Throws `DraftJsParseError`
+ * plain paragraphs and blank blocks are dropped. Descriptions longer than
+ * `MAX_DRAFT_BLOCKS` blocks or `MAX_DRAFT_TEXT_LENGTH` characters are cut
+ * off and end with "…". Throws `DraftJsParseError`
  * when the input is not Draft.js JSON.
  */
 export function draftJsToHtml(value: string): string {
@@ -146,11 +159,24 @@ export function draftJsToHtml(value: string): string {
     }
   };
 
-  for (const block of raw.blocks.map(asRecord)) {
+  let remaining = MAX_DRAFT_TEXT_LENGTH;
+  let truncated = raw.blocks.length > MAX_DRAFT_BLOCKS;
+  for (const block of raw.blocks.slice(0, MAX_DRAFT_BLOCKS).map(asRecord)) {
     if (!block) continue;
+    if (remaining <= 0) {
+      truncated = true;
+      break;
+    }
+    const text = typeof block.text === "string" ? block.text : "";
+    // Code points (at most two UTF-16 units each), so a huge block is
+    // sliced before it is split.
+    const head = Array.from(text.slice(0, remaining * 2 + 2));
+    const chars = head.slice(0, remaining);
+    if (head.length > remaining) truncated = true;
+    remaining -= chars.length;
     const type = asString(block.type) ?? "unstyled";
-    const html = renderInline(block, entityMap);
-    const listTag = LIST_TAGS[type];
+    const html = renderInline(block, chars, entityMap);
+    const listTag = LIST_TAGS.get(type);
 
     if (listTag) {
       if (!html.trim()) continue;
@@ -173,10 +199,11 @@ export function draftJsToHtml(value: string): string {
 
     closeListsTo(0);
     if (!html.trim()) continue;
-    const tag = BLOCK_TAGS[type] ?? "p";
+    const tag = BLOCK_TAGS.get(type) ?? "p";
     out.push(`<${tag}>${html}</${tag}>`);
   }
   closeListsTo(0);
+  if (truncated) out.push("<p>…</p>");
   // One block per line; closing list tags stay on the line they close.
   return out.join("\n").replace(/\n<\/li>/g, "</li>");
 }
