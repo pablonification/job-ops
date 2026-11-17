@@ -101,6 +101,12 @@ services:
         - path: ./extractors/dealls/src
           target: /app/extractors/dealls/src
           action: sync+restart
+        - path: ./extractors/jobstreet/src
+          target: /app/extractors/jobstreet/src
+          action: sync+restart
+        - path: ./extractors/glints/src
+          target: /app/extractors/glints/src
+          action: sync+restart
         - path: ./extractors/idbigtech/src
           target: /app/extractors/idbigtech/src
           action: sync+restart

@@ -1,0 +1,13 @@
+{
+  "name": "jobstreet-extractor",
+  "version": "0.0.1",
+  "type": "module",
+  "description": "JobStreet Indonesia extractor backed by the site's job search API and job detail GraphQL call",
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "~5.9.0"
+  },
+  "scripts": {
+    "check:types": "tsc --noEmit"
+  }
+}

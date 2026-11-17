@@ -1,0 +1,167 @@
+{
+  "totalCount": 3,
+  "location": {
+    "description": "Tangerang Banten",
+    "locationDescription": "Tangerang",
+    "type": "Location",
+    "whereId": "2032906",
+    "localisedDescriptions": {
+      "en": {
+        "contextualName": "Tangerang Banten"
+      },
+      "id": {
+        "contextualName": "Tangerang Banten"
+      }
+    },
+    "isGranular": true,
+    "defaultDistanceKms": 50
+  },
+  "data": [
+    {
+      "advertiser": {
+        "id": "60337416",
+        "description": "PT CIMB Niaga Tbk"
+      },
+      "branding": {},
+      "classifications": [
+        {
+          "classification": {
+            "id": "6281",
+            "description": "Information & Communication Technology"
+          },
+          "subclassification": {
+            "id": "6297",
+            "description": "Security"
+          }
+        }
+      ],
+      "companyName": "CIMB Niaga",
+      "employer": {
+        "id": "518794",
+        "name": "CIMB Niaga",
+        "companyId": "168559395950563",
+        "companyUrl": "https://id.jobstreet.com/companies/cimb-niaga-168559395950563"
+      },
+      "id": "95951840",
+      "listingDate": "2026-11-17T11:47:54Z",
+      "locations": [
+        {
+          "label": "Tangerang District, Banten",
+          "countryCode": "ID"
+        }
+      ],
+      "salaryLabel": "",
+      "teaser": "O522 Kantor Pusat - Griya Niaga 1 Permanent O725 Operations, Technology, Analytics & AI ID Data, Technology & Cyber Security",
+      "title": "Observability Platform Specialist 1026",
+      "workTypes": ["Full time"],
+      "workArrangements": {
+        "data": [
+          {
+            "id": "1",
+            "label": {
+              "text": "On-site"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "advertiser": {
+        "id": "60337416",
+        "description": "PT CIMB Niaga Tbk"
+      },
+      "branding": {},
+      "classifications": [
+        {
+          "classification": {
+            "id": "6281",
+            "description": "Information & Communication Technology"
+          },
+          "subclassification": {
+            "id": "6301",
+            "description": "Testing & Quality Assurance"
+          }
+        }
+      ],
+      "companyName": "CIMB Niaga",
+      "employer": {
+        "id": "518794",
+        "name": "CIMB Niaga",
+        "companyId": "168559395950563",
+        "companyUrl": "https://id.jobstreet.com/companies/cimb-niaga-168559395950563"
+      },
+      "id": "95951838",
+      "listingDate": "2026-11-17T11:47:52Z",
+      "locations": [
+        {
+          "label": "Tangerang District, Banten",
+          "countryCode": "ID"
+        }
+      ],
+      "salaryLabel": "",
+      "teaser": "2. Experience in PEGA development will be considered an advantage\n3. Demonstrating strong proficiency in Java development\n4. Communicating...",
+      "title": "IT Analyst - PEGA COE O825",
+      "workTypes": ["Full time"],
+      "workArrangements": {
+        "data": [
+          {
+            "id": "1",
+            "label": {
+              "text": "On-site"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "advertiser": {
+        "id": "60885381",
+        "description": "PT Intimuara Electrindo"
+      },
+      "branding": {
+        "serpLogoUrl": "https://bx-branding-gateway.cloud.seek.com.au/f5baeda7-b775-4c3f-8f3e-3e0eb15c6854.1/jdpLogo"
+      },
+      "classifications": [
+        {
+          "classification": {
+            "id": "1209",
+            "description": "Engineering"
+          },
+          "subclassification": {
+            "id": "6025",
+            "description": "Engineering Drafting"
+          }
+        }
+      ],
+      "companyName": "PT Intimuara Electrindo",
+      "employer": {
+        "id": "664980",
+        "name": "PT Intimuara Electrindo",
+        "companyId": "168557126380594",
+        "companyUrl": "https://id.jobstreet.com/companies/pt-intimuara-electrindo-168557126380594"
+      },
+      "id": "95950799",
+      "listingDate": "2026-11-17T10:15:46Z",
+      "locations": [
+        {
+          "label": "West Jakarta, Jakarta",
+          "countryCode": "ID"
+        }
+      ],
+      "salaryLabel": "",
+      "teaser": "Karir engineering berkembang: desain panel listrik kompleks, tim profesional, proyek infrastruktur bermakna.",
+      "title": "DRAFTER ENGINEERING (PANEL LISTRIK)",
+      "workTypes": ["Full time"],
+      "workArrangements": {
+        "data": [
+          {
+            "id": "1",
+            "label": {
+              "text": "On-site"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

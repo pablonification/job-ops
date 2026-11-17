@@ -31,7 +31,7 @@ Defaults and constraints:
 - Cities: Tech in Asia has no city filter in its API, so job-ops filters by city itself before a job counts toward the limit. With cities selected, at most three times the limit is scanned per term.
 - City names are matched across English and Indonesian forms for the Jakarta districts (`South Jakarta` = `Jakarta Selatan` = `Jaksel`, and so on), South Tangerang, Yogyakarta (`Jogja`) and Surakarta (`Solo`). A city filter keeps jobs in that city or inside it: `Jakarta` keeps every Jakarta district, but `Jakarta Selatan` does not keep a job listed only as `Jakarta`.
 - Paging stops early when a page holds only jobs that an earlier search term already returned.
-- A run stops starting new requests after 8 minutes (the pipeline allows 10 per source) and keeps the jobs collected so far; the run then lists a source error saying it was cut short.
+- A run stops starting new requests after 8 minutes (the pipeline allows 10 per source) and keeps the jobs collected so far; the run then lists a source error saying it was cut short. The 8 minutes are shared fairly between search terms: each term may use at most the time left divided by the terms left, so every term gets a turn. A term that uses up its share stops with a source note and the next term starts; time a quick term leaves unused goes to the later ones.
 - Salary is imported only when Tech in Asia shows it and the amount is above zero (for example `IDR 7,000,000–10,000,000 / month`).
 - Job links point to `https://www.techinasia.com/jobs/<id>`. When the employer uses an external application page, the apply link points there.
 - Every job carries the country Indonesia in its location (for example `Jakarta, Jakarta Raya, Indonesia`), so the shared country and city filter keeps it.

@@ -35,6 +35,9 @@ const WORD_SYNONYMS: Record<string, string> = {
   developers: "engineer",
   programmer: "engineer",
   programmers: "engineer",
+  // Indonesian: "Pengembang" (developer), "Insinyur" (engineer).
+  pengembang: "engineer",
+  insinyur: "engineer",
   dev: "engineer",
   devs: "engineer",
   sde: "engineer",
@@ -67,6 +70,7 @@ const WORD_SYNONYMS: Record<string, string> = {
   fe: "frontend",
   be: "backend",
   managers: "manager",
+  staf: "staff",
 };
 
 /** Two-word phrases (after word synonyms) collapsed into one canonical token. */
@@ -85,6 +89,9 @@ const PHRASE_SYNONYMS: ReadonlyArray<readonly [string, string, string]> = [
   ["early", "career", "graduate"],
   ["early", "careers", "graduate"],
   ["entry", "level", "graduate"],
+  // Indonesian: "Perangkat Lunak" (software), "Lulusan Baru" (fresh graduate).
+  ["perangkat", "lunak", "software"],
+  ["lulusan", "baru", "graduate"],
 ];
 
 /**
@@ -101,6 +108,10 @@ const LEVELS = new Set(["intern", "graduate", "junior"]);
 
 /** Term tokens that a title satisfies with any of these tokens. */
 const ROLE_FAMILIES: Record<string, readonly string[]> = {
+  // "Golang Developer", "Node.js Engineer", ".NET Developer".
+  backend: ["backend", "fullstack", "go", "java", "node", "net", "php"],
+  // "React Developer", "Vue.js Developer", "Web Developer".
+  frontend: ["frontend", "fullstack", "react", "vue", "angular", "web"],
   mobile: [
     "mobile",
     "android",
@@ -187,6 +198,8 @@ const NON_SOFTWARE_FIELDS = new Set([
   "hse",
   "commissioning",
   "building",
+  // "Pengembang Bisnis" is a business developer.
+  "bisnis",
 ]);
 
 /** Words that make an engineer title a software one despite a field word. */
@@ -246,7 +259,8 @@ export function canonicalTitleTokens(
   options: { asSearchTerm?: boolean } = {},
 ): string[] {
   const phrases = options.asSearchTerm ? TERM_PHRASE_SYNONYMS : PHRASE_SYNONYMS;
-  const canonical = (word: string) => WORD_SYNONYMS[word] ?? word;
+  const canonical = (word: string) =>
+    Object.hasOwn(WORD_SYNONYMS, word) ? WORD_SYNONYMS[word] : word;
   const tokens: string[] = [];
   for (const word of words(value)) {
     const token = canonical(word);
@@ -277,7 +291,9 @@ function sameWord(left: string, right: string): boolean {
 }
 
 function titleHas(titleTokens: readonly string[], termToken: string): boolean {
-  const accepted = ROLE_FAMILIES[termToken] ?? [termToken];
+  const accepted = Object.hasOwn(ROLE_FAMILIES, termToken)
+    ? ROLE_FAMILIES[termToken]
+    : [termToken];
   return titleTokens.some((token) =>
     accepted.some((wanted) => sameWord(token, wanted)),
   );
@@ -286,17 +302,47 @@ function titleHas(titleTokens: readonly string[], termToken: string): boolean {
 const hasAny = (tokens: readonly string[], set: ReadonlySet<string>) =>
   tokens.some((token) => set.has(token));
 
+/** A trainee programme takes interns and fresh graduates alike. */
+const TRAINEE_WORDS = new Set(["trainee", "trainees"]);
+
+/** Levels a title (and the posting's own level hint) carries. */
+function titleLevels(
+  title: string,
+  titleTokens: readonly string[],
+  levelHint: string | undefined,
+): Set<string> {
+  const levels = new Set(titleTokens.filter((token) => LEVELS.has(token)));
+  if (words(title).some((word) => TRAINEE_WORDS.has(word))) {
+    levels.add("intern");
+    levels.add("graduate");
+  }
+  for (const token of canonicalTitleTokens(levelHint ?? "")) {
+    if (LEVELS.has(token)) levels.add(token);
+  }
+  return levels;
+}
+
 /**
  * True when the job title carries every level of the search term and its
  * role. A term without significant words matches everything.
+ *
+ * `levelHint` is the posting's own level or job type when the board has one
+ * (for example Glints' `INTERNSHIP`): its levels count as if the title said
+ * them, so an internship titled "Software Engineer" matches "intern". It
+ * never satisfies the role.
  */
-export function isRelevantJobTitle(title: string, searchTerm: string): boolean {
+export function isRelevantJobTitle(
+  title: string,
+  searchTerm: string,
+  options: { levelHint?: string } = {},
+): boolean {
   const termTokens = canonicalTitleTokens(searchTerm, { asSearchTerm: true });
   if (termTokens.length === 0) return true;
   const titleTokens = canonicalTitleTokens(title);
 
   const termLevels = termTokens.filter((token) => LEVELS.has(token));
-  if (!termLevels.every((level) => titleTokens.includes(level))) return false;
+  const levels = titleLevels(title, titleTokens, options.levelHint);
+  if (!termLevels.every((level) => levels.has(level))) return false;
 
   const role = termTokens.filter((token) => !LEVELS.has(token));
   if (role.length === 0) return true;

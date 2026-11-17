@@ -222,6 +222,43 @@ describe("job-board runner", () => {
       label: "Board",
       maxPageSize: 20,
       options: {
+        searchTerms: ["a"],
+        timeBudgetMs: 120_000,
+        now: () => clock,
+        fetchImpl,
+        sleep: noSleep,
+        delayMs: 0,
+      },
+      runTerm: async ({ client, accept, searchTerm }) => {
+        // A single term has the whole budget.
+        await client.getJson("https://example.com/page");
+        accept(job(searchTerm));
+        await client.getJson("https://example.com/page");
+        await client.getJson("https://example.com/page");
+      },
+    });
+
+    expect(result).toEqual({
+      success: true,
+      jobs: [expect.objectContaining({ jobUrl: "https://example.com/a" })],
+      sourceErrors: [
+        "Board: stopped after 2 minutes to stay within the source time limit; kept the 1 jobs collected so far",
+      ],
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it("gives each term at most its fair share of the remaining time", async () => {
+    let clock = 0;
+    const fetchImpl = vi.fn(async () => {
+      clock += 60_000;
+      return jsonResponse({ items: [] });
+    });
+    const started: Array<[string, number]> = [];
+    const result = await runJobBoard({
+      label: "Board",
+      maxPageSize: 20,
+      options: {
         searchTerms: ["a", "b", "c"],
         timeBudgetMs: 180_000,
         now: () => clock,
@@ -230,21 +267,98 @@ describe("job-board runner", () => {
         delayMs: 0,
       },
       runTerm: async ({ client, accept, searchTerm }) => {
-        await client.getJson("https://example.com/page");
-        accept(job(searchTerm));
-        await client.getJson("https://example.com/page");
+        started.push([searchTerm, clock]);
+        // Each term would keep requesting forever; its share stops it.
+        for (;;) {
+          await client.getJson("https://example.com/page");
+          accept(job(`${searchTerm}-${clock}`));
+        }
       },
     });
 
+    // 180s over three terms: one 60s request each, so every term gets a turn.
+    expect(started).toEqual([
+      ["a", 0],
+      ["b", 60_000],
+      ["c", 120_000],
+    ]);
     expect(result.success).toBe(true);
-    expect(result.jobs.map((item) => item.jobUrl)).toEqual([
-      "https://example.com/a",
-      "https://example.com/b",
-    ]);
+    expect(result.jobs).toHaveLength(3);
     expect(result.sourceErrors).toEqual([
-      "Board: stopped after 3 minutes to stay within the source time limit; kept the 2 jobs collected so far",
+      "Board: used this term's share of the time limit (about 60 seconds) and moved on so later search terms get their turn; kept 1 jobs for it (term: a)",
+      "Board: used this term's share of the time limit (about 60 seconds) and moved on so later search terms get their turn; kept 1 jobs for it (term: b)",
+      "Board: stopped after 3 minutes to stay within the source time limit; kept the 3 jobs collected so far",
     ]);
-    expect(fetchImpl).toHaveBeenCalledTimes(3);
+  });
+
+  it("hands time a quick term leaves unused to the later terms", async () => {
+    let clock = 0;
+    const fetchImpl = vi.fn(async () => {
+      clock += 10_000;
+      return jsonResponse({ items: [] });
+    });
+    const requestsByTerm: Record<string, number> = {};
+    const result = await runJobBoard({
+      label: "Board",
+      maxPageSize: 20,
+      options: {
+        searchTerms: ["quick", "slow-1", "slow-2"],
+        timeBudgetMs: 120_000,
+        now: () => clock,
+        fetchImpl,
+        sleep: noSleep,
+        delayMs: 0,
+      },
+      runTerm: async ({ client, searchTerm, shouldStop }) => {
+        const wanted = searchTerm === "quick" ? 1 : 100;
+        for (let request = 0; request < wanted && !shouldStop(); request += 1) {
+          await client.getJson("https://example.com/page");
+          requestsByTerm[searchTerm] = (requestsByTerm[searchTerm] ?? 0) + 1;
+        }
+      },
+    });
+
+    // "quick" uses 10s of its 40s share; the 110s left are split between the
+    // two slow terms: 55s each (a request started before the share ends may
+    // finish after it, so slow-1 runs from 10s to 70s and slow-2 to 120s).
+    expect(requestsByTerm).toEqual({ quick: 1, "slow-1": 6, "slow-2": 5 });
+    expect(result).toEqual({
+      success: false,
+      jobs: [],
+      error:
+        "Board: used this term's share of the time limit (about 55 seconds) and moved on so later search terms get their turn; kept 0 jobs for it (term: slow-1); Board: stopped after 2 minutes to stay within the source time limit; kept the 0 jobs collected so far",
+    });
+  });
+
+  it("reports notes as source messages that never fail the run", async () => {
+    const quiet = await runJobBoard({
+      label: "Board",
+      maxPageSize: 20,
+      options: { searchTerms: ["a"] },
+      runTerm: async ({ reportNote }) => {
+        reportNote("Board: results were limited to the first page");
+      },
+    });
+    expect(quiet).toEqual({
+      success: true,
+      jobs: [],
+      sourceErrors: ["Board: results were limited to the first page (term: a)"],
+    });
+
+    const failed = await runJobBoard({
+      label: "Board",
+      maxPageSize: 20,
+      options: { searchTerms: ["a"] },
+      runTerm: async ({ reportNote, reportError }) => {
+        reportNote("Board: note");
+        reportError("Board: broken");
+      },
+    });
+    expect(failed).toEqual({
+      success: false,
+      jobs: [],
+      error: "Board: note (term: a); Board: broken (term: a)",
+    });
   });
 
   it("stops paging a term when a page holds only jobs taken by earlier terms", async () => {

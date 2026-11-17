@@ -1,0 +1,36 @@
+{
+  "data": {
+    "jobDetails": {
+      "job": {
+        "id": "95924141",
+        "title": "PROJECT TEST MANAGER",
+        "isExpired": false,
+        "content": "<h2>About the Role</h2><p>We are seeking an experienced <strong>Project Test Manager</strong> to lead testing, commissioning, system integration, and acceptance activities for data center construction, smart building, and ELV (Extra Low Voltage) projects.</p><p>The successful candidate will ensure that all integrated systems meet project specifications, technical standards, and client requirements in terms of functionality, stability, and performance before final handover.</p><h2>Key Responsibilities:</h2><ol><li><p>Develop testing and commissioning plans for individual systems and integrated systems.</p></li><li><p>Lead programming, configuration, and system integration activities, including interface and protocol integration.</p></li><li><p>Conduct functional, performance, stability, and compatibility testing.</p></li><li><p>Coordinate system integration testing across multiple ELV and smart building subsystems.</p></li><li><p>Independently review and verify commissioning results to ensure compliance with technical requirements.</p></li><li><p>Manage defect tracking, troubleshooting, retesting, and closure until all issues are resolved.</p></li><li><p>Prepare testing reports, test records, and technical documentation for project acceptance.</p></li><li><p>Support client acceptance testing, final inspection, and project handover activities.</p></li><li><p>Maintain testing procedures, test cases, troubleshooting databases, and system integration checklists.</p></li></ol><h2>Requirements:</h2><ol><li><p>Diploma or Bachelor's Degree in Computer Engineering, Automation, Electronics, Telecommunications, or related technical fields.</p></li><li><p>Minimum 2 years of experience in system testing, commissioning, or system integration.</p></li><li><p>Knowledge and understanding of:</p><ul><li><p>TCP/IP</p></li><li><p>Modbus</p></li><li><p>BACnet</p></li><li><p>ONVIF</p></li><li><p>ELV System Integration</p></li></ul></li><li><p>Experience with testing methodologies, commissioning procedures, and defect management.</p></li><li><p>Strong analytical, troubleshooting, and problem-solving skills.</p></li><li><p>Good documentation, reporting, and coordination capabilities.</p></li><li><p>Able to read and understand technical documentation and equipment manuals in English.</p></li><li><p>Willing to travel and support overseas projects when required.</p></li></ol><h2>Preferred Qualifications:</h2><ol><li><p>Experience in large-scale system integration or construction projects, preferably in data centers, smart buildings, or ELV systems.</p></li><li><p>Knowledge of programming, system configuration, or automation systems.</p></li><li><p>Experience participating in complete project testing, commissioning, and acceptance processes.</p></li><li><p>Relevant testing, automation, or vendor certifications are an advantage.</p></li></ol><p><br></p>",
+        "abstract": "Lead testing, integration, and acceptance for smart building and ELV projects through final handover.",
+        "salary": {
+          "label": "Rp 20.000.000 – Rp 30.000.000 per month",
+          "currencyLabel": null
+        },
+        "workTypes": {
+          "label": "Full time"
+        },
+        "listedAt": {
+          "dateTimeUtc": "2026-11-16T10:06:08.851Z"
+        },
+        "location": {
+          "label": "Cikarang Pusat, Jawa Barat"
+        },
+        "advertiser": {
+          "id": "63388996",
+          "name": "PT SHIYUN TECHNOLOGY INDONESIA"
+        },
+        "classifications": [
+          {
+            "label": "Manajemen Proyek (Konstruksi)"
+          }
+        ],
+        "shareLink": "https://id.jobstreet.com/id/job/95924141?tracking=SHR-WEB-SharedJob-asia-4"
+      }
+    }
+  }
+}
