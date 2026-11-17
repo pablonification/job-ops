@@ -176,10 +176,18 @@ COPY extractors/wazzuf/package*.json ./extractors/wazzuf/
 COPY extractors/freehire/package*.json ./extractors/freehire/
 COPY extractors/browser-utils/package*.json ./extractors/browser-utils/
 
-# Install production Node dependencies only.
+# Install production Node dependencies only. Do not add --omit=optional: the
+# Claude Agent SDK (claude_agent_sdk provider) ships its Claude Code binary as a
+# per-platform optional dependency.
 RUN npm install --workspaces --include-workspace-root --omit=dev \
     --no-audit --no-fund --progress=false \
     && npm cache clean --force
+
+# Fail the build if the Agent SDK's native Claude Code binary for this platform
+# is missing or cannot run (no network or credentials involved).
+RUN cd orchestrator && \
+    claude_sdk_bin="$(node -e "process.stdout.write(require.resolve('@anthropic-ai/claude-agent-sdk-linux-' + process.arch + '/claude'))")" && \
+    "$claude_sdk_bin" --version
 
 
 FROM runtime-node-deps AS camoufox-cache

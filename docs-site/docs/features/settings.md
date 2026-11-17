@@ -50,7 +50,7 @@ Each meter includes completed usage and work currently in progress. Limits reset
 ![Model settings section](/img/features/settings-model-section.png)
 
 - In hosted deployments with platform-managed LLM enabled, this section is hidden because provider, API key, and model selection are managed by the hosted platform.
-- Choose provider (`atlascloud`, `litellm`, `openrouter`, `orcarouter`, `requesty`, `api_route`, `lmstudio`, `ollama`, `openai`, `glm`, `gemini`, `gemini_cli`, `claude_cli`, `codex`)
+- Choose provider (`atlascloud`, `litellm`, `openrouter`, `orcarouter`, `requesty`, `api_route`, `lmstudio`, `ollama`, `openai`, `glm`, `gemini`, `gemini_cli`, `claude_cli`, `claude_agent_sdk`, `codex`)
 - Set provider-specific base URL/API key when required
 - Configure the default model/runtime, plus purpose-specific overrides for:
   - Scoring
@@ -66,6 +66,7 @@ Each meter includes completed usage and work currently in progress. Limits reset
   - `glm` defaults to `glm-5.1`
   - `gemini` and `gemini_cli` default to `google/gemini-3-flash-preview`
   - `claude_cli` defaults to `claude-sonnet-5`
+  - `claude_agent_sdk` defaults to `sonnet`
   - `litellm` and `ollama` have no default; pick one of the models the server offers
 - The settings page shows provider-aware model pickers for:
   - `atlascloud`: console-visible text models from the live Atlas Cloud catalog
@@ -75,6 +76,7 @@ Each meter includes completed usage and work currently in progress. Limits reset
   - `gemini`: available Gemini text-generation models only
   - `gemini_cli`: a curated list of Gemini model ids the CLI typically supports (install [Gemini CLI](https://www.npmjs.com/package/@google/gemini-cli), run `gemini` and complete Google sign-in, or set `GEMINI_API_KEY` for the CLI; JobOps spawns headless `gemini -p ...` with `--approval-mode plan` and no JobOps API key field). **Resume import** uses the CLI with extracted text: DOCX is parsed locally; PDF uses local text extraction then JSON extraction via the CLI (scanned PDFs without a text layer may not import well).
   - `claude_cli`: a curated list of Claude model ids (install [Claude Code](https://www.npmjs.com/package/@anthropic-ai/claude-code), run `claude setup-token` to mint a long-lived token from a Claude Pro/Max/Team/Enterprise subscription and set it as `CLAUDE_CODE_OAUTH_TOKEN`, or set `ANTHROPIC_API_KEY` instead; JobOps spawns headless `claude -p ...` with `--permission-mode plan` and no JobOps API key field). **Resume import** uses the CLI with extracted text, same as `gemini_cli`: DOCX is parsed locally; PDF uses local text extraction then JSON extraction via the CLI.
+  - `claude_agent_sdk`: the model aliases `sonnet`, `opus`, and `haiku` (see [Claude (subscription) setup](#claude-subscription-setup) below)
   - `ollama`: locally installed Ollama models
   - `orcarouter`: available models from the OrcaRouter gateway
   - `api_route`: model IDs available to your key from `https://global.api-route.com/v1/models`, excluding known image, video, embedding, and audio model families
@@ -84,6 +86,50 @@ Each meter includes completed usage and work currently in progress. Limits reset
 - For [API Route](https://www.api-route.com/), create a key in [API Keys](https://www.api-route.com/api-keys), select API Route, and choose a chat model visible to that key. The endpoint is preset. Use exact IDs without adding an upstream-provider prefix. For environment setup, set `LLM_PROVIDER=api_route`, `API_ROUTE_API_KEY` (or `LLM_API_KEY`), and `MODEL` to the chosen ID. See the [API documentation](https://github.com/DennyHo0917/api-route/blob/main/API.md). JobOps sends the same task prompts and necessary profile/job fields as for its other hosted providers; keys remain in the existing secret storage. Screenshot attachments are not enabled by this integration.
 - Changing the provider clears stale model overrides in the form, so inherited fields follow the new provider default unless you explicitly choose a new override
 - The preview under each field and the **Resolved config** block reflect the model currently selected in the form, even before you save
+
+#### Claude (subscription) setup
+
+The **Claude (subscription)** provider (`claude_agent_sdk`) runs every AI feature (scoring, tailoring, project selection, search planning, manual job import, tracking-inbox email routing, field suggestions, Ghostwriter including screenshot attachments, and resume import) on your own Claude Pro, Max, Team, or Enterprise plan through the Claude Agent SDK. The SDK and its Claude Code binary ship inside the JobOps Docker image, so you do not install anything in the container.
+
+1. On any computer with [Claude Code](https://code.claude.com/docs/en/authentication) installed, run:
+
+   ```bash
+   claude setup-token
+   ```
+
+   It opens a browser sign-in and prints a long-lived token. It does not save the token anywhere.
+2. Add the token to your `.env` file and restart JobOps:
+
+   ```bash
+   LLM_PROVIDER=claude_agent_sdk
+   MODEL=sonnet
+   CLAUDE_CODE_OAUTH_TOKEN=paste-the-token-here
+   ```
+
+3. In **Settings → Models** (or the onboarding model step), choose **Claude (subscription)** and save. If this install already saved a different provider, the saved setting wins over `.env`, so switching here is required.
+
+How it behaves:
+
+- Default model: `sonnet`. Suggested models: `sonnet`, `opus`, `haiku` (aliases that follow the newest model of each family). Full ids that start with `claude-` also work. A `MODEL` value meant for another provider is ignored for this provider.
+- Each request uses your JobOps prompts as the system prompt, has every Claude Code tool switched off, loads no settings, `CLAUDE.md`, or MCP servers, keeps no session history on disk, runs in an empty temporary folder, and asks for structured JSON output.
+- `ANTHROPIC_API_KEY` and `ANTHROPIC_AUTH_TOKEN` are never passed to this provider, so requests cannot silently move to API billing. Other app secrets are not passed either.
+- At most 2 requests run at the same time (pipeline scoring included), to stay inside subscription rate limits.
+- Resume import extracts PDF/DOCX text locally first, then sends only the text.
+- The connection check sends one tiny request with `haiku` and remembers the result for 30 minutes (1 minute after a failure), so status checks do not use up your plan.
+- Not available in hosted mode.
+
+Optional environment variables (defaults shown):
+
+```bash
+CLAUDE_AGENT_SDK_MAX_CONCURRENCY=2
+CLAUDE_AGENT_SDK_REQUEST_TIMEOUT_MS=180000
+CLAUDE_AGENT_SDK_VALIDATION_TIMEOUT_MS=60000
+CLAUDE_AGENT_SDK_MAX_TURNS=4
+# Only to use a Claude Code binary other than the one bundled with the SDK:
+# CLAUDE_AGENT_SDK_EXECUTABLE=/usr/local/bin/claude
+```
+
+Anthropic's terms say third-party products should not offer claude.ai sign-in or subscription limits to their users. Use this provider only with your own token, on your own single-user install.
 
 ### Webhooks
 
@@ -367,6 +413,17 @@ curl -X POST "http://localhost:3001/api/backups"
 - Open **Settings → Tracer Links** and click **Verify now**.
 - Ensure `JOBOPS_PUBLIC_BASE_URL` is set for background/pipeline usage.
 - Ensure the configured host is publicly reachable and `/health` responds.
+
+### Claude (subscription) says "not authenticated"
+
+- Check that `CLAUDE_CODE_OAUTH_TOKEN` is set in the environment JobOps runs with (for Docker, in `.env`), then restart.
+- Tokens from `claude setup-token` last about a year. If it expired or was revoked, run `claude setup-token` again and replace the value.
+- The pipeline pauses on this error instead of failing every job. Fix the token, then start the run again.
+
+### Claude (subscription) says "usage limit reached" or "rate limit reached"
+
+- Your plan's session or weekly limit is used up, or Anthropic is throttling requests. Wait for the limit to reset, or switch provider in **Settings → Models**.
+- Lower `CLAUDE_AGENT_SDK_MAX_CONCURRENCY` (for example to `1`) if large pipeline runs hit rate limits often.
 
 ## Related pages
 
