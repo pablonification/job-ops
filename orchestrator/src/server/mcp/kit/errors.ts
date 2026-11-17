@@ -3,7 +3,7 @@ import { logger } from "@infra/logger";
 import { sanitizeUnknown } from "@infra/sanitize";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { z } from "zod";
-import { toolErrorResult } from "./result";
+import { type McpToolErrorPayload, toolErrorResult } from "./result";
 import { MCP_ROUTE } from "./tool";
 
 const INTERNAL_ERROR_MESSAGE = "JobOps could not complete the request.";
@@ -43,14 +43,15 @@ function isZodError(error: unknown): error is z.ZodError {
 }
 
 /**
- * Maps anything a tool throws to a tool error result. App errors keep their
- * code and message (details are sanitised); unknown errors are logged and
- * reported generically so internals never reach the agent.
+ * Maps anything a tool or prompt throws to the error payload an agent sees.
+ * App errors keep their code and message (cut to 500 characters, details
+ * sanitised); unknown errors are logged and reported generically so
+ * internals never reach the agent.
  */
-export function toToolErrorResult(
+export function toSafeErrorPayload(
   error: unknown,
-  meta: { tool: string },
-): CallToolResult {
+  meta: { tool: string } | { prompt: string },
+): McpToolErrorPayload["error"] {
   const appError = isZodError(error)
     ? invalidToolInput(error)
     : error instanceof AppError
@@ -60,25 +61,22 @@ export function toToolErrorResult(
   if (!appError || appError.status >= 500) {
     logger.error("MCP tool failed", {
       route: MCP_ROUTE,
-      tool: meta.tool,
+      ...meta,
       error: sanitizeUnknown(error),
     });
   } else {
     logger.info("MCP tool returned an error", {
       route: MCP_ROUTE,
-      tool: meta.tool,
+      ...meta,
       status: appError.status,
       code: appError.code,
     });
   }
 
   if (!appError) {
-    return toolErrorResult({
-      code: "INTERNAL_ERROR",
-      message: INTERNAL_ERROR_MESSAGE,
-    });
+    return { code: "INTERNAL_ERROR", message: INTERNAL_ERROR_MESSAGE };
   }
-  return toolErrorResult({
+  return {
     code: appError.code,
     message:
       appError.status >= 500 && appError.code === "INTERNAL_ERROR"
@@ -87,5 +85,13 @@ export function toToolErrorResult(
     ...(appError.details === undefined
       ? {}
       : { details: sanitizeUnknown(appError.details) }),
-  });
+  };
+}
+
+/** Maps anything a tool throws to a tool error result. */
+export function toToolErrorResult(
+  error: unknown,
+  meta: { tool: string },
+): CallToolResult {
+  return toolErrorResult(toSafeErrorPayload(error, meta));
 }

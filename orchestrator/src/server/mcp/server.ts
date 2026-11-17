@@ -8,22 +8,31 @@ import {
   CallToolRequestSchema,
   type CallToolResult,
   ErrorCode,
+  GetPromptRequestSchema,
+  type GetPromptResult,
+  ListPromptsRequestSchema,
   ListToolsRequestSchema,
   McpError,
+  type Prompt,
   type Tool,
 } from "@modelcontextprotocol/sdk/types.js";
 import { MCP_SERVER_INSTRUCTIONS } from "./instructions";
 import {
   assertToolScope,
+  formatZodIssues,
   invalidToolInput,
   MCP_ROUTE,
+  type McpPromptDefinition,
   type McpToolContext,
   type McpToolDefinition,
   toolResult,
+  toPromptArguments,
+  toSafeErrorPayload,
   toToolErrorResult,
+  truncateToolMessage,
 } from "./kit";
 import { toToolInputSchema } from "./kit/json-schema";
-import { getRegisteredTools } from "./registry";
+import { getRegisteredPrompts, getRegisteredTools } from "./registry";
 
 export const MCP_SERVER_NAME = "jobops";
 export const MCP_SERVER_VERSION = "1.0.0";
@@ -92,6 +101,60 @@ export async function executeTool(
   return result;
 }
 
+export function toPromptDescriptor(prompt: McpPromptDefinition): Prompt {
+  return {
+    name: prompt.name,
+    title: prompt.title,
+    description: prompt.description,
+    arguments: toPromptArguments(prompt.input),
+  };
+}
+
+/**
+ * Validates the string arguments and renders the playbook. Invalid arguments
+ * are a protocol error (InvalidParams), as for an unknown prompt; anything
+ * `render` throws is mapped like a tool error (code kept, message cut to 500
+ * characters, internals hidden).
+ */
+export function renderPrompt(
+  prompt: McpPromptDefinition,
+  rawArguments: Record<string, string> | undefined,
+  context: McpToolContext,
+  now: Date = new Date(),
+): GetPromptResult {
+  const parsed = prompt.input.safeParse(rawArguments ?? {});
+  if (!parsed.success) {
+    throw new McpError(
+      ErrorCode.InvalidParams,
+      truncateToolMessage(
+        `Invalid arguments for prompt ${prompt.name}: ${formatZodIssues(parsed.error)}`,
+      ),
+    );
+  }
+  let text: string;
+  try {
+    text = prompt.render(parsed.data, {
+      scope: context.scope,
+      requestOrigin: context.requestOrigin,
+      now,
+    });
+  } catch (error) {
+    const payload = toSafeErrorPayload(error, { prompt: prompt.name });
+    throw new McpError(ErrorCode.InternalError, payload.message, {
+      code: payload.code,
+    });
+  }
+  logger.info("MCP prompt rendered", {
+    route: MCP_ROUTE,
+    prompt: prompt.name,
+    scope: context.scope,
+  });
+  return {
+    description: prompt.description,
+    messages: [{ role: "user", content: { type: "text", text } }],
+  };
+}
+
 /**
  * Builds a fresh, stateless MCP server for one HTTP request. Tool handlers run
  * inside `requestContext`, i.e. the caller's tenant and user.
@@ -100,12 +163,17 @@ export function createJobOpsMcpServer(input: {
   toolContext: McpToolContext;
   requestContext: Partial<RequestContext>;
   tools?: ReadonlyMap<string, McpToolDefinition>;
+  prompts?: ReadonlyMap<string, McpPromptDefinition>;
 }): Server {
   const tools = input.tools ?? getRegisteredTools();
+  const prompts = input.prompts ?? getRegisteredPrompts();
   const server = new Server(
     { name: MCP_SERVER_NAME, title: "JobOps", version: MCP_SERVER_VERSION },
     {
-      capabilities: { tools: { listChanged: false } },
+      capabilities: {
+        tools: { listChanged: false },
+        prompts: { listChanged: false },
+      },
       instructions: MCP_SERVER_INSTRUCTIONS,
     },
   );
@@ -124,6 +192,23 @@ export function createJobOpsMcpServer(input: {
     }
     return runWithRequestContext(input.requestContext, () =>
       executeTool(tool, request.params.arguments, input.toolContext),
+    );
+  });
+
+  server.setRequestHandler(ListPromptsRequestSchema, async () => ({
+    prompts: [...prompts.values()].map(toPromptDescriptor),
+  }));
+
+  server.setRequestHandler(GetPromptRequestSchema, async (request) => {
+    const prompt = prompts.get(request.params.name);
+    if (!prompt) {
+      throw new McpError(
+        ErrorCode.InvalidParams,
+        truncateToolMessage(`Unknown prompt: ${request.params.name}`),
+      );
+    }
+    return runWithRequestContext(input.requestContext, () =>
+      renderPrompt(prompt, request.params.arguments, input.toolContext),
     );
   });
 

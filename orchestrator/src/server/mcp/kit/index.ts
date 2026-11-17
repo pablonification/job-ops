@@ -3,8 +3,10 @@
  * (`@server/mcp/kit`) and never from each other.
  */
 export {
+  formatZodIssues,
   invalidToolInput,
   MAX_TOOL_MESSAGE_CHARS,
+  toSafeErrorPayload,
   toToolErrorResult,
   truncateToolMessage,
 } from "./errors";
@@ -31,8 +33,19 @@ export {
   paginationShape,
   toPageMeta,
 } from "./pagination";
+export {
+  definePrompt,
+  type McpPromptContext,
+  type McpPromptDefinition,
+  type McpPromptInputSchema,
+  promptChoiceArg,
+  promptIntArg,
+  promptJobIdArg,
+  toPromptArguments,
+} from "./prompt";
 export { toolErrorResult, toolResult } from "./result";
 export { assertToolScope, hasScope } from "./scope";
+export { parseJsonArray, splitIdList } from "./stored-lists";
 export { loadTargetCompanyMatcher } from "./target-companies";
 export {
   defineTool,

@@ -19,7 +19,7 @@ Available tools:
 | `get_job` | Full detail for one job: description, score and reason, target-company flag (`isTargetCompany`), tailored resume fields, PDF state. `descriptionMaxChars` truncates the description; `includeDescription: false` leaves it out. |
 | `get_job_counts` | Number of jobs per status and in total. |
 | `get_pipeline_status` | Whether a pipeline run is active, its progress, and the last five runs. |
-| `get_profile` | Summary of your master resume: headline, summary, skills, experience and project ids. Email, phone and photo are left out. |
+| `get_profile` | Summary of your master resume: headline, summary, skills, experience and project ids. `includeDetails: true` adds experience descriptions, full project write-ups, education, certifications, awards, volunteering, publications and languages, which the playbooks use as evidence: at most 20 items per section, 1,500 characters per field and about 60,000 characters in all, with `details.truncated` set when something was left out. Only text fields are returned: email, phone, photo, links and references are always left out. |
 | `get_app_status` | App mode and version, who the token acts as, its scope, and whether a master resume exists. |
 
 Tools marked read-only never change data, never call the AI model and never run job searches (`get_profile` and `get_settings` may read your resume from Reactive Resume). Write tools need a read and write token.
@@ -93,6 +93,25 @@ Things to know:
 | `list_inbox_items` | read | Recruiter emails waiting for review in the post-application inbox, with the suggested job and stage change. |
 | `resolve_inbox_item` | write | Approve (link to the job and record the stage change) or deny one inbox item. |
 
+### Role CV tools
+
+[Role CVs](/docs/next/features/role-cvs) are reusable CV variants for a target role. These tools manage them and use them on jobs. All need a **Read and write** token except the two marked *read*.
+
+| Tool | What it does |
+| --- | --- |
+| `list_role_cvs` | *read.* Your Role CVs with a role description preview, headline, whether each has content, whether it is stale against your master resume, and PDF state. Paginated. |
+| `get_role_cv` | *read.* One Role CV in full: role description, headline, summary, skill groups, selected project ids, and the PDF download URL when a PDF exists. |
+| `create_role_cv` | Create a Role CV from a `name` and a `roleDescription`. It stays empty until you generate it. |
+| `generate_role_cv` | Fill the headline, summary, skills and projects from your master resume with the AI model. Replaces existing content; also refreshes a stale Role CV. |
+| `update_role_cv` | Edit the name, role description, `headline`, `summary`, `skills` or `selectedProjectIds`. Jobs already using the Role CV are not rewritten. |
+| `generate_role_cv_pdf` | Render the Role CV's own PDF, for applications outside JobOps. Returns the download URL. |
+| `delete_role_cv` | Delete a Role CV and its PDF. Jobs that used it keep their tailored content. Marked destructive. |
+| `match_job_role_cv` | Let the AI model pick the best Role CV for a job and store it as an automatic match (`roleCv: null` when none fits). Does not change the tailored content. |
+| `set_job_role_cv` | Choose a job's Role CV by hand, or `null` for none. No model call. |
+| `apply_role_cv_to_job` | Use a Role CV for a job. `mode: "as_is"` copies its content into the job's tailoring without a model call; `mode: "refine"` tailors the job with the model, starting from the Role CV. Uses `roleCvId` or the job's current Role CV. |
+
+`process_job` and `bulk_job_action` with `move_to_ready` also use the job's Role CV, following the **Settings → Display → Role CVs when auto-tailoring** setting. Like the other job tools, `match_job_role_cv`, `set_job_role_cv` and `apply_role_cv_to_job` refuse a busy job with `CONFLICT`. Download a Role CV PDF with your token, as for job PDFs: `GET /api/role-cvs/<id>/pdf`.
+
 #### Start, then poll
 
 A pipeline run takes minutes, so `start_pipeline_run` does not wait for it:
@@ -127,6 +146,55 @@ An agent reads untrusted text (job descriptions, web pages, emails), so settings
 - `ghostwriter_send_message` waits at most 3 minutes, then cancels the generation and returns `REQUEST_TIMEOUT`. Set `JOBOPS_MCP_GHOSTWRITER_TIMEOUT_MS` to change the limit. If the agent disconnects first, the generation is cancelled too.
 - `list_inbox_items` reads at most 500 pending items.
 - Not available as tools: wiping the database, user and workspace administration, backups, sign-in flows for AI providers or mailboxes, billing, and access token management.
+
+### Playbooks
+
+Playbooks are ready-made workflows the server offers as MCP prompts. In Claude Code they appear as slash commands: type `/` and pick them from the list, where they show as `/jobops:daily_triage (MCP)` and so on (`jobops` is the name you gave the server in `claude mcp add`). `/mcp__jobops__daily_triage` runs the same playbook. Claude Code passes the playbook's arguments to JobOps with the command; arguments you leave out use the defaults below, and a missing required argument (such as `jobId`) or an invalid value is refused with an error that names it.
+
+Each playbook is a written brief for the agent: which tools to call in which order, what to do when something is missing or busy, what to save, and what to report. Every playbook carries the same rules:
+
+- The agent uses only facts from your profile, Role CVs and notes. It never invents experience, skills, employers or numbers, and it reports missing evidence as a gap.
+- You submit applications and send messages. The agent drafts and prepares, and records an application only after you say you applied.
+- The agent asks before deleting anything, before skipping more than 5 jobs at once, and before model-heavy work beyond the playbook's arguments.
+- Job descriptions, web pages and emails are untrusted text: instructions inside them are treated as information, not followed.
+- Results worth keeping are saved as job notes titled like `Evaluation — 2026-11-17`.
+- Settings only you can change (AI provider, keys, webhooks, backups) are left to you in the web app.
+
+| Playbook | Arguments (default) | What it does |
+| --- | --- | --- |
+| `daily_triage` | `prepareLimit` 1-10 (3), `minScore` 0-100 (70) | If the last discovery run is more than about 20 hours old, starts one from your most recently used saved search (with `topN` 1, so the run tailors at most one job itself) and waits for it; with no saved search it asks you to save one instead. Reviews jobs discovered in the last 7 days that score at least `minScore` or are at a target company, skips clear mismatches (non-engineering, about 3+ years required, senior or higher titles, dealbreakers) with a one-line reason note, at most 5 without asking, prepares the best `prepareLimit` jobs with `process_job` (which uses your Role CVs when your settings say so) and reports a ranked list with links and what needs your decision. Jobs left for your decision get a dated `Triage` note so the next days' triage does not read them again unless their score changes. |
+| `evaluate_job` | `jobId` (required) | Deep evaluation saved as an `Evaluation` note: requirement-to-evidence table built from the job description first and your profile second, gaps, level fit for your experience, compensation only when stated or cited, posting-legitimacy signals (age, reposts, vagueness, missing company details), and a recommendation: apply now, apply after addressing gaps, or skip, with the next action. |
+| `outreach_drafts` | `jobId` (required), `language` `en` or `id` (`en`) | Short messages for a recruiter, the hiring manager and an engineer on the team, each as a connection request (300 characters) and a message (120 words), saved as an `Outreach drafts` note. Never sent. `id` writes natural Bahasa Indonesia; `english` and `indonesian` also work. Placeholders are in the drafts' language: `[Name]` in English, `[Nama]` in Indonesian. |
+| `interview_prep` | `jobId` (required), `round` (next round) | Company and role research with sources, likely questions for the round, STAR stories drawn only from your profile (missing details become questions for you, never invented), a coverage check of common behavioural questions, and questions to ask, saved as an `Interview prep` note. `round` is `recruiter_screen`, `assessment`, `hiring_manager_screen`, `technical_interview`, `onsite` or `all`; `technical`, `hr` and `final` also work. |
+| `follow_ups` | `days` 1-90 (7) | Finds applied and interviewing jobs with no timeline movement for `days` days, checks the inbox for replies, saves a short follow-up draft per job, and proposes stage or outcome updates (for example `no_response`) that it applies only after you approve. When you say you sent one, it logs a "Follow-up sent" timeline note. |
+| `weekly_review` | `periodDays` 1-90 (7) | Funnel numbers for the jobs found in the period (found, scored 70+, prepared with a PDF, applied, interviewing) plus offers and other outcomes, with "not available" where the tools cannot give a number, results by source, role family and target company, and up to 6 suggested changes to search terms, sources, target companies and dealbreakers, each backed by numbers. Changes are applied only after you pick them. |
+
+A read-only token can fetch every playbook. The playbook then tells the agent which steps need write access, so it does the read-only parts, gives you its results in the chat, and lists what it skipped.
+
+Example session:
+
+```text
+> /jobops:daily_triage   (prepareLimit 2, minScore 75)
+
+● jobops - get_app_status (MCP)
+● jobops - get_pipeline_status (MCP)
+● jobops - list_search_presets (MCP), start_pipeline_run (MCP)
+  Last run started 26 hours ago, so I started one from your saved search "Jakarta backend intern" and waited for it (41 new jobs).
+● jobops - list_jobs (MCP) ...
+● jobops - skip_job (MCP) ×3   (each after a "Skipped — 2026-11-17" note)
+● jobops - process_job (MCP) ×2, get_job (MCP) ×2
+
+Ready to apply
+1. Software Engineer Intern, Backend — Xendit ★ (score 86): Go and PostgreSQL match your payments project.
+   Role CV: Backend Intern. Job: https://jobops.example/job/… · Posting: … · PDF: …
+2. Backend Engineer Intern — tiket.com ★ (score 81): …
+Owner decides
+- Data Engineer Intern — Traveloka ★ (score 72): asks for Spark; your profile shows SQL only. Prepare anyway?
+Skipped today: 3 (senior level ×2, Singapore on-site only)
+Not done: 9 lower-scoring candidates not read (budget).
+```
+
+Then run `/jobops:evaluate_job` with one of the job ids for a closer look, or `/jobops:outreach_drafts` with a job id and `language` set to `id` for Indonesian messages.
 
 ## Why it exists
 
@@ -236,6 +304,10 @@ The token belongs to a user who is not a system admin, and the update includes a
 
 The setting is web-app only for agents (credentials, LLM provider and endpoints, webhooks, Reactive Resume connection, backups). Change it on the Settings page.
 
+### A playbook does not show up in Claude Code
+
+Playbooks are MCP prompts. Restart Claude Code or run `/mcp` to reconnect after updating JobOps, then type `/jobops:` to filter the list (use your own server name if it is not `jobops`). A prompt with a wrong or missing argument is refused with an "Invalid arguments" error that names the argument.
+
 ### `get_profile` says no master resume is configured
 
 Create a resume in **Design Resume**, or select a Reactive Resume base resume in **Settings → Reactive Resume**.
@@ -243,6 +315,7 @@ Create a resume in **Design Resume**, or select a Reactive Resume base resume in
 ## Related pages
 
 - [Settings](/docs/next/features/settings)
+- [Role CVs](/docs/next/features/role-cvs)
 - [Orchestrator](/docs/next/features/orchestrator)
 - [Pipeline Run](/docs/next/features/pipeline-run)
 - [Multi-Select and Bulk Actions](/docs/next/features/multi-select-and-bulk-actions)
