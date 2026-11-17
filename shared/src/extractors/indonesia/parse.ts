@@ -76,7 +76,9 @@ export function toWorkplaceType(value: unknown): LocationWorkplaceType | null {
   const key = asString(value)
     ?.toLowerCase()
     .replace(/[^a-z]/g, "");
-  return key ? (WORKPLACE_TYPES[key] ?? null) : null;
+  return key && Object.hasOwn(WORKPLACE_TYPES, key)
+    ? WORKPLACE_TYPES[key]
+    : null;
 }
 
 /** "1–4 years", "3 years", "100+ employees", "up to 50 employees". */

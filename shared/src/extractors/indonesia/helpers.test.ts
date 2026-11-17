@@ -212,6 +212,7 @@ describe("Indonesian job-board parsing helpers", () => {
     expect(toWorkplaceType("Remote")).toBe("remote");
     expect(toWorkplaceType("hybrid")).toBe("hybrid");
     expect(toWorkplaceType("flexible")).toBeNull();
+    expect(toWorkplaceType("constructor")).toBeNull();
     expect(
       namesOf([{ name: "Go" }, { name: " " }, null, { name: "SQL" }]),
     ).toEqual(["Go", "SQL"]);

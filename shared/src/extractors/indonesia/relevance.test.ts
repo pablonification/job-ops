@@ -146,11 +146,83 @@ const CASES: ReadonlyArray<readonly [string, string, boolean]> = [
   ["Product Manager", "product manager", true],
   ["Tech Lead", "tech lead", true],
   ["Software Engineer", "engineering manager", false],
+
+  // Review round 3: Indonesian forms.
+  ["Pengembang Perangkat Lunak", "software developer", true],
+  ["Pengembang Perangkat Lunak", "software engineer", true],
+  ["Insinyur Perangkat Lunak", "software engineer", true],
+  ["Lulusan Baru - Software Developer", "fresh graduate", true],
+  ["Program Lulusan Baru", "new grad", true],
+  ["Staf IT", "it staff", true],
+  ["IT Staff", "staf it", true],
+  ["Programmer", "software engineer", true],
+  ["Magang IT", "intern", true],
+  ["Fresh Graduate - IT Developer", "new grad", true],
+  ["Fresh Graduate - IT Developer", "software engineer", true],
+  // Still tight: business developers and IT staff are not software roles.
+  ["Pengembang Bisnis", "software engineer", false],
+  ["Staf IT", "software engineer", false],
+  ["Pengembang Perangkat Lunak", "intern", false],
+
+  // Trainee programmes take interns and graduates.
+  ["Management Trainee", "graduate", true],
+  ["Management Trainee", "intern", true],
+  ["Graduate Trainee", "intern", true],
+  ["Graduate Trainee", "new grad", true],
+  ["Management Trainee", "software engineer", false],
+  ["Management Trainee", "junior", false],
+
+  // Backend and frontend specialisations.
+  ["Golang Developer", "backend engineer", true],
+  ["Java Developer", "backend engineer", true],
+  ["Node.js Engineer", "backend engineer", true],
+  [".NET Developer", "backend engineer", true],
+  ["PHP Developer", "backend engineer", true],
+  ["React Developer", "frontend engineer", true],
+  ["Vue.js Developer", "frontend engineer", true],
+  ["Angular Developer", "frontend engineer", true],
+  ["Web Developer", "frontend engineer", true],
+  ["Full Stack Developer", "backend engineer", true],
+  ["Full Stack Developer", "frontend engineer", true],
+  ["React Developer", "backend engineer", false],
+  ["Golang Developer", "frontend engineer", false],
+  ["React Native Developer", "frontend engineer", false],
+  ["Java Developer", "backend engineer intern", false],
+  ["Data Engineer", "backend engineer", false],
+];
+
+// [title, term, level hint, expected]
+const LEVEL_HINT_CASES: ReadonlyArray<
+  readonly [string, string, string, boolean]
+> = [
+  ["Software Engineer", "intern", "INTERNSHIP", true],
+  ["Software Engineer", "software engineer intern", "Internship", true],
+  ["Backend Developer", "backend intern", "Magang", true],
+  ["Software Engineer", "intern", "FULL_TIME", false],
+  ["Software Engineer", "new grad", "INTERNSHIP", false],
+  // A hint gives a level, never the role.
+  ["Data Analyst", "software engineer intern", "INTERNSHIP", false],
 ];
 
 describe("job title relevance", () => {
   it.each(CASES)("%s for %s: %s", (title, term, expected) => {
     expect(isRelevantJobTitle(title, term)).toBe(expected);
+  });
+
+  it.each(
+    LEVEL_HINT_CASES,
+  )("%s for %s with level hint %s: %s", (title, term, levelHint, expected) => {
+    expect(isRelevantJobTitle(title, term, { levelHint })).toBe(expected);
+  });
+
+  it("ignores upstream words that name object properties", () => {
+    expect(canonicalTitleTokens("constructor toString")).toEqual([
+      "constructor",
+      "tostring",
+    ]);
+    expect(isRelevantJobTitle("Constructor Engineer", "constructor")).toBe(
+      true,
+    );
   });
 
   it("normalises separators and synonyms into canonical tokens", () => {
