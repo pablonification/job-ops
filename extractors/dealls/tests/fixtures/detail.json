@@ -1,0 +1,76 @@
+{
+  "code": 200,
+  "data": {
+    "result": {
+      "id": "6af41eb8664fdd0012b75935",
+      "companyId": "67e2884af2569d0013abc239",
+      "role": "Software Engineer",
+      "slug": "software-engineer-42",
+      "closed": false,
+      "jobRoleCategory": {
+        "id": "693466050fafa100127216a7",
+        "name": "Engineering (IT/Software)",
+        "slug": "it-and-software-engineering"
+      },
+      "jobRoleSubCategory": {
+        "id": "6936832b4f8fcd5d0df6eab9",
+        "name": "Full-Stack Developer"
+      },
+      "description": null,
+      "responsibilities": "<ul><li>Develop,&nbsp;maintain,&nbsp;and&nbsp;enhance&nbsp;full-stack&nbsp;web&nbsp;applications&nbsp;to&nbsp;support&nbsp;business&nbsp;operations&nbsp;and&nbsp;digital&nbsp;initiatives.</li><li>Collaborate&nbsp;with&nbsp;users&nbsp;and&nbsp;cross-functional&nbsp;teams&nbsp;to&nbsp;translate&nbsp;business&nbsp;requirements&nbsp;into&nbsp;effective&nbsp;technical&nbsp;solutions.</li><li>Build&nbsp;and&nbsp;integrate&nbsp;frontend,&nbsp;backend,&nbsp;databases,&nbsp;and&nbsp;APIs&nbsp;to&nbsp;deliver&nbsp;scalable,&nbsp;secure,&nbsp;and&nbsp;high-performing&nbsp;applications.</li><li>Perform&nbsp;application&nbsp;testing,&nbsp;troubleshooting,&nbsp;deployment,&nbsp;and&nbsp;continuous&nbsp;system&nbsp;optimization&nbsp;to&nbsp;ensure&nbsp;reliability&nbsp;and&nbsp;performance.</li><li>Prepare&nbsp;and&nbsp;maintain&nbsp;technical&nbsp;documentation&nbsp;while&nbsp;contributing&nbsp;to&nbsp;development&nbsp;standards&nbsp;and&nbsp;best&nbsp;practices.</li><li>Stay&nbsp;updated&nbsp;with&nbsp;emerging&nbsp;technologies&nbsp;and&nbsp;continuously&nbsp;improve&nbsp;development&nbsp;efficiency&nbsp;and&nbsp;solution&nbsp;quality.</li></ul>",
+      "requirements": "<ul><li>Bachelor's&nbsp;Degree&nbsp;in&nbsp;Computer&nbsp;Science,&nbsp;Information&nbsp;Systems,&nbsp;Software&nbsp;Engineering,&nbsp;or&nbsp;other&nbsp;related&nbsp;disciplines.</li><li>Fresh&nbsp;graduates&nbsp;are&nbsp;welcome&nbsp;to&nbsp;apply;&nbsp;candidates&nbsp;with&nbsp;up&nbsp;to&nbsp;<strong>2&nbsp;years&nbsp;of&nbsp;experience</strong>&nbsp;in&nbsp;Full&nbsp;Stack&nbsp;Development&nbsp;or&nbsp;Software&nbsp;Development&nbsp;are&nbsp;encouraged&nbsp;to&nbsp;apply.</li><li>Good&nbsp;understanding&nbsp;of&nbsp;frontend&nbsp;and&nbsp;backend&nbsp;development,&nbsp;RESTful&nbsp;APIs,&nbsp;databases,&nbsp;and&nbsp;software&nbsp;development&nbsp;lifecycle.</li><li>Experience&nbsp;with&nbsp;technologies&nbsp;such&nbsp;as&nbsp;<strong>React.js,&nbsp;Next.js,&nbsp;Java,&nbsp;Spring&nbsp;Boot,&nbsp;Node.js,&nbsp;Go</strong>,&nbsp;or&nbsp;equivalent&nbsp;frameworks.</li><li>Familiarity&nbsp;with&nbsp;Git,&nbsp;cloud&nbsp;environments,&nbsp;deployment&nbsp;processes,&nbsp;or&nbsp;AI-assisted&nbsp;development&nbsp;tools&nbsp;will&nbsp;be&nbsp;an&nbsp;advantage.</li><li>Strong&nbsp;analytical&nbsp;thinking,&nbsp;problem-solving&nbsp;skills,&nbsp;adaptability,&nbsp;and&nbsp;collaborative&nbsp;working&nbsp;style.</li></ul>",
+      "employmentTypes": ["fullTime"],
+      "workplaceType": "onSite",
+      "location": {
+        "country": {
+          "id": 102,
+          "name": "Indonesia"
+        },
+        "city": {
+          "id": 160,
+          "name": "Jakarta Utara"
+        }
+      },
+      "salaryType": "paid",
+      "salaryRange": null,
+      "published": true,
+      "publishedAt": "2026-11-11T07:52:24.896Z",
+      "candidatePreference": {
+        "lastEducations": [5, 6],
+        "skills": [
+          {
+            "id": "63300e04dcb6240012d8008a",
+            "name": "Web Development"
+          }
+        ]
+      },
+      "status": "active",
+      "company": {
+        "id": "67e2884af2569d0013abc239",
+        "name": "PT Ultra Sakti",
+        "slug": "pt-ultra-sakti-1",
+        "sector": "Manufacturing (Pharmaceutical)",
+        "logoUrl": "https://cdn.sejutacita.id/67e287c3056d970013cf14ed/JobPortalCompanyLogo/b48b1219-5b38-4a86-aa47-18f5e7851cdb.jpeg",
+        "description": "<p>PT Ultra Sakti is a pharmaceutical manufacturing and marketing company.</p><p>The company was initially dedicated to manufacture pharmaceutical products in the form of standard and generic medicines. In responding the market needs, in 2010 the company moved into consumer goods based on market trends and created the brand ‘FreshCare’ aromatic oils with new fragrances that people are more comfortable to wear in public. In 2012, building upon the success of the FreshCare brand, the company was enlarged by adding PT Tresno Joyo, a company that specializes in traditional medicines.</p><p>Since moving to consumed goods sector, PT Ultra Sakti has manufactured and sold 3 Top Brand Product which won many awards: Freshcare, Madu TJ and HotinCream. Each year PT Ultra Sakti launches new innovative product. As sales grow up, PT Ultra Sakti now has 3 plant site (Pulo Gadung, Semarang, Cikiwul, Cipendawa), and 2 dedicated warehouses (Pulo Gadung). PT Ultra Sakti plant site certified for Good Manufacturing Practice: CPOB (Cara Pembuatan Obat Yang Baik) , CPOTB (Cara Pembuatan Traditional Obat Yang Baik) from BPOM (Badan Pengawasasan Obat Dan Makanan/Indonesia National Agency Drug and Food Control).</p><p>PT Ultra Sakti is committed to produce high quality standard products as our contributions to improve the quality of life.</p><p><strong>Alamat: </strong>Jl. Bukit Gading Raya, Komplek Rukan Gading Bukit Indah Blok RA No. 3 &amp; 5, Kelapa Gading Barat, Jakarta Utara</p>",
+        "website": "https://www.ultrasakti.com/",
+        "size": {
+          "start": 100,
+          "end": null
+        },
+        "location": {
+          "city": {
+            "id": 160,
+            "name": "Jakarta Utara"
+          },
+          "country": {
+            "id": 102,
+            "name": "Indonesia"
+          }
+        },
+        "verified": true
+      },
+      "externalPlatformApplyUrl": null
+    }
+  },
+  "messageId": "OK"
+}

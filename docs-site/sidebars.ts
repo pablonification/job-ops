@@ -61,6 +61,9 @@ const sidebars: SidebarsConfig = {
         "extractors/freehire",
         "extractors/manual",
         "extractors/ukvisajobs",
+        "extractors/techinasia",
+        "extractors/kalibrr",
+        "extractors/dealls",
       ],
     },
     {
