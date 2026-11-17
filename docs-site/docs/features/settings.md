@@ -163,12 +163,13 @@ Defaults and constraints:
 - Edit the base templates for:
   - Ghostwriter system prompt
   - Resume tailoring prompt
+  - Role CV prompt (see [Role CVs](/docs/features/role-cvs))
   - Job scoring prompt
 - Each editor starts from the current effective template, not a blank override
 - Supported placeholders are shown inline for each template
 - Job scoring always appends minified normalized source-job JSON, including `null` values, plus the required output contract
 - The same scoring call may propose evidence-backed corrections to existing job facts. JobOps only accepts whitelisted, schema-valid values supported by an excerpt from the listing; these mandatory safety instructions remain appended even when you customize the scoring template
-- Use **Reset** to restore a single template, or **Reset all prompts** to restore all three
+- Use **Reset** to restore a single template, or **Reset all prompts** to restore all of them
 - Template editing is intentionally advanced:
   - removing key instructions can degrade output quality
   - removing placeholders can strip important runtime data from the prompt
