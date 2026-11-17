@@ -367,4 +367,75 @@ describe("generateTailoring", () => {
     // "keep under 90 words" is stripped from constraints because summaryMaxWords (35) takes precedence
     expect(prompt).not.toContain("keep under 90 words");
   });
+
+  describe("Role CV baseline (refine)", () => {
+    const baseline = {
+      headline: "Backend Engineer",
+      summary: "Backend engineer focused on payment APIs.",
+      skills: [{ name: "Backend", keywords: ["Go", "PostgreSQL"] }],
+    };
+    const lastPrompt = () =>
+      callJsonMock.mock.calls.at(-1)?.[0]?.messages?.[0]?.content as string;
+
+    it("renders the baseline into the default tailoring prompt", async () => {
+      await generateTailoring("Build APIs", {}, { baseline });
+
+      const prompt = lastPrompt();
+      expect(prompt).toContain(
+        "STARTING POINT (my Role CV for this kind of role)",
+      );
+      expect(prompt).toContain(
+        '"summary":"Backend engineer focused on payment APIs."',
+      );
+      expect(prompt).toContain('"keywords":["Go","PostgreSQL"]');
+      // Rendered in place, before the instructions, not appended at the end.
+      expect(prompt.indexOf("STARTING POINT")).toBeLessThan(
+        prompt.indexOf("INSTRUCTIONS:"),
+      );
+      expect(prompt).not.toContain("{{roleCvBaseline}}");
+    });
+
+    it("leaves the default prompt unchanged without a baseline", async () => {
+      await generateTailoring("Build APIs", {});
+      const withoutBaseline = lastPrompt();
+
+      expect(withoutBaseline).not.toContain("STARTING POINT");
+      expect(withoutBaseline).not.toContain("{{roleCvBaseline}}");
+      expect(withoutBaseline).toMatch(/MY PROFILE:\n\{.*\}\n\nINSTRUCTIONS:/s);
+    });
+
+    it("appends the baseline to a customised template that lacks the placeholder", async () => {
+      vi.mocked(getSetting).mockImplementation(async (key) =>
+        key === "tailoringPromptTemplate"
+          ? "Custom tailoring for {{jobDescription}}"
+          : null,
+      );
+
+      await generateTailoring("Build APIs", {}, { baseline });
+
+      const prompt = lastPrompt();
+      expect(prompt.startsWith("Custom tailoring for Build APIs")).toBe(true);
+      expect(prompt).toContain(
+        "STARTING POINT (my Role CV for this kind of role)",
+      );
+      expect(prompt).toContain('"headline":"Backend Engineer"');
+    });
+
+    it("renders the baseline where a customised template places it", async () => {
+      vi.mocked(getSetting).mockImplementation(async (key) =>
+        key === "tailoringPromptTemplate"
+          ? "Start{{ roleCvBaseline }}\nEnd {{jobDescription}}"
+          : null,
+      );
+
+      await generateTailoring("Build APIs", {}, { baseline });
+
+      const prompt = lastPrompt();
+      expect(prompt.indexOf("STARTING POINT")).toBeGreaterThan(
+        prompt.indexOf("Start"),
+      );
+      expect(prompt.trimEnd().endsWith("End Build APIs")).toBe(true);
+      expect(prompt.match(/STARTING POINT/g)).toHaveLength(1);
+    });
+  });
 });
