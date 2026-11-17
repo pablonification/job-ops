@@ -23,6 +23,21 @@ function providerLabel(provider: string | null): string {
   return LLM_PROVIDER_LABELS[provider as LlmProviderId] ?? provider;
 }
 
+const PURPOSE_LABELS: Record<string, string> = {
+  scoring: "scoring",
+  tailoring: "tailoring",
+  projectSelection: "project selection",
+};
+
+/** Names the purposes, or null when only the default provider is involved. */
+function describePurposes(purposes: string[]): string | null {
+  const named = purposes
+    .filter((purpose) => purpose !== "default")
+    .map((purpose) => PURPOSE_LABELS[purpose] ?? purpose);
+  if (named.length === 0 || purposes.includes("default")) return null;
+  return named.join(" and ");
+}
+
 function describeTarget(status: LlmFallbackStatus): string {
   const label = providerLabel(status.provider);
   return status.model ? `${label} · ${status.model}` : label;
@@ -54,17 +69,24 @@ export const LlmFallbackStatusNote: React.FC<{
       "LLM_FORCE_FALLBACK is on, so the provider selected above is not used.";
   } else if (status.tripped) {
     const until = formatDateTime(status.trippedUntil);
-    headline = `AI requests are currently using the fallback model ${describeTarget(status)}.`;
+    const scope = describePurposes(status.trippedPurposes);
+    const subject = scope ? `AI requests for ${scope}` : "AI requests";
+    headline = `${subject} are currently using the fallback model ${describeTarget(status)}.`;
     detail = until
-      ? `The provider above failed repeatedly and is skipped until ${until}, then retried.`
-      : "The provider above failed repeatedly and is skipped for a cool-down, then retried.";
+      ? `Their provider failed repeatedly and is skipped until ${until}, then retried.`
+      : "Their provider failed repeatedly and is skipped for a cool-down, then retried.";
   } else {
     headline = `Fallback model: ${describeTarget(status)}. It answers automatically when the provider above fails for a provider-side reason.`;
     if (status.lastFailover) {
-      const at = formatDateTime(status.lastFailover.at);
+      const at = formatDateTime(status.lastFailover.at) ?? "recently";
       const why =
         REASON_LABELS[status.lastFailover.reason] ?? status.lastFailover.reason;
-      detail = `Last used ${at ?? "recently"} because ${why}.`;
+      const scope = describePurposes(status.lastFailover.purposes);
+      const forScope = scope ? ` for ${scope}` : "";
+      detail =
+        status.lastFailover.outcome === "succeeded"
+          ? `Last stepped in${forScope} ${at} because ${why}.`
+          : `Last tried${forScope} ${at} because ${why}, but the fallback failed too.`;
     }
   }
 

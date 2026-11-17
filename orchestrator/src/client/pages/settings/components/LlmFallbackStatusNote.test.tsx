@@ -10,6 +10,7 @@ const BASE: LlmFallbackStatus = {
   forced: false,
   tripped: false,
   trippedUntil: null,
+  trippedPurposes: [],
   inactiveReason: null,
   lastFailover: null,
 };
@@ -54,6 +55,7 @@ describe("LlmFallbackStatusNote", () => {
           ...BASE,
           tripped: true,
           trippedUntil: "2026-11-17T10:05:00.000Z",
+          trippedPurposes: ["default", "tailoring"],
         }}
       />,
     );
@@ -70,12 +72,52 @@ describe("LlmFallbackStatusNote", () => {
           lastFailover: {
             at: "2026-11-17T09:00:00.000Z",
             reason: "usage_limit",
+            outcome: "succeeded",
+            purposes: ["default"],
           },
         }}
       />,
     );
     expect(screen.getByTestId("llm-fallback-status")).toHaveTextContent(
+      "Last stepped in",
+    );
+    expect(screen.getByTestId("llm-fallback-status")).toHaveTextContent(
       "because the primary hit a usage limit",
+    );
+  });
+
+  it("says when the fallback failed too", () => {
+    render(
+      <LlmFallbackStatusNote
+        status={{
+          ...BASE,
+          lastFailover: {
+            at: "2026-11-17T09:00:00.000Z",
+            reason: "upstream",
+            outcome: "failed",
+            purposes: ["default"],
+          },
+        }}
+      />,
+    );
+    expect(screen.getByTestId("llm-fallback-status")).toHaveTextContent(
+      "but the fallback failed too",
+    );
+  });
+
+  it("names the purpose whose provider is being skipped", () => {
+    render(
+      <LlmFallbackStatusNote
+        status={{
+          ...BASE,
+          tripped: true,
+          trippedUntil: "2026-11-17T10:05:00.000Z",
+          trippedPurposes: ["scoring"],
+        }}
+      />,
+    );
+    expect(screen.getByTestId("llm-fallback-status")).toHaveTextContent(
+      "AI requests for scoring are currently using the fallback model",
     );
   });
 

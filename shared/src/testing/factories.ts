@@ -160,6 +160,7 @@ export const createAppSettings = (
     forced: false,
     tripped: false,
     trippedUntil: null,
+    trippedPurposes: [],
     inactiveReason: null,
     lastFailover: null,
   },

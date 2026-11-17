@@ -2,7 +2,7 @@ import { runWithRequestContext } from "@infra/request-context";
 import { describe, expect, it } from "vitest";
 import { buildLlmBreakerKey, LlmCircuitBreaker } from "./breaker";
 import type { LlmFallbackConfig } from "./config";
-import { describeLlmFallbackStatus } from "./status";
+import { describeLlmFallbackStatus, type LlmStatusPrimary } from "./status";
 
 const READY: LlmFallbackConfig = {
   state: "ready",
@@ -16,12 +16,28 @@ const READY: LlmFallbackConfig = {
   breaker: { threshold: 1, cooldownMs: 60_000 },
 };
 
+const CLAUDE_DEFAULT: LlmStatusPrimary[] = [
+  { purpose: "default", provider: "claude_agent_sdk", baseUrl: null },
+];
+
+function trip(
+  breaker: LlmCircuitBreaker,
+  key: string,
+  policy = { threshold: 1, cooldownMs: 60_000 },
+) {
+  breaker.recordFailure(
+    key,
+    policy,
+    breaker.acquire(key, policy),
+    "configuration",
+  );
+}
+
 describe("describeLlmFallbackStatus", () => {
   it("reports nothing when no fallback is configured", () => {
     expect(
       describeLlmFallbackStatus({
-        primaryProvider: "claude_agent_sdk",
-        primaryBaseUrl: null,
+        primaries: CLAUDE_DEFAULT,
         config: { state: "absent", forced: false },
       }),
     ).toMatchObject({ configured: false, active: false, inactiveReason: null });
@@ -29,8 +45,7 @@ describe("describeLlmFallbackStatus", () => {
 
   it("reports an active fallback without its key", () => {
     const status = describeLlmFallbackStatus({
-      primaryProvider: "claude_agent_sdk",
-      primaryBaseUrl: null,
+      primaries: CLAUDE_DEFAULT,
       config: READY,
       breaker: new LlmCircuitBreaker(),
     });
@@ -42,6 +57,7 @@ describe("describeLlmFallbackStatus", () => {
       forced: false,
       tripped: false,
       trippedUntil: null,
+      trippedPurposes: [],
       inactiveReason: null,
       lastFailover: null,
     });
@@ -51,8 +67,7 @@ describe("describeLlmFallbackStatus", () => {
   it("reports the force flag", () => {
     expect(
       describeLlmFallbackStatus({
-        primaryProvider: "claude_agent_sdk",
-        primaryBaseUrl: null,
+        primaries: CLAUDE_DEFAULT,
         config: { ...READY, forced: true },
         breaker: new LlmCircuitBreaker(),
       }),
@@ -62,8 +77,7 @@ describe("describeLlmFallbackStatus", () => {
   it("explains a misconfiguration", () => {
     expect(
       describeLlmFallbackStatus({
-        primaryProvider: "claude_agent_sdk",
-        primaryBaseUrl: null,
+        primaries: CLAUDE_DEFAULT,
         config: {
           state: "invalid",
           forced: false,
@@ -83,8 +97,13 @@ describe("describeLlmFallbackStatus", () => {
   it("explains a fallback that is the same endpoint as the primary", () => {
     expect(
       describeLlmFallbackStatus({
-        primaryProvider: "openai_compatible",
-        primaryBaseUrl: "https://api.meta.ai/v1/",
+        primaries: [
+          {
+            purpose: "default",
+            provider: "openai_compatible",
+            baseUrl: "https://api.meta.ai/v1/",
+          },
+        ],
         config: READY,
       }),
     ).toMatchObject({
@@ -94,7 +113,7 @@ describe("describeLlmFallbackStatus", () => {
     });
   });
 
-  it("reports the current tenant's breaker state and last failover", () => {
+  it("reports the current tenant's breaker state and last failover with its outcome", () => {
     let now = Date.parse("2026-11-17T10:00:00.000Z");
     const breaker = new LlmCircuitBreaker(() => now);
     const key = buildLlmBreakerKey({
@@ -102,15 +121,14 @@ describe("describeLlmFallbackStatus", () => {
       provider: "claude_agent_sdk",
       baseUrl: "",
     });
-    breaker.recordFailure(key, { threshold: 1, cooldownMs: 60_000 }, false);
-    breaker.noteFailover(key, "usage_limit");
+    trip(breaker, key);
+    breaker.noteFailover(key, "usage_limit", "succeeded");
     now += 1_000;
 
     const forTenant = (tenantId: string) =>
       runWithRequestContext({ tenantId }, () =>
         describeLlmFallbackStatus({
-          primaryProvider: "claude_agent_sdk",
-          primaryBaseUrl: null,
+          primaries: CLAUDE_DEFAULT,
           config: READY,
           breaker,
         }),
@@ -119,12 +137,47 @@ describe("describeLlmFallbackStatus", () => {
     expect(forTenant("tenant-a")).toMatchObject({
       tripped: true,
       trippedUntil: "2026-11-17T10:01:00.000Z",
-      lastFailover: { at: "2026-11-17T10:00:00.000Z", reason: "usage_limit" },
+      trippedPurposes: ["default"],
+      lastFailover: {
+        at: "2026-11-17T10:00:00.000Z",
+        reason: "usage_limit",
+        outcome: "succeeded",
+        purposes: ["default"],
+      },
     });
     expect(forTenant("tenant-b")).toMatchObject({
       tripped: false,
       trippedUntil: null,
+      trippedPurposes: [],
       lastFailover: null,
+    });
+  });
+
+  it("reports tripped when only a purpose override's primary is skipped", () => {
+    const breaker = new LlmCircuitBreaker(() => 0);
+    const scoringKey = buildLlmBreakerKey({
+      tenantId: "tenant-a",
+      provider: "openai",
+      baseUrl: "https://api.openai.com",
+    });
+    trip(breaker, scoringKey);
+
+    const status = runWithRequestContext({ tenantId: "tenant-a" }, () =>
+      describeLlmFallbackStatus({
+        primaries: [
+          ...CLAUDE_DEFAULT,
+          { purpose: "scoring", provider: "openai", baseUrl: null },
+          { purpose: "tailoring", provider: "claude_agent_sdk", baseUrl: null },
+        ],
+        config: READY,
+        breaker,
+      }),
+    );
+
+    expect(status).toMatchObject({
+      active: true,
+      tripped: true,
+      trippedPurposes: ["scoring"],
     });
   });
 });

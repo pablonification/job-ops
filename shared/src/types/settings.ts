@@ -264,14 +264,21 @@ export interface LlmFallbackStatus {
   model: string | null;
   /** `LLM_FORCE_FALLBACK` is on: every call goes to the fallback. */
   forced: boolean;
-  /** The primary is being skipped after repeated provider-side failures. */
+  /** Some primary (default or a purpose override) is being skipped after repeated provider-side failures. */
   tripped: boolean;
-  /** When the primary will next be retried (ISO time), while tripped. */
+  /** When the skipped primary will next be retried (ISO time, the latest if several). */
   trippedUntil: string | null;
+  /** Which model purposes are on the fallback because their primary is skipped ("default", "scoring", ...). */
+  trippedPurposes: string[];
   /** Why the fallback is not active, when something is set but unusable. */
   inactiveReason: string | null;
-  /** The most recent call the fallback served after the primary failed. */
-  lastFailover: { at: string; reason: string } | null;
+  /** The most recent call the fallback took over after a primary failed. */
+  lastFailover: {
+    at: string;
+    reason: string;
+    outcome: "succeeded" | "failed";
+    purposes: string[];
+  } | null;
 }
 
 export interface AppSettings {
