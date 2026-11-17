@@ -1,0 +1,99 @@
+{
+  "id": "744000161430409",
+  "name": "Senior Software Engineer, Flutter - Merchant Experience",
+  "uuid": "f2a7b998-c338-4e5a-883c-065fefc437dc",
+  "jobId": "536de23f-d5e1-4874-90d8-d159c30f7007",
+  "jobAdId": "8a990e4f-e410-4c00-bea6-fc22533089b5",
+  "defaultJobAd": true,
+  "refNumber": "REF6378T",
+  "company": {
+    "name": "Grab",
+    "identifier": "Grab"
+  },
+  "location": {
+    "city": "Jakarta",
+    "country": "id",
+    "address": "South Jakarta",
+    "remote": false,
+    "hybrid": false,
+    "fullLocation": "Jakarta, , Indonesia"
+  },
+  "customField": [
+    {
+      "fieldId": "642b4ec24bb9036658bf66bd",
+      "fieldLabel": "Brands",
+      "valueId": "default",
+      "valueLabel": "Grab"
+    },
+    {
+      "fieldId": "6556edfbb1660e2542150180",
+      "fieldLabel": "Department Name",
+      "valueId": "Transport, Marketplace and Experiences",
+      "valueLabel": "Transport, Marketplace and Experiences"
+    },
+    {
+      "fieldId": "COUNTRY",
+      "fieldLabel": "Country/Region",
+      "valueId": "id",
+      "valueLabel": "Indonesia"
+    },
+    {
+      "fieldId": "6556ee9a4009a938a8c5d65a",
+      "fieldLabel": "Division",
+      "valueId": "Tech_Division",
+      "valueLabel": "Tech"
+    },
+    {
+      "fieldId": "6556eece4009a938a8c5d65b",
+      "fieldLabel": "Job Family",
+      "valueId": "Software Engineering",
+      "valueLabel": "Software Engineering"
+    }
+  ],
+  "releasedDate": "2026-11-13T06:29:28.110Z",
+  "postingUrl": "https://jobs.smartrecruiters.com/Grab/744000161430409-senior-software-engineer-flutter-merchant-experience",
+  "applyUrl": "https://jobs.smartrecruiters.com/Grab/744000161430409-senior-software-engineer-flutter-merchant-experience?oga=true",
+  "jobAd": {
+    "sections": {
+      "companyDescription": {
+        "title": "Company Description",
+        "text": "<p><strong>About Grab and Our Workplace</strong></p><p>Grab is Southeast Asia's leading superapp. From getting your favourite meals delivered to helping you manage your finances and getting around town hassle-free, we've got your back with everything. In Grab, purpose gives us joy and habits build excellence, while harnessing the power of Technology and AI to deliver the mission of driving Southeast Asia forward by economically empowering everyone, with heart, hunger, honour, and humility.</p>"
+      },
+      "jobDescription": {
+        "title": "Job Description",
+        "text": "<p><strong>Get to Know the Team</strong></p><p>The Merchant App Flutter team builds and maintains the core merchant app for businesses using Grab. Whether you're supporting small local vendors or scaling for international franchises, the team focuses on creating tools to empower merchants. You'll join a close-knit group of passionate engineers committed to elevating the merchant experience and delivering impactful solutions</p><p><strong>Get to Know the Role</strong></p><p>"
+      },
+      "qualifications": {
+        "title": "Qualifications",
+        "text": "<p><strong>What Essential Skills You Will Need</strong></p><ul><li>5+ years of Flutter/Mobile engineering experience designing, launching, and optimizing mobile applications using Flutter and Dart. Must demonstrate the ability to work fluently with Flutter-specific tools and libraries.</li><li>Comfortable structuring code using clean approaches like MVVM or state management using reactive paradigms.</li><li>Familiarity with app metrics (performance tools, crash analytics, debugging solutions) and experience optimizing factors such as API use, storage allocation, and battery drain.</li><li>"
+      },
+      "additionalInformation": {
+        "title": "Additional Information",
+        "text": "<p><strong>Life at Grab</strong></p><p>We care about your well-being at Grab, here are some of the global benefits we offer:</p><ul><li>We have your back with <strong>Term Life Insurance </strong>and comprehensive <strong>Medical Insurance.</strong></li><li>With <strong>GrabFlex, </strong>create a benefits package that suits your needs and aspirations.</li><li>Celebrate moments that matter in life with loved ones through <strong>Parental</strong> and <strong>Birthday leave</strong>, and give back to your communities through <strong>Love-all-Serve-all (LASA)</strong> volunteering leave</li><li>"
+      }
+    }
+  },
+  "active": true,
+  "visibility": "PUBLIC",
+  "industry": {
+    "id": "it_and_services",
+    "label": "Information Technology And Services"
+  },
+  "function": {
+    "id": "engineering",
+    "label": "Engineering"
+  },
+  "experienceLevel": {
+    "id": "associate",
+    "label": "Associate"
+  },
+  "typeOfEmployment": {
+    "id": "permanent",
+    "label": "Full-time"
+  },
+  "language": {
+    "code": "en",
+    "label": "English",
+    "labelNative": "English (US)"
+  }
+}

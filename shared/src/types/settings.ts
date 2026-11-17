@@ -1,3 +1,4 @@
+import type { IdBigTechCompanyId } from "../extractors/indonesia/big-tech";
 import {
   TYPST_THEME_LABELS,
   TYPST_THEME_VALUES,
@@ -270,6 +271,7 @@ export interface AppSettings {
   seekMaxJobsPerTerm: Resolved<number>;
   naukriMaxJobsPerTerm: Resolved<number>;
   jobindexMaxJobsPerTerm: Resolved<number>;
+  idbigtechCompanies: Resolved<IdBigTechCompanyId[]>;
   searchTerms: Resolved<string[]>;
   workplaceTypes: Resolved<Array<"remote" | "hybrid" | "onsite">>;
   onboardingProfileCompleted: Resolved<boolean>;

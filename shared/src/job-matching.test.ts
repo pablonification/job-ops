@@ -31,6 +31,54 @@ describe("map-radius location matching", () => {
   });
 });
 
+describe("country-only jobs under a strict city filter", () => {
+  const intent = {
+    selectedCountry: "indonesia",
+    country: "indonesia",
+    cityLocations: ["Jakarta"],
+    workplaceTypes: ["onsite" as const],
+    geoScope: "selected_only" as const,
+    searchScope: "selected_only" as const,
+    matchStrictness: "exact_only" as const,
+  };
+
+  it("keeps a job only when its source marks the city as unknown", () => {
+    const evidence = { location: "Indonesia", country: "Indonesia" };
+    expect(
+      matchJobLocationIntent(
+        { location: "Indonesia", locationEvidence: evidence },
+        intent,
+      ).matched,
+    ).toBe(false);
+    expect(
+      matchJobLocationIntent(
+        {
+          location: "Indonesia",
+          locationEvidence: { ...evidence, cityUnknown: true },
+        },
+        intent,
+      ),
+    ).toEqual({
+      matched: true,
+      reasonCode: "selected_country_city_unknown",
+      priority: 0,
+    });
+    expect(
+      matchJobLocationIntent(
+        {
+          location: "Kuala Lumpur, Malaysia",
+          locationEvidence: {
+            location: "Kuala Lumpur, Malaysia",
+            country: "Malaysia",
+            cityUnknown: true,
+          },
+        },
+        intent,
+      ).matched,
+    ).toBe(false);
+  });
+});
+
 function makeJob(
   overrides: Partial<{
     source: string;

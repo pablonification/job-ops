@@ -124,6 +124,7 @@ export const AGENT_SETTING_POLICIES: Partial<
   roleCvPromptTemplate: AGENT_EDITABLE,
   roleCvPipelineMode: AGENT_EDITABLE,
   targetCompanies: AGENT_EDITABLE,
+  idbigtechCompanies: AGENT_EDITABLE,
   dealbreakers: AGENT_EDITABLE,
   ghostwriterSystemPromptTemplate: AGENT_EDITABLE,
   ghostwriterStopSlopEnabled: AGENT_EDITABLE,

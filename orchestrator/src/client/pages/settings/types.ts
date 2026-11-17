@@ -1,3 +1,4 @@
+import type { IdBigTechCompanyId } from "@shared/extractors/indonesia/big-tech.js";
 import type {
   ChatStyleLanguageMode,
   ChatStyleManualLanguage,
@@ -51,6 +52,10 @@ export type EnvSettingsValues = {
     adzunaAppKeyHint: string | null;
     webhookSecretHint: string | null;
   };
+};
+
+export type SourceSettingsValues = {
+  idbigtechCompanies: EffectiveDefault<IdBigTechCompanyId[]>;
 };
 
 export type BackupValues = {

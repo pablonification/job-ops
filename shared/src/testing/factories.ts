@@ -1,3 +1,4 @@
+import { ID_BIG_TECH_COMPANY_IDS } from "../extractors/indonesia/big-tech";
 import { getDefaultPromptTemplate } from "../prompt-template-definitions";
 import type {
   ApplicationTask,
@@ -217,6 +218,11 @@ export const createAppSettings = (
   blockedCompanyKeywords: {
     value: [],
     default: [],
+    override: null,
+  },
+  idbigtechCompanies: {
+    value: [...ID_BIG_TECH_COMPANY_IDS],
+    default: [...ID_BIG_TECH_COMPANY_IDS],
     override: null,
   },
   scoringInstructions: {

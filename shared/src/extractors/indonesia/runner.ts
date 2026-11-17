@@ -44,6 +44,14 @@ export type JobBoardProgressEvent =
       detailsTotal: number;
       detailsFetched: number;
       detailsSkipped: number;
+    }
+  | {
+      /** Free-form progress within a term, e.g. one employer of a multi-employer source. */
+      type: "note";
+      termIndex: number;
+      termTotal: number;
+      searchTerm: string;
+      detail: string;
     };
 
 /** Converts a per-term event into the pipeline's progress shape (`currentUrl` is the term). */
@@ -61,6 +69,15 @@ export function toExtractorProgress(
       jobPagesEnqueued: event.jobsFoundTerm,
       jobPagesProcessed: event.jobsFoundTerm,
       detail: `${label}: completed ${position} with ${event.jobsFoundTerm} jobs`,
+    };
+  }
+  if (event.type === "note") {
+    return {
+      phase: "list",
+      termsProcessed: event.termIndex - 1,
+      termsTotal: event.termTotal,
+      currentUrl: event.searchTerm,
+      detail: `${label}: term ${position}, ${event.detail}`,
     };
   }
   if (event.type === "details") {
@@ -177,6 +194,8 @@ export interface TermSearchContext {
     detailsFetched: number;
     detailsSkipped: number;
   }) => void;
+  /** Emits a free-form progress line for this term. */
+  reportProgress: (detail: string) => void;
 }
 
 /**
@@ -191,6 +210,15 @@ export async function runJobBoard(args: {
   options: JobBoardRunOptions;
   maxPageSize: number;
   defaultSearchTerm?: string;
+  /**
+   * Decides whether a run that recorded errors failed. Defaults to "no jobs
+   * were collected"; a multi-employer source can instead fail only when every
+   * employer failed.
+   */
+  shouldFail?: (outcome: {
+    jobs: readonly CreateJobInput[];
+    errors: readonly string[];
+  }) => boolean;
   runTerm: (context: TermSearchContext) => Promise<void>;
 }): Promise<ExtractorRunResult> {
   const { label, options } = args;
@@ -275,6 +303,15 @@ export async function runJobBoard(args: {
             ...progress,
           });
         },
+        reportProgress: (detail) => {
+          options.onProgress?.({
+            type: "note",
+            termIndex,
+            termTotal,
+            searchTerm,
+            detail,
+          });
+        },
       });
     } catch (error) {
       if (error instanceof TimeBudgetExceededError) {
@@ -300,7 +337,10 @@ export async function runJobBoard(args: {
       `${label}: stopped after ${Math.round(budgetMs / 60_000)} minutes to stay within the source time limit; kept the ${jobs.length} jobs collected so far`,
     );
   }
-  if (errors.length > 0 && jobs.length === 0) {
+  const failed =
+    errors.length > 0 &&
+    (args.shouldFail ? args.shouldFail({ jobs, errors }) : jobs.length === 0);
+  if (failed) {
     return { success: false, jobs: [], error: errors.join("; ") };
   }
   return errors.length > 0

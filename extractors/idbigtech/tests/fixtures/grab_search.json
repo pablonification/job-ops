@@ -1,0 +1,167 @@
+{
+  "offset": 0,
+  "limit": 3,
+  "totalFound": 44,
+  "content": [
+    {
+      "id": "744000161430409",
+      "name": "Senior Software Engineer, Flutter - Merchant Experience",
+      "uuid": "f2a7b998-c338-4e5a-883c-065fefc437dc",
+      "jobAdId": "8a990e4f-e410-4c00-bea6-fc22533089b5",
+      "defaultJobAd": true,
+      "refNumber": "REF6378T",
+      "company": {
+        "identifier": "Grab",
+        "name": "Grab"
+      },
+      "releasedDate": "2026-11-13T06:29:28.110Z",
+      "location": {
+        "city": "Jakarta",
+        "country": "id",
+        "address": "South Jakarta",
+        "remote": false,
+        "hybrid": false,
+        "fullLocation": "Jakarta, , Indonesia"
+      },
+      "industry": {
+        "id": "it_and_services",
+        "label": "Information Technology And Services"
+      },
+      "department": {},
+      "function": {
+        "id": "engineering",
+        "label": "Engineering"
+      },
+      "typeOfEmployment": {
+        "id": "permanent",
+        "label": "Full-time"
+      },
+      "experienceLevel": {
+        "id": "associate",
+        "label": "Associate"
+      },
+      "customField": [
+        {
+          "fieldId": "6556edfbb1660e2542150180",
+          "fieldLabel": "Department Name",
+          "valueId": "Transport, Marketplace and Experiences",
+          "valueLabel": "Transport, Marketplace and Experiences"
+        },
+        {
+          "fieldId": "6556eece4009a938a8c5d65b",
+          "fieldLabel": "Job Family",
+          "valueId": "Software Engineering",
+          "valueLabel": "Software Engineering"
+        },
+        {
+          "fieldId": "642b4ec24bb9036658bf66bd",
+          "fieldLabel": "Brands",
+          "valueId": "default",
+          "valueLabel": "Grab"
+        },
+        {
+          "fieldId": "COUNTRY",
+          "fieldLabel": "Country/Region",
+          "valueId": "id",
+          "valueLabel": "Indonesia"
+        },
+        {
+          "fieldId": "6556ee9a4009a938a8c5d65a",
+          "fieldLabel": "Division",
+          "valueId": "Tech_Division",
+          "valueLabel": "Tech"
+        }
+      ],
+      "visibility": "PUBLIC",
+      "ref": "https://api.smartrecruiters.com/v1/companies/grab/postings/744000161430409",
+      "language": {
+        "code": "en",
+        "label": "English",
+        "labelNative": "English (US)"
+      }
+    },
+    {
+      "id": "744000160861909",
+      "name": "Merchant Business Growth, Assistant Manager",
+      "uuid": "4834b871-e990-4972-9aa3-44c8a825701d",
+      "jobAdId": "5b686208-e1f3-4ae3-b75d-9dbe39f3bb5d",
+      "defaultJobAd": true,
+      "refNumber": "REF6357V",
+      "company": {
+        "identifier": "Grab",
+        "name": "Grab"
+      },
+      "releasedDate": "2026-11-10T12:19:27.548Z",
+      "location": {
+        "city": "Jakarta",
+        "country": "id",
+        "address": "South Jakarta",
+        "remote": false,
+        "hybrid": false,
+        "fullLocation": "Jakarta, , Indonesia"
+      },
+      "industry": {
+        "id": "it_and_services",
+        "label": "Information Technology And Services"
+      },
+      "department": {},
+      "function": {
+        "id": "sales",
+        "label": "Sales"
+      },
+      "typeOfEmployment": {
+        "id": "permanent",
+        "label": "Full-time"
+      },
+      "experienceLevel": {
+        "id": "associate",
+        "label": "Associate"
+      },
+      "customField": [
+        {
+          "fieldId": "642b4ec24bb9036658bf66bd",
+          "fieldLabel": "Brands",
+          "valueId": "default",
+          "valueLabel": "Grab"
+        },
+        {
+          "fieldId": "COUNTRY",
+          "fieldLabel": "Country/Region",
+          "valueId": "id",
+          "valueLabel": "Indonesia"
+        },
+        {
+          "fieldId": "6556edfbb1660e2542150180",
+          "fieldLabel": "Department Name",
+          "valueId": "GrabFood (Dept)",
+          "valueLabel": "GrabFood"
+        },
+        {
+          "fieldId": "6556eece4009a938a8c5d65b",
+          "fieldLabel": "Job Family",
+          "valueId": "Sales Operations",
+          "valueLabel": "Sales Operations"
+        },
+        {
+          "fieldId": "6556ee9a4009a938a8c5d65a",
+          "fieldLabel": "Division",
+          "valueId": "Corporate_Division",
+          "valueLabel": "Corporate"
+        },
+        {
+          "fieldId": "680ef063b7561e7a54bdc32c",
+          "fieldLabel": "Hot Job",
+          "valueId": "9d5361b1-a04e-4c2a-a245-d17692c92597",
+          "valueLabel": "No"
+        }
+      ],
+      "visibility": "PUBLIC",
+      "ref": "https://api.smartrecruiters.com/v1/companies/grab/postings/744000160861909",
+      "language": {
+        "code": "en",
+        "label": "English",
+        "labelNative": "English (US)"
+      }
+    }
+  ]
+}

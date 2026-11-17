@@ -28,6 +28,7 @@ Extractor integrations are now registered through manifests and loaded automatic
 | [Tech in Asia Jobs](/docs/next/extractors/techinasia) | Indonesian startup and tech roles with published salaries | Indonesia only; public JSON API, no credentials | existing pipeline `searchTerms`, cities, `jobspyResultsWanted` | Full descriptions from the search API, rupiah salary ranges, Indonesian location evidence; cities filtered client-side; polite paging with a delay between requests |
 | [Kalibrr](/docs/next/extractors/kalibrr) | Broad Indonesian job board coverage | Indonesia only; upstream keyword matching is loose, so job-ops filters results locally | existing pipeline `searchTerms`, cities, `jobspyResultsWanted` | Keeps only jobs whose title matches every search word (with tech-role synonyms); cities sent to Kalibrr's location filter; full description plus qualifications |
 | [Dealls](/docs/next/extractors/dealls) | Indonesian startup roles and internships | Indonesia only; one detail request per new job | existing pipeline `searchTerms`, cities, `jobspyResultsWanted` | Skips detail requests for job links already in job-ops; cities filtered client-side; monthly rupiah salaries; adds the country to city-only locations |
+| [Indonesia Big Tech](/docs/next/extractors/idbigtech) | Openings at Grab, GoTo, TikTok/Tokopedia, Shopee, Traveloka, tiket.com, Blibli and Xendit | Indonesia only; reads each company's public career site; one failing company does not stop the others | existing pipeline `searchTerms`, cities, `jobspyResultsWanted`; enabled companies in **Settings → Workspace Access** | Real company as employer; titles matched to terms locally; detail requests only for new Grab, Traveloka and tiket.com jobs |
 
 ## Which extractor should I use?
 
@@ -43,7 +44,7 @@ Extractor integrations are now registered through manifests and loaded automatic
 - Use **Gradcracker** when targeting graduate pipelines in the UK.
 - Use **UKVisaJobs** for sponsorship-specific UK searches.
 - Use **Manual Import** when you already have a specific posting and need direct import.
-- Use **Tech in Asia Jobs**, **Kalibrr** and **Dealls** when targeting Indonesia (select Indonesia as the country to see them).
+- Use **Tech in Asia Jobs**, **Kalibrr** and **Dealls** when targeting Indonesia (select Indonesia as the country to see them). Add **Indonesia Big Tech** to check the career sites of the big Indonesian tech companies directly.
 
 Many runs combine sources: broad discovery first, then manual import for high-priority jobs that scraping misses.
 
@@ -75,4 +76,5 @@ Many runs combine sources: broad discovery first, then manual import for high-pr
 - [Tech in Asia Jobs](/docs/next/extractors/techinasia)
 - [Kalibrr](/docs/next/extractors/kalibrr)
 - [Dealls](/docs/next/extractors/dealls)
+- [Indonesia Big Tech](/docs/next/extractors/idbigtech)
 - [Add an Extractor](/docs/next/workflows/add-an-extractor)

@@ -12,11 +12,15 @@ import {
   canonicalIndonesianPlaceName,
   createPoliteJsonClient,
   formatRange,
+  ID_BIG_TECH_COMPANY_IDS,
   indonesianSearchCity,
+  isTransientRequestError,
   jobMatchesIndonesianCities,
   matchesIndonesianPlace,
   namesOf,
   normalizeSalaryInterval,
+  parseEnabledIdBigTechCompanies,
+  parseIdBigTechCompanies,
   TimeBudgetExceededError,
   toWorkplaceType,
 } from "./index";
@@ -34,7 +38,7 @@ const intent = (cityLocations: string[] = []) =>
 
 describe("Indonesian places", () => {
   it("gates the Indonesian boards to Indonesia in the static country map", () => {
-    for (const source of ["techinasia", "kalibrr", "dealls"]) {
+    for (const source of ["techinasia", "kalibrr", "dealls", "idbigtech"]) {
       expect(getSourceSupportedCountryKeys(source)).toEqual(["indonesia"]);
       expect(isSourceAllowedForCountry(source, "indonesia")).toBe(true);
       expect(isSourceAllowedForCountry(source, "united kingdom")).toBe(false);
@@ -72,6 +76,9 @@ describe("Indonesian places", () => {
       false,
     );
     expect(matchesIndonesianPlace("Surabaya", "Jakarta")).toBe(false);
+    expect(matchesIndonesianPlace("BSD City", "Tangerang Selatan")).toBe(true);
+    expect(matchesIndonesianPlace("BSD City", "Tangerang")).toBe(true);
+    expect(matchesIndonesianPlace("BSD City", "Jakarta")).toBe(false);
   });
 
   it("keeps city-only Indonesian locations through the shared location filter", () => {
@@ -130,6 +137,12 @@ describe("Indonesian places", () => {
     expect(jobMatchesIndonesianCities(job, ["Jakarta Selatan"])).toBe(true);
     expect(jobMatchesIndonesianCities(job, ["Jakarta"])).toBe(true);
     expect(jobMatchesIndonesianCities(job, ["Bandung"])).toBe(false);
+    const unknownCity = {
+      ...buildIndonesianLocation({ source: "idbigtech" }),
+    };
+    expect(jobMatchesIndonesianCities(unknownCity, ["Bandung"])).toBe(false);
+    unknownCity.locationEvidence.cityUnknown = true;
+    expect(jobMatchesIndonesianCities(unknownCity, ["Bandung"])).toBe(true);
     expect(jobMatchesIndonesianCities(job, [])).toBe(true);
     expect(
       jobMatchesIndonesianCities({ ...job, isRemote: true }, ["Bandung"]),
@@ -225,6 +238,86 @@ describe("polite JSON client", () => {
     );
   });
 
+  it("posts JSON bodies and reads pages, with per-request headers and labels", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ posted: true }))
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        text: async () => "<html>job</html>",
+      } as Response)
+      .mockResolvedValueOnce({ ok: false, status: 403 } as Response);
+    const sleep = vi.fn().mockResolvedValue(undefined);
+    const client = createPoliteJsonClient({
+      label: "Board",
+      fetchImpl: fetchMock,
+      delayMs: 500,
+      sleep,
+    });
+
+    await expect(
+      client.postJson(
+        "https://example.com/search",
+        { keyword: "engineer" },
+        { headers: { "website-path": "tiktok" } },
+      ),
+    ).resolves.toEqual({ posted: true });
+    await expect(client.getText("https://example.com/job")).resolves.toBe(
+      "<html>job</html>",
+    );
+    await expect(
+      client.getJson("https://example.com/x", { label: "Grab" }),
+    ).rejects.toThrow(/^Grab request failed with status 403$/);
+
+    const postInit = fetchMock.mock.calls[0][1] as RequestInit;
+    const postHeaders = postInit.headers as Record<string, string>;
+    expect(postInit.method).toBe("POST");
+    expect(postInit.body).toBe('{"keyword":"engineer"}');
+    expect(postHeaders["Content-Type"]).toBe("application/json");
+    expect(postHeaders["website-path"]).toBe("tiktok");
+    expect(postHeaders["User-Agent"]).toBe(BROWSER_USER_AGENT);
+    const pageInit = fetchMock.mock.calls[1][1] as RequestInit;
+    expect(pageInit.method).toBe("GET");
+    expect((pageInit.headers as Record<string, string>).Accept).toContain(
+      "text/html",
+    );
+    expect(sleep).toHaveBeenCalledTimes(2);
+    expect(client.requestCount).toBe(3);
+  });
+
+  it("stops reading a response past the size cap", async () => {
+    const client = createPoliteJsonClient({
+      label: "Board",
+      delayMs: 0,
+      maxResponseBytes: 16,
+      fetchImpl: vi
+        .fn()
+        .mockImplementation(async () => new Response("x".repeat(64))),
+    });
+    await expect(client.getText("https://example.com/page")).rejects.toThrow(
+      /^Board response was too large$/,
+    );
+    await expect(
+      client.getJson("https://example.com/api", { label: "Grab" }),
+    ).rejects.toThrow(/^Grab response was too large$/);
+    await expect(
+      client.postJson("https://example.com/api", {}),
+    ).rejects.toThrow(/^Board response was too large$/);
+
+    const small = createPoliteJsonClient({
+      label: "Board",
+      delayMs: 0,
+      maxResponseBytes: 16,
+      fetchImpl: vi
+        .fn()
+        .mockImplementation(async () => new Response('{"ok":1}')),
+    });
+    await expect(small.getJson("https://example.com/api")).resolves.toEqual({
+      ok: 1,
+    });
+  });
+
   it("refuses to start a request past its deadline", async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({}));
     let clock = 0;
@@ -267,5 +360,45 @@ describe("polite JSON client", () => {
     await expect(offline.getJson("https://example.com")).rejects.toThrow(
       "Board request failed (network error)",
     );
+
+    const transient = async (status: number) =>
+      createPoliteJsonClient({
+        label: "Board",
+        delayMs: 0,
+        fetchImpl: vi.fn().mockResolvedValue({ ok: false, status } as Response),
+      })
+        .getJson("https://example.com")
+        .catch((error: unknown) => isTransientRequestError(error));
+    expect(await transient(429)).toBe(true);
+    expect(await transient(503)).toBe(true);
+    expect(await transient(404)).toBe(false);
+    expect(
+      await offline
+        .getJson("https://example.com")
+        .catch((error: unknown) => isTransientRequestError(error)),
+    ).toBe(true);
+    expect(
+      isTransientRequestError(
+        new Error("Board returned an invalid JSON response"),
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("Indonesia Big Tech companies setting", () => {
+  it("keeps known ids in catalog order", () => {
+    expect(parseIdBigTechCompanies('["xendit","grab","nope"]')).toEqual([
+      "grab",
+      "xendit",
+    ]);
+  });
+
+  it("treats a missing, empty or unreadable value as all companies", () => {
+    for (const raw of [undefined, null, "", "[]", '["nope"]', "{", '"grab"']) {
+      expect(parseIdBigTechCompanies(raw)).toBeNull();
+      expect(parseEnabledIdBigTechCompanies(raw)).toEqual([
+        ...ID_BIG_TECH_COMPANY_IDS,
+      ]);
+    }
   });
 });

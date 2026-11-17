@@ -77,6 +77,7 @@ export const NON_ADMIN_SEARCH_SETTING_KEYS: ReadonlySet<
   "jobspyLocation",
   "targetCompanies",
   "dealbreakers",
+  "idbigtechCompanies",
 ]);
 
 /** Hosted users and system admins may edit everything. */
