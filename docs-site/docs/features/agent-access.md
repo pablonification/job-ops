@@ -19,7 +19,7 @@ Available tools:
 | `get_job` | Full detail for one job: description, score and reason, target-company flag (`isTargetCompany`), tailored resume fields, PDF state. `descriptionMaxChars` truncates the description; `includeDescription: false` leaves it out. |
 | `get_job_counts` | Number of jobs per status and in total. |
 | `get_pipeline_status` | Whether a pipeline run is active, its progress, and the last five runs. |
-| `get_profile` | Summary of your master resume: headline, summary, skills, experience and project ids. `includeDetails: true` adds experience descriptions, full project write-ups, education, certifications, awards, volunteering, publications and languages, which the playbooks use as evidence. Email, phone and photo are always left out. |
+| `get_profile` | Summary of your master resume: headline, summary, skills, experience and project ids. `includeDetails: true` adds experience descriptions, full project write-ups, education, certifications, awards, volunteering, publications and languages, which the playbooks use as evidence: at most 20 items per section, 1,500 characters per field and about 60,000 characters in all, with `details.truncated` set when something was left out. Only text fields are returned: email, phone, photo, links and references are always left out. |
 | `get_app_status` | App mode and version, who the token acts as, its scope, and whether a master resume exists. |
 
 Tools marked read-only never change data, never call the AI model and never run job searches (`get_profile` and `get_settings` may read your resume from Reactive Resume). Write tools need a read and write token.
@@ -149,7 +149,7 @@ An agent reads untrusted text (job descriptions, web pages, emails), so settings
 
 ### Playbooks
 
-Playbooks are ready-made workflows the server offers as MCP prompts. In Claude Code they appear as slash commands: type `/` and pick them from the list, where they show as `/jobops:daily_triage (MCP)` and so on (`jobops` is the name you gave the server in `claude mcp add`). Typing `/mcp__jobops__daily_triage` runs the same playbook. Arguments follow the command, separated by spaces, in the order listed below; leave trailing ones out to use the defaults.
+Playbooks are ready-made workflows the server offers as MCP prompts. In Claude Code they appear as slash commands: type `/` and pick them from the list, where they show as `/jobops:daily_triage (MCP)` and so on (`jobops` is the name you gave the server in `claude mcp add`). `/mcp__jobops__daily_triage` runs the same playbook. Claude Code passes the playbook's arguments to JobOps with the command; arguments you leave out use the defaults below, and a missing required argument (such as `jobId`) or an invalid value is refused with an error that names it.
 
 Each playbook is a written brief for the agent: which tools to call in which order, what to do when something is missing or busy, what to save, and what to report. Every playbook carries the same rules:
 
@@ -162,26 +162,27 @@ Each playbook is a written brief for the agent: which tools to call in which ord
 
 | Playbook | Arguments (default) | What it does |
 | --- | --- | --- |
-| `daily_triage` | `prepareLimit` 1-10 (3), `minScore` 0-100 (70) | Starts a discovery run if the last one is more than about 20 hours old (and waits for it), reviews jobs discovered in the last 7 days that score at least `minScore` or are at a target company, skips clear mismatches with a one-line reason note (at most 5 without asking), prepares the best `prepareLimit` jobs (Role CV match, `process_job`, PDF link), and reports a ranked list with links and what needs your decision. |
+| `daily_triage` | `prepareLimit` 1-10 (3), `minScore` 0-100 (70) | If the last discovery run is more than about 20 hours old, starts one from your most recently used saved search (with `topN` 1, so the run tailors at most one job itself) and waits for it; with no saved search it asks you to save one instead. Reviews jobs discovered in the last 7 days that score at least `minScore` or are at a target company, skips clear mismatches (non-engineering, about 3+ years required, senior or higher titles, dealbreakers) with a one-line reason note, at most 5 without asking, prepares the best `prepareLimit` jobs with `process_job` (which uses your Role CVs when your settings say so) and reports a ranked list with links and what needs your decision. Jobs left for your decision get a dated `Triage` note so the next days' triage does not read them again unless their score changes. |
 | `evaluate_job` | `jobId` (required) | Deep evaluation saved as an `Evaluation` note: requirement-to-evidence table built from the job description first and your profile second, gaps, level fit for your experience, compensation only when stated or cited, posting-legitimacy signals (age, reposts, vagueness, missing company details), and a recommendation: apply now, apply after addressing gaps, or skip, with the next action. |
-| `outreach_drafts` | `jobId` (required), `language` `en` or `id` (`en`) | Short messages for a recruiter, the hiring manager and an engineer on the team, each as a connection request (300 characters) and a message (120 words), saved as an `Outreach drafts` note. Never sent. `id` writes natural Bahasa Indonesia; `english` and `indonesian` also work. |
+| `outreach_drafts` | `jobId` (required), `language` `en` or `id` (`en`) | Short messages for a recruiter, the hiring manager and an engineer on the team, each as a connection request (300 characters) and a message (120 words), saved as an `Outreach drafts` note. Never sent. `id` writes natural Bahasa Indonesia; `english` and `indonesian` also work. Placeholders are in the drafts' language: `[Name]` in English, `[Nama]` in Indonesian. |
 | `interview_prep` | `jobId` (required), `round` (next round) | Company and role research with sources, likely questions for the round, STAR stories drawn only from your profile (missing details become questions for you, never invented), a coverage check of common behavioural questions, and questions to ask, saved as an `Interview prep` note. `round` is `recruiter_screen`, `assessment`, `hiring_manager_screen`, `technical_interview`, `onsite` or `all`; `technical`, `hr` and `final` also work. |
 | `follow_ups` | `days` 1-90 (7) | Finds applied and interviewing jobs with no timeline movement for `days` days, checks the inbox for replies, saves a short follow-up draft per job, and proposes stage or outcome updates (for example `no_response`) that it applies only after you approve. When you say you sent one, it logs a "Follow-up sent" timeline note. |
-| `weekly_review` | `periodDays` 1-90 (7) | Funnel numbers for the period (found, scored 70+, prepared, applied, interviewing, offers), results by source, role family and target company, and up to 6 suggested changes to search terms, sources, target companies and dealbreakers, each backed by numbers. Changes are applied only after you pick them. |
+| `weekly_review` | `periodDays` 1-90 (7) | Funnel numbers for the jobs found in the period (found, scored 70+, prepared with a PDF, applied, interviewing) plus offers and other outcomes, with "not available" where the tools cannot give a number, results by source, role family and target company, and up to 6 suggested changes to search terms, sources, target companies and dealbreakers, each backed by numbers. Changes are applied only after you pick them. |
 
 A read-only token can fetch every playbook. The playbook then tells the agent which steps need write access, so it does the read-only parts, gives you its results in the chat, and lists what it skipped.
 
 Example session:
 
 ```text
-> /jobops:daily_triage 2 75
+> /jobops:daily_triage   (prepareLimit 2, minScore 75)
 
 ● jobops - get_app_status (MCP)
 ● jobops - get_pipeline_status (MCP)
-  Last run started 26 hours ago, so I started a new one and waited for it (41 new jobs).
+● jobops - list_search_presets (MCP), start_pipeline_run (MCP)
+  Last run started 26 hours ago, so I started one from your saved search "Jakarta backend intern" and waited for it (41 new jobs).
 ● jobops - list_jobs (MCP) ...
 ● jobops - skip_job (MCP) ×3   (each after a "Skipped — 2026-11-17" note)
-● jobops - match_job_role_cv (MCP), process_job (MCP) ×2
+● jobops - process_job (MCP) ×2, get_job (MCP) ×2
 
 Ready to apply
 1. Software Engineer Intern, Backend — Xendit ★ (score 86): Go and PostgreSQL match your payments project.
@@ -193,7 +194,7 @@ Skipped today: 3 (senior level ×2, Singapore on-site only)
 Not done: 9 lower-scoring candidates not read (budget).
 ```
 
-Then: `/jobops:evaluate_job <job id>` for a closer look at one of them, or `/jobops:outreach_drafts <job id> id` for Indonesian messages.
+Then run `/jobops:evaluate_job` with one of the job ids for a closer look, or `/jobops:outreach_drafts` with a job id and `language` set to `id` for Indonesian messages.
 
 ## Why it exists
 
