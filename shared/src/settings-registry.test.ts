@@ -361,6 +361,15 @@ describe("settingsRegistry helpers", () => {
       );
     });
 
+    it("accepts claude_agent_sdk including hyphenated alias", () => {
+      expect(settingsRegistry.llmProvider.parse("claude_agent_sdk")).toBe(
+        "claude_agent_sdk",
+      );
+      expect(settingsRegistry.llmProvider.parse("claude-agent-sdk")).toBe(
+        "claude_agent_sdk",
+      );
+    });
+
     it("accepts GLM provider aliases", () => {
       expect(settingsRegistry.llmProvider.parse("glm")).toBe("glm");
       expect(settingsRegistry.llmProvider.parse("zhipu-ai")).toBe("glm");
@@ -385,6 +394,7 @@ describe("settingsRegistry helpers", () => {
         "google/gemini-3-flash-preview",
       );
       expect(getDefaultModelForProvider("claude_cli")).toBe("claude-sonnet-5");
+      expect(getDefaultModelForProvider("claude_agent_sdk")).toBe("sonnet");
       expect(getDefaultModelForProvider("codex")).toBe("gpt-5.4-mini");
       expect(getDefaultModelForProvider("ollama")).toBe("");
       expect(getDefaultModelForProvider("litellm")).toBe("");

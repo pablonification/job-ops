@@ -40,6 +40,7 @@ export const LLM_PROVIDER_VALUES = [
   "gemini",
   "gemini_cli",
   "claude_cli",
+  "claude_agent_sdk",
   "codex",
 ] as const;
 export type LlmProviderId = (typeof LLM_PROVIDER_VALUES)[number];

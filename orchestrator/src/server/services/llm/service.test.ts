@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { ClaudeAgentSdkClient } from "./claude-agent-sdk/client";
 import { ClaudeCliClient } from "./claude-cli/client";
 import { CodexClient } from "./codex/client";
 import { GeminiCliClient } from "./gemini-cli/client";
@@ -508,5 +509,133 @@ describe("LlmService provider normalization", () => {
     expect(models).toContain("anthropic/claude-sonnet-4-5");
     const [requestedUrl] = fetchSpy.mock.calls[0] ?? [];
     expect(String(requestedUrl)).toBe("https://api.orcarouter.ai/v1/models");
+  });
+});
+
+describe("LlmService claude_agent_sdk provider", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const request = {
+    model: "sonnet",
+    messages: [{ role: "user" as const, content: "test" }],
+    jsonSchema: TEST_SCHEMA,
+  };
+
+  it("normalizes the provider id and its hyphenated alias", () => {
+    const llm = new LlmService({ provider: "claude-agent-sdk" });
+
+    expect(llm.getProvider()).toBe("claude_agent_sdk");
+    expect(llm.getBaseUrl()).toBe("");
+  });
+
+  it("delegates callJson to the Agent SDK client and parses its JSON", async () => {
+    const callSpy = vi
+      .spyOn(ClaudeAgentSdkClient.prototype, "callJson")
+      .mockResolvedValue({ text: '{"value":"ok"}' });
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    const controller = new AbortController();
+
+    const llm = new LlmService({ provider: "claude_agent_sdk" });
+    const result = await llm.callJson({
+      ...request,
+      signal: controller.signal,
+    });
+
+    expect(result).toEqual({ success: true, data: { value: "ok" } });
+    expect(callSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: "sonnet",
+        jsonSchema: TEST_SCHEMA,
+        signal: controller.signal,
+      }),
+    );
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("retries a parse failure", async () => {
+    const callSpy = vi
+      .spyOn(ClaudeAgentSdkClient.prototype, "callJson")
+      .mockResolvedValueOnce({ text: "not json" })
+      .mockResolvedValueOnce({ text: '{"value":"ok"}' });
+
+    const llm = new LlmService({ provider: "claude_agent_sdk" });
+    const result = await llm.callJson({
+      ...request,
+      maxRetries: 1,
+      retryDelayMs: 1,
+    });
+
+    expect(result).toEqual({ success: true, data: { value: "ok" } });
+    expect(callSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    "Claude (subscription) is not authenticated. Run `claude setup-token`.",
+    "Claude (subscription) usage limit reached: You've hit your session limit",
+    "Claude (subscription) rate limit reached: rate_limit (timeout)",
+  ])("does not retry %s", async (message) => {
+    const callSpy = vi
+      .spyOn(ClaudeAgentSdkClient.prototype, "callJson")
+      .mockRejectedValue(new Error(message));
+
+    const llm = new LlmService({ provider: "claude_agent_sdk" });
+    const result = await llm.callJson({
+      ...request,
+      maxRetries: 2,
+      retryDelayMs: 1,
+    });
+
+    expect(result).toEqual({ success: false, error: message });
+    expect(callSpy).toHaveBeenCalledOnce();
+  });
+
+  it("is unavailable when CLI providers are blocked (hosted mode)", async () => {
+    const callSpy = vi.spyOn(ClaudeAgentSdkClient.prototype, "callJson");
+    const validateSpy = vi.spyOn(
+      ClaudeAgentSdkClient.prototype,
+      "validateCredentials",
+    );
+    const llm = new LlmService({
+      provider: "claude_agent_sdk",
+      allowEnvironmentCredentials: false,
+    });
+
+    await expect(llm.callJson(request)).resolves.toEqual({
+      success: false,
+      error: "CLI LLM providers are unavailable for this hosted account",
+    });
+    await expect(llm.validateCredentials()).resolves.toMatchObject({
+      valid: false,
+    });
+    await expect(llm.listModels()).rejects.toThrow(/unavailable/);
+    expect(callSpy).not.toHaveBeenCalled();
+    expect(validateSpy).not.toHaveBeenCalled();
+  });
+
+  it("delegates credential validation to the Agent SDK client", async () => {
+    const validateSpy = vi
+      .spyOn(ClaudeAgentSdkClient.prototype, "validateCredentials")
+      .mockResolvedValue({ valid: true, message: null, username: null });
+
+    const llm = new LlmService({ provider: "claude_agent_sdk" });
+
+    await expect(llm.validateCredentials()).resolves.toEqual({
+      valid: true,
+      message: null,
+      username: null,
+    });
+    expect(validateSpy).toHaveBeenCalledOnce();
+  });
+
+  it("lists the model aliases with sonnet first", async () => {
+    const llm = new LlmService({ provider: "claude_agent_sdk" });
+
+    await expect(llm.listModels()).resolves.toEqual([
+      "sonnet",
+      "opus",
+      "haiku",
+    ]);
   });
 });
