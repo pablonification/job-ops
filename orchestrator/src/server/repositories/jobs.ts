@@ -427,8 +427,8 @@ export async function listJobSummariesByIds(jobIds: string[]): Promise<
 }
 
 /**
- * Title, employer and score of the given jobs, for the run digest. Jobs
- * outside the current scope are left out.
+ * Title, employer, score and status of the given jobs, for the run digest.
+ * Jobs outside the current scope are left out.
  */
 export async function listJobDigestRowsByIds(jobIds: string[]): Promise<
   Array<{
@@ -436,6 +436,7 @@ export async function listJobDigestRowsByIds(jobIds: string[]): Promise<
     title: string;
     employer: string;
     suitabilityScore: number | null;
+    status: JobStatus;
   }>
 > {
   if (jobIds.length === 0) return [];
@@ -444,24 +445,27 @@ export async function listJobDigestRowsByIds(jobIds: string[]): Promise<
     title: string;
     employer: string;
     suitabilityScore: number | null;
+    status: JobStatus;
   }> = [];
   // Stay well under SQLite's bound-parameter limit on very large runs.
   for (let start = 0; start < jobIds.length; start += 500) {
+    const chunk = await db
+      .select({
+        id: jobs.id,
+        title: jobs.title,
+        employer: jobs.employer,
+        suitabilityScore: jobs.suitabilityScore,
+        status: jobs.status,
+      })
+      .from(jobs)
+      .where(
+        and(
+          jobsScopeFilter(),
+          inArray(jobs.id, jobIds.slice(start, start + 500)),
+        ),
+      );
     rows.push(
-      ...(await db
-        .select({
-          id: jobs.id,
-          title: jobs.title,
-          employer: jobs.employer,
-          suitabilityScore: jobs.suitabilityScore,
-        })
-        .from(jobs)
-        .where(
-          and(
-            jobsScopeFilter(),
-            inArray(jobs.id, jobIds.slice(start, start + 500)),
-          ),
-        )),
+      ...chunk.map((row) => ({ ...row, status: row.status as JobStatus })),
     );
   }
   return rows;

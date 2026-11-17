@@ -20,7 +20,11 @@ import { loadTargetCompanyMatcher } from "@server/services/target-companies";
 import { getActiveTenantId } from "@server/tenancy/context";
 import { settingsRegistry } from "@shared/settings-registry";
 import type { PipelineRunTrigger } from "@shared/types";
-import { buildDigestMessage, type DigestMessageInput } from "./format";
+import {
+  buildDigestMessage,
+  type DigestMessageInput,
+  sanitizeDigestReason,
+} from "./format";
 import { sendTelegramMessage, type TelegramFetch } from "./telegram";
 
 export { buildDigestMessage, sanitizeDigestReason } from "./format";
@@ -61,7 +65,14 @@ export type RunDigestOutcome =
 export type RunDigestDeps = {
   fetchImpl?: TelegramFetch;
   now?: () => Date;
+  /** Wait before the one retry after a 429; injected by tests. */
+  sleep?: (ms: number) => Promise<void>;
 };
+
+/** Run context for log lines: the run's id, null for a start failure. */
+function runIdOf(event: RunDigestEvent): string | null {
+  return event.kind === "start_failed" ? null : event.pipelineRunId;
+}
 
 /** The public base URL for links, or null (then the digest has no links). */
 export function getDigestBaseUrl(): string | null {
@@ -108,17 +119,21 @@ async function toMessageInput(
   switch (event.kind) {
     case "completed": {
       const rows = await jobsRepo.listJobDigestRowsByIds([...event.newJobIds]);
-      const matcher = rows.length > 0 ? await loadTargetCompanyMatcher() : null;
+      // Jobs scoring under the auto-skip threshold are counted, not listed.
+      const listed = rows.filter((row) => row.status !== "skipped");
+      const matcher =
+        listed.length > 0 ? await loadTargetCompanyMatcher() : null;
       return {
         kind: "completed",
         trigger: event.trigger,
         counts: {
           found: event.jobsFound,
           new: rows.length,
+          autoSkipped: rows.length - listed.length,
           scored: event.jobsScored,
           tailored: event.jobsTailored,
         },
-        jobs: rows.map((row) => ({
+        jobs: listed.map((row) => ({
           id: row.id,
           title: row.title,
           employer: row.employer,
@@ -171,10 +186,12 @@ export async function sendRunDigest(
     return "skipped_off";
   }
 
+  const pipelineRunId = runIdOf(event);
   const credentials = await getTelegramCredentials();
   if (!credentials) {
     logger.debug("Run digest skipped: Telegram is not set up", {
       tenantId,
+      pipelineRunId,
       kind: event.kind,
     });
     return "skipped_not_configured";
@@ -183,7 +200,29 @@ export async function sendRunDigest(
   const maxJobs =
     settingsRegistry.digestMaxJobs.parse(rawMaxJobs ?? undefined) ??
     settingsRegistry.digestMaxJobs.default();
-  const text = buildDigestMessage(await toMessageInput(event, maxJobs));
+  let text: string | null;
+  try {
+    text = buildDigestMessage(await toMessageInput(event, maxJobs));
+  } catch (error) {
+    // For example a database error reading the run's jobs: shown in
+    // Settings like a failed send.
+    const detail = `Could not prepare the digest: ${sanitizeDigestReason(
+      error instanceof Error ? error.message : String(error),
+    )}`;
+    logger.warn("Run digest could not be prepared", {
+      tenantId,
+      pipelineRunId,
+      kind: event.kind,
+      error: detail,
+    });
+    await recordDigestDelivery({
+      tenantId,
+      at: now().toISOString(),
+      status: "failed",
+      detail,
+    });
+    return "failed";
+  }
   if (!text) return "skipped_nothing_new";
 
   const result = await sendTelegramMessage({
@@ -191,6 +230,7 @@ export async function sendRunDigest(
     chatId: credentials.chatId,
     text,
     fetchImpl: deps.fetchImpl,
+    sleep: deps.sleep,
   });
   const at = now().toISOString();
   await recordDigestDelivery({
@@ -203,13 +243,18 @@ export async function sendRunDigest(
   if (!result.ok) {
     logger.warn("Run digest delivery failed", {
       tenantId,
+      pipelineRunId,
       kind: event.kind,
       status: result.status,
       error: result.error,
     });
     return "failed";
   }
-  logger.info("Run digest sent", { tenantId, kind: event.kind });
+  logger.info("Run digest sent", {
+    tenantId,
+    pipelineRunId,
+    kind: event.kind,
+  });
   return "sent";
 }
 
@@ -224,18 +269,29 @@ export function queueRunDigest(
   let tenantId: string | null = null;
   try {
     tenantId = getActiveTenantId();
-    void sendRunDigest(event, deps).catch((error: unknown) => {
+    const activeTenantId = tenantId;
+    void sendRunDigest(event, deps).catch(async (error: unknown) => {
+      const message = sanitizeDigestReason(
+        error instanceof Error ? error.message : String(error),
+      );
       logger.warn("Run digest failed", {
-        tenantId,
+        tenantId: activeTenantId,
+        pipelineRunId: runIdOf(event),
         kind: event.kind,
-        error: sanitizeUnknown(
-          error instanceof Error ? error.message : String(error),
-        ),
+        error: message,
       });
+      // Shown in Settings like a failed send, when the database allows.
+      await recordDigestDelivery({
+        tenantId: activeTenantId,
+        at: (deps.now ?? (() => new Date()))().toISOString(),
+        status: "failed",
+        detail: `Could not send the digest: ${message}`,
+      }).catch(() => undefined);
     });
   } catch (error) {
     logger.warn("Run digest failed", {
       tenantId,
+      pipelineRunId: runIdOf(event),
       kind: event.kind,
       error: sanitizeUnknown(
         error instanceof Error ? error.message : String(error),

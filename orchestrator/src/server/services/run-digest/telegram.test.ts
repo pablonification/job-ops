@@ -116,6 +116,93 @@ describe("Telegram client", () => {
     });
   });
 
+  it("retries once after a 429, waiting the time Telegram asks for", async () => {
+    const limited = {
+      ok: false,
+      status: 429,
+      json: async () => ({
+        ok: false,
+        error_code: 429,
+        description: "Too Many Requests: retry after 3",
+        parameters: { retry_after: 3 },
+      }),
+    };
+    const fetchImpl: TelegramFetch = vi
+      .fn()
+      .mockResolvedValueOnce(limited)
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ ok: true }),
+      });
+    const sleep = vi.fn(async () => undefined);
+
+    expect(
+      await sendTelegramMessage({
+        botToken: TOKEN,
+        chatId: "42",
+        text: "hi",
+        fetchImpl,
+        sleep,
+      }),
+    ).toEqual({ ok: true });
+    expect(sleep).toHaveBeenCalledWith(3000);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+
+    // Still limited on the retry: give up and report it.
+    const stillLimited: TelegramFetch = vi.fn().mockResolvedValue(limited);
+    expect(
+      await sendTelegramMessage({
+        botToken: TOKEN,
+        chatId: "42",
+        text: "hi",
+        fetchImpl: stillLimited,
+        sleep,
+      }),
+    ).toEqual({
+      ok: false,
+      status: 429,
+      error: "Telegram said: Too Many Requests: retry after 3",
+    });
+    expect(stillLimited).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not wait longer than 30 seconds, nor when retries are off", async () => {
+    const limited = (retryAfter: number) => ({
+      ok: false,
+      status: 429,
+      json: async () => ({
+        ok: false,
+        description: `Too Many Requests: retry after ${retryAfter}`,
+        parameters: { retry_after: retryAfter },
+      }),
+    });
+    const sleep = vi.fn(async () => undefined);
+    const longWait: TelegramFetch = vi.fn().mockResolvedValue(limited(31));
+    expect(
+      await sendTelegramMessage({
+        botToken: TOKEN,
+        chatId: "42",
+        text: "hi",
+        fetchImpl: longWait,
+        sleep,
+      }),
+    ).toMatchObject({ ok: false, status: 429 });
+    expect(longWait).toHaveBeenCalledTimes(1);
+
+    const noRetry: TelegramFetch = vi.fn().mockResolvedValue(limited(2));
+    await sendTelegramMessage({
+      botToken: TOKEN,
+      chatId: "42",
+      text: "hi",
+      fetchImpl: noRetry,
+      sleep,
+      retryOnRateLimit: false,
+    });
+    expect(noRetry).toHaveBeenCalledTimes(1);
+    expect(sleep).not.toHaveBeenCalled();
+  });
+
   it("does not call Telegram with a malformed token or no chat id", async () => {
     const fetchImpl = respond(200, { ok: true });
     expect(

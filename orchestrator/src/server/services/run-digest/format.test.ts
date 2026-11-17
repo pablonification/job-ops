@@ -24,7 +24,13 @@ function completed(
   return {
     kind: "completed" as const,
     trigger: "schedule" as const,
-    counts: { found: 48, new: jobs.length, scored: jobs.length, tailored: 2 },
+    counts: {
+      found: 48,
+      new: jobs.length,
+      autoSkipped: 0,
+      scored: jobs.length,
+      tailored: 2,
+    },
     jobs,
     maxJobs: options.maxJobs ?? 5,
     baseUrl: options.baseUrl === undefined ? BASE : options.baseUrl,
@@ -81,6 +87,39 @@ describe("run digest message", () => {
 
   it("sends nothing for a finished run without new jobs", () => {
     expect(buildDigestMessage(completed([]))).toBeNull();
+  });
+
+  it("counts auto-skipped jobs but does not list them", () => {
+    const base = completed([job({ id: "kept", score: 72 })]);
+    const text = buildDigestMessage({
+      ...base,
+      counts: { ...base.counts, new: 3, autoSkipped: 2, scored: 3 },
+    });
+    expect(text?.split("\n").slice(0, 5)).toEqual([
+      "JobOps: scheduled run finished",
+      "Found 48, 3 new (2 auto-skipped). Scored 3, tailored 2.",
+      "",
+      "Top new jobs:",
+      "",
+    ]);
+    expect(text).toContain("/job/kept");
+    expect(text).not.toContain("more new");
+
+    // Every new job skipped: a short note instead of a list.
+    expect(
+      buildDigestMessage({
+        ...base,
+        jobs: [],
+        counts: { ...base.counts, new: 2, autoSkipped: 2 },
+      }),
+    ).toBe(
+      [
+        "JobOps: scheduled run finished",
+        "Found 48, 2 new (2 auto-skipped). Scored 1, tailored 2.",
+        "None of the new jobs reached your auto-skip score.",
+        "https://jobs.example.com/jobs/all",
+      ].join("\n"),
+    );
   });
 
   it("keeps job text as plain text, on one line each", () => {

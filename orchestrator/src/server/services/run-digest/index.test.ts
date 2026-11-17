@@ -68,7 +68,12 @@ describe.sequential("run digest delivery", () => {
 
   async function addJobs(
     tenantId: string,
-    jobs: Array<{ title: string; employer: string; score: number | null }>,
+    jobs: Array<{
+      title: string;
+      employer: string;
+      score: number | null;
+      status?: "discovered" | "skipped";
+    }>,
   ): Promise<string[]> {
     const jobsRepo = await import("@server/repositories/jobs");
     const { db, schema } = await import("@server/db");
@@ -84,7 +89,10 @@ describe.sequential("run digest delivery", () => {
         });
         await db
           .update(schema.jobs)
-          .set({ suitabilityScore: job.score })
+          .set({
+            suitabilityScore: job.score,
+            ...(job.status ? { status: job.status } : {}),
+          })
           .where(eq(schema.jobs.id, created.id));
         ids.push(created.id);
       }
@@ -319,6 +327,82 @@ describe.sequential("run digest delivery", () => {
     ).toBe(true);
     expect(lines.join("\n")).not.toContain(TOKEN);
     expect(lines.join("\n")).not.toContain("api.telegram.org");
+  });
+
+  it("leaves auto-skipped jobs out of the list and says how many", async () => {
+    await setSettings("tenant_default", {
+      telegramBotToken: TOKEN,
+      telegramChatId: "42",
+    });
+    const ids = await addJobs("tenant_default", [
+      { title: "Kept Job", employer: "Grab", score: 75 },
+      { title: "Skipped Job", employer: "Lowco", score: 20, status: "skipped" },
+    ]);
+    const fetchImpl = telegram();
+    const { sendRunDigest } = await digest();
+    await inTenant("tenant_default", () =>
+      sendRunDigest(
+        {
+          kind: "completed",
+          pipelineRunId: "run-1",
+          trigger: "schedule",
+          jobsFound: 5,
+          newJobIds: ids,
+          jobsScored: 2,
+          jobsTailored: 0,
+        },
+        { fetchImpl },
+      ),
+    );
+    const [text] = fetchImpl.texts();
+    expect(text).toContain("Found 5, 2 new (1 auto-skipped). Scored 2");
+    expect(text).toContain("Kept Job");
+    expect(text).not.toContain("Skipped Job");
+  });
+
+  it("records a digest that could not be prepared, with the run in the log", async () => {
+    await setSettings("tenant_default", {
+      telegramBotToken: TOKEN,
+      telegramChatId: "42",
+    });
+    const lines: string[] = [];
+    vi.spyOn(console, "warn").mockImplementation((line: unknown) => {
+      lines.push(String(line));
+    });
+    // The run's jobs cannot be read: a database error while building.
+    const { db } = await import("@server/db");
+    const { sql } = await import("drizzle-orm");
+    db.run(sql`ALTER TABLE jobs RENAME TO jobs_unavailable`);
+    const fetchImpl = telegram();
+    const { sendRunDigest } = await digest();
+
+    expect(
+      await inTenant("tenant_default", () =>
+        sendRunDigest(
+          {
+            kind: "completed",
+            pipelineRunId: "run-db",
+            trigger: "schedule",
+            jobsFound: 1,
+            newJobIds: ["job-1"],
+            jobsScored: 1,
+            jobsTailored: 0,
+          },
+          { fetchImpl, now: () => new Date("2026-11-17T01:20:00.000Z") },
+        ),
+      ),
+    ).toBe("failed");
+    expect(fetchImpl).not.toHaveBeenCalled();
+    const state = await digestState("tenant_default");
+    expect(state).toMatchObject({
+      lastDigestStatus: "failed",
+      lastDigestAt: "2026-11-17T01:20:00.000Z",
+    });
+    expect(state?.lastDigestDetail).toMatch(/^Could not prepare the digest: /);
+    expect(
+      lines.find((line) => line.includes("Run digest could not be prepared")),
+    ).toContain('"pipelineRunId":"run-db"');
+    db.run(sql`ALTER TABLE jobs_unavailable RENAME TO jobs`);
   });
 
   it("queues delivery without throwing, even when it fails", async () => {

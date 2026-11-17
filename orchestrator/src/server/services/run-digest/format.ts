@@ -21,8 +21,16 @@ export type DigestMessageInput =
   | {
       kind: "completed";
       trigger: PipelineRunTrigger | null;
-      counts: { found: number; new: number; scored: number; tailored: number };
-      /** The run's new jobs, in any order. */
+      counts: {
+        found: number;
+        /** Every job this run discovered, auto-skipped ones included. */
+        new: number;
+        /** New jobs the scoring step skipped (below the auto-skip score). */
+        autoSkipped: number;
+        scored: number;
+        tailored: number;
+      };
+      /** The run's new jobs that were not auto-skipped, in any order. */
       jobs: DigestJob[];
       maxJobs: number;
       baseUrl: string | null;
@@ -121,14 +129,22 @@ function buildCompleted(
   input: Extract<DigestMessageInput, { kind: "completed" }>,
   limit: number,
 ): string | null {
-  if (input.jobs.length === 0) return null;
   const { counts } = input;
-  const head = joinLines([
+  if (counts.new === 0) return null;
+  const skippedNote =
+    counts.autoSkipped > 0 ? ` (${counts.autoSkipped} auto-skipped)` : "";
+  const summary = joinLines([
     `JobOps: ${runLabel(input.trigger).toLowerCase()} finished`,
-    `Found ${counts.found}, ${counts.new} new. Scored ${counts.scored}, tailored ${counts.tailored}.`,
-    "",
-    "Top new jobs:",
+    `Found ${counts.found}, ${counts.new} new${skippedNote}. Scored ${counts.scored}, tailored ${counts.tailored}.`,
   ]);
+  if (input.jobs.length === 0) {
+    return joinLines([
+      summary,
+      "None of the new jobs reached your auto-skip score.",
+      link(input.baseUrl, "/jobs/all"),
+    ]).slice(0, limit);
+  }
+  const head = joinLines([summary, "", "Top new jobs:"]);
   const ranked = [...input.jobs].sort(compareJobs);
   const blocks = ranked
     .slice(0, Math.max(1, input.maxJobs))
