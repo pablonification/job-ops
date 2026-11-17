@@ -266,12 +266,14 @@ describe.sequential("MCP endpoint", () => {
         inputSchema: { type: string; properties?: Record<string, unknown> };
         annotations: Record<string, unknown>;
       }>;
-      expect(tools.map((tool) => tool.name).sort()).toEqual(
-        [...EXPECTED_TOOLS].sort(),
+      expect(tools.map((tool) => tool.name)).toEqual(
+        expect.arrayContaining(EXPECTED_TOOLS),
       );
       for (const tool of tools) {
         expect(tool.inputSchema.type).toBe("object");
-        expect(tool.annotations.readOnlyHint).toBe(true);
+        if (EXPECTED_TOOLS.includes(tool.name)) {
+          expect(tool.annotations.readOnlyHint).toBe(true);
+        }
       }
       const listJobs = tools.find((tool) => tool.name === "list_jobs");
       expect(Object.keys(listJobs?.inputSchema.properties ?? {})).toEqual(

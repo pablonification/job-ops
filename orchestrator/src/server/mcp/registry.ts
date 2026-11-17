@@ -29,9 +29,19 @@
  */
 import type { McpToolDefinition, McpToolGroup } from "./kit";
 import { appReadToolGroup } from "./tools/app-read";
+import { ghostwriterToolGroup } from "./tools/ghostwriter";
+import { inboxToolGroup } from "./tools/inbox";
 import { jobsReadToolGroup } from "./tools/jobs-read";
+import { pipelineToolGroup } from "./tools/pipeline";
+import { settingsToolGroup } from "./tools/settings";
+import { visaSponsorsToolGroup } from "./tools/visa-sponsors";
 
 export const MCP_TOOL_GROUPS: readonly McpToolGroup[] = [
+  pipelineToolGroup,
+  settingsToolGroup,
+  ghostwriterToolGroup,
+  visaSponsorsToolGroup,
+  inboxToolGroup,
   jobsReadToolGroup,
   appReadToolGroup,
 ];
