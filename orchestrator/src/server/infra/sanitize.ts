@@ -112,3 +112,39 @@ export function sanitizeWebhookPayload(
     unknown
   >;
 }
+
+const TEXT_SECRET_PATTERNS: Array<[RegExp, string]> = [
+  // Authorization header values echoed back.
+  [/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{6,}/gi, `$1 ${REDACTED}`],
+  // Credentials in URLs: https://user:pass@host
+  [/(\b[a-z][a-z0-9+.-]*:\/\/)[^\s/@:]+:[^\s/@]+@/gi, `$1${REDACTED}@`],
+  // Secret-looking query string or key=value pairs.
+  [
+    /([?&\s,;{"']|^)((?:api[_-]?key|key|token|access[_-]?token|secret|password|auth|signature|sig)\s*["']?\s*[=:]\s*["']?)[^\s&"',;}]+/gi,
+    `$1$2${REDACTED}`,
+  ],
+  // Common provider key shapes (sk-..., sk-ant-..., AIza..., jo_pat_...).
+  [/\b(?:sk|rk|pk)-[A-Za-z0-9_-]{12,}/g, REDACTED],
+  [/\bAIza[0-9A-Za-z_-]{20,}/g, REDACTED],
+  [/\bjo_pat_[A-Za-z0-9_]{8,}/g, REDACTED],
+];
+
+/**
+ * Redact secrets inside free text (error messages, upstream detail) and
+ * truncate it. `secrets` are exact values known to the caller (for example
+ * the API keys a request used); everything shaped like a bearer token, URL
+ * credentials, a secret query parameter or a provider key is removed too.
+ */
+export function redactSensitiveText(
+  value: string,
+  options: { secrets?: Array<string | null | undefined>; max?: number } = {},
+): string {
+  let out = value;
+  for (const secret of options.secrets ?? []) {
+    if (secret && secret.length >= 6) out = out.split(secret).join(REDACTED);
+  }
+  for (const [pattern, replacement] of TEXT_SECRET_PATTERNS) {
+    out = out.replace(pattern, replacement);
+  }
+  return redactString(out, options.max ?? DEFAULT_MAX_STRING);
+}
