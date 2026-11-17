@@ -65,6 +65,8 @@ const sidebars: SidebarsConfig = {
         "extractors/techinasia",
         "extractors/kalibrr",
         "extractors/dealls",
+        "extractors/jobstreet",
+        "extractors/glints",
         "extractors/idbigtech",
       ],
     },
