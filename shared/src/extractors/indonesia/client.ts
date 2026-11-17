@@ -3,6 +3,8 @@ export const BROWSER_USER_AGENT =
 
 export const DEFAULT_POLITE_DELAY_MS = 1_500;
 const DEFAULT_TIMEOUT_MS = 20_000;
+/** Largest response body read; Blibli's 200-job page is about 1.3 MB. */
+export const DEFAULT_MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
 
 /** Thrown instead of sending a request once the run's time budget is spent. */
 export class TimeBudgetExceededError extends Error {
@@ -24,6 +26,8 @@ export interface PoliteJsonClientOptions {
   /** Epoch ms after which no request is started. */
   deadline?: number;
   now?: () => number;
+  /** Responses larger than this fail instead of being read whole. */
+  maxResponseBytes?: number;
 }
 
 /** Per-request options; both are optional. */
@@ -111,17 +115,75 @@ export function createPoliteJsonClient(
     return response;
   }
 
-  async function readJson(
+  const maxBytes = Math.max(
+    1,
+    options.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES,
+  );
+
+  class ResponseTooLargeError extends Error {}
+
+  /**
+   * Reads at most `maxBytes` of the body, or `undefined` when the response
+   * has neither a stream nor `text()` (minimal test doubles).
+   */
+  async function readBodyText(response: Response): Promise<string | undefined> {
+    const declared = Number(response.headers?.get?.("content-length"));
+    if (Number.isFinite(declared) && declared > maxBytes) {
+      throw new ResponseTooLargeError();
+    }
+    const reader = response.body?.getReader?.();
+    if (reader) {
+      const decoder = new TextDecoder();
+      let size = 0;
+      let text = "";
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        size += value.byteLength;
+        if (size > maxBytes) {
+          await reader.cancel().catch(() => undefined);
+          throw new ResponseTooLargeError();
+        }
+        text += decoder.decode(value, { stream: true });
+      }
+      return text + decoder.decode();
+    }
+    if (typeof response.text !== "function") return undefined;
+    const text = await response.text();
+    if (new TextEncoder().encode(text).byteLength > maxBytes) {
+      throw new ResponseTooLargeError();
+    }
+    return text;
+  }
+
+  async function readBody<T>(
+    response: Response,
+    label: string,
+    parse: (text: string | undefined) => Promise<T> | T,
+    failure: string,
+  ): Promise<T> {
+    try {
+      return await parse(await readBodyText(response));
+    } catch (error) {
+      throw new Error(
+        `${label} ${error instanceof ResponseTooLargeError ? "response was too large" : failure}`,
+      );
+    }
+  }
+
+  function readJson(
     response: Response,
     requestOptions: PoliteRequestOptions = {},
   ): Promise<unknown> {
-    try {
-      return (await response.json()) as unknown;
-    } catch {
-      throw new Error(
-        `${requestOptions.label ?? options.label} returned an invalid JSON response`,
-      );
-    }
+    return readBody(
+      response,
+      requestOptions.label ?? options.label,
+      async (text) =>
+        text === undefined
+          ? ((await response.json()) as unknown)
+          : (JSON.parse(text) as unknown),
+      "returned an invalid JSON response",
+    );
   }
 
   return {
@@ -154,13 +216,15 @@ export function createPoliteJsonClient(
         { method: "GET", accept: "text/html,application/xhtml+xml" },
         requestOptions,
       );
-      try {
-        return await response.text();
-      } catch {
-        throw new Error(
-          `${requestOptions?.label ?? options.label} returned an unreadable page`,
-        );
-      }
+      return readBody(
+        response,
+        requestOptions?.label ?? options.label,
+        (text) => {
+          if (text === undefined) throw new Error("no body");
+          return text;
+        },
+        "returned an unreadable page",
+      );
     },
   };
 }

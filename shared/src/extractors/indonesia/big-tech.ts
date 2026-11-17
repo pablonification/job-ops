@@ -30,23 +30,29 @@ export function isIdBigTechCompanyId(
 }
 
 /**
- * Reads the stored setting (a JSON array of company ids). A missing or
- * unreadable value means "all companies"; unknown ids are ignored. The result
- * keeps the catalog order and can be empty.
+ * Reads the stored setting (a JSON array of company ids) in catalog order,
+ * ignoring unknown ids. Returns `null` when nothing usable is stored: a
+ * missing, unreadable or empty value, or one with no known id.
  */
-export function parseEnabledIdBigTechCompanies(
+export function parseIdBigTechCompanies(
   raw: string | null | undefined,
-): IdBigTechCompanyId[] {
-  if (raw === null || raw === undefined || raw.trim() === "") {
-    return [...ID_BIG_TECH_COMPANY_IDS];
-  }
+): IdBigTechCompanyId[] | null {
+  if (!raw?.trim()) return null;
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch {
-    return [...ID_BIG_TECH_COMPANY_IDS];
+    return null;
   }
-  if (!Array.isArray(parsed)) return [...ID_BIG_TECH_COMPANY_IDS];
+  if (!Array.isArray(parsed)) return null;
   const wanted = new Set(parsed.filter(isIdBigTechCompanyId));
-  return ID_BIG_TECH_COMPANY_IDS.filter((id) => wanted.has(id));
+  const companies = ID_BIG_TECH_COMPANY_IDS.filter((id) => wanted.has(id));
+  return companies.length > 0 ? companies : null;
+}
+
+/** The companies a run scans: the stored list, or all of them when unusable. */
+export function parseEnabledIdBigTechCompanies(
+  raw: string | null | undefined,
+): IdBigTechCompanyId[] {
+  return parseIdBigTechCompanies(raw) ?? [...ID_BIG_TECH_COMPANY_IDS];
 }

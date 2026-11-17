@@ -142,8 +142,9 @@ export function matchesIndonesianPlace(
 
 /**
  * Client-side city filter, applied before a job counts toward a per-term cap.
- * No requested cities, or a remote job, always matches (the shared location
- * filter makes the final remote decision).
+ * No requested cities, a remote job, or a job whose evidence says its city
+ * is unknown always matches (the shared location filter makes the final
+ * remote decision).
  */
 export function jobMatchesIndonesianCities(
   job: Pick<CreateJobInput, "location" | "locationEvidence" | "isRemote">,
@@ -151,6 +152,7 @@ export function jobMatchesIndonesianCities(
 ): boolean {
   if (cities.length === 0 || job.isRemote === true) return true;
   const evidence = job.locationEvidence;
+  if (evidence?.cityUnknown === true) return true;
   const places = [
     evidence?.city,
     ...(evidence?.regionHints ?? []),

@@ -137,6 +137,7 @@ export function matchJobLocationIntent(
       country?: string | null;
       city?: string | null;
       workplaceType?: "remote" | "hybrid" | "onsite" | null;
+      cityUnknown?: boolean | null;
     } | null;
     isRemote?: boolean | null;
   },
@@ -193,6 +194,14 @@ export function matchJobLocationIntent(
 
     if (cityMatched || intent.matchStrictness === "flexible") {
       return { matched: true, reasonCode: "selected_location", priority: 1 };
+    }
+    // Opt-in: the source knows the job is in this country, not which city.
+    if (job.locationEvidence?.cityUnknown === true) {
+      return {
+        matched: true,
+        reasonCode: "selected_country_city_unknown",
+        priority: 0,
+      };
     }
   }
 
