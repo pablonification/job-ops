@@ -49,6 +49,7 @@ vi.mock("@server/pipeline/index", () => {
       alreadyRequested: false,
     })),
     isPipelineCancelRequested: vi.fn(() => false),
+    resumePipelineScoring: vi.fn(() => ({ resolved: false })),
     getPendingChallenges: vi.fn(() => []),
     beginPipelineChallengeSolve: vi.fn(() => null),
     skipPipelineChallengeSearch: vi.fn(() => ({ status: "not_found" })),
