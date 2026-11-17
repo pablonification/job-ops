@@ -1,10 +1,27 @@
 import { SettingsSectionFrame } from "@client/pages/settings/components/SettingsSectionFrame";
 import type { DisplayValues } from "@client/pages/settings/types";
 import type { UpdateSettingsInput } from "@shared/settings-schema.js";
+import {
+  ROLE_CV_PIPELINE_MODE_VALUES,
+  type RoleCvPipelineMode,
+} from "@shared/types.js";
 import type React from "react";
 import { Controller, useFormContext } from "react-hook-form";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
+
+const ROLE_CV_PIPELINE_MODE_LABELS: Record<RoleCvPipelineMode, string> = {
+  off: "Off",
+  as_is: "Use as is",
+  refine: "Refine for each job",
+};
 
 type DisplaySettingsSectionProps = {
   values: DisplayValues;
@@ -23,6 +40,7 @@ export const DisplaySettingsSection: React.FC<DisplaySettingsSectionProps> = ({
     showSponsorInfo,
     renderMarkdownInJobDescriptions,
     autoTailorOnManualImport,
+    roleCvPipelineMode,
   } = values;
   const { control } = useFormContext<UpdateSettingsInput>();
 
@@ -136,6 +154,45 @@ export const DisplaySettingsSection: React.FC<DisplaySettingsSectionProps> = ({
 
         <Separator />
 
+        <div className="flex flex-col gap-1.5">
+          <label
+            htmlFor="roleCvPipelineMode"
+            className="text-sm font-medium leading-none"
+          >
+            Role CVs when auto-tailoring
+          </label>
+          <Controller
+            name="roleCvPipelineMode"
+            control={control}
+            render={({ field }) => (
+              <Select
+                value={field.value ?? roleCvPipelineMode.default}
+                onValueChange={(value) => field.onChange(value)}
+                disabled={isLoading || isSaving}
+              >
+                <SelectTrigger id="roleCvPipelineMode" className="sm:max-w-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {ROLE_CV_PIPELINE_MODE_VALUES.map((mode) => (
+                    <SelectItem key={mode} value={mode}>
+                      {ROLE_CV_PIPELINE_MODE_LABELS[mode]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          />
+          <p className="text-xs text-muted-foreground">
+            How pipeline runs, Move to Ready and auto-tailored imports use your
+            Role CVs. The best Role CV is picked for each job. Use as is copies
+            it without AI; refine tailors it to the job. Has no effect until you
+            create a Role CV.
+          </p>
+        </div>
+
+        <Separator />
+
         <div className="grid gap-3 text-sm sm:grid-cols-2">
           <div>
             <div className="text-xs text-muted-foreground">
@@ -185,6 +242,22 @@ export const DisplaySettingsSection: React.FC<DisplaySettingsSectionProps> = ({
             </div>
             <div className="break-words font-mono text-xs font-semibold">
               {autoTailorOnManualImport.default ? "Enabled" : "Disabled"}
+            </div>
+          </div>
+          <div>
+            <div className="text-xs text-muted-foreground">
+              Role CVs effective
+            </div>
+            <div className="break-words font-mono text-xs">
+              {ROLE_CV_PIPELINE_MODE_LABELS[roleCvPipelineMode.effective]}
+            </div>
+          </div>
+          <div>
+            <div className="text-xs text-muted-foreground">
+              Role CVs default
+            </div>
+            <div className="break-words font-mono text-xs font-semibold">
+              {ROLE_CV_PIPELINE_MODE_LABELS[roleCvPipelineMode.default]}
             </div>
           </div>
         </div>
