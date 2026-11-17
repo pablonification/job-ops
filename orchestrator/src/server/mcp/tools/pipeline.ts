@@ -94,7 +94,7 @@ const startPipelineRunTool = defineTool({
   name: "start_pipeline_run",
   title: "Start a job discovery run",
   description:
-    "Start a pipeline run that searches job sites, imports and scores new jobs, and tailors the best ones. Returns immediately; poll get_pipeline_progress until step is completed, cancelled or failed. Omitted fields use the saved search settings. Fails with CONFLICT if a run is already active and INVALID_REQUEST if a source does not support the chosen location (see list_sources).",
+    "Start a pipeline run that searches job sites, imports and scores new jobs, and tailors the best ones. Returns immediately; poll get_pipeline_progress until step is completed, cancelled or failed. Every field is optional. Omitted fields are taken from your most recently used saved search (see list_search_presets); fields you pass override it. Passing country, cityLocations or proximity replaces the saved search's whole location. With no saved search, the location comes from your search settings (get_settings), search terms from the saved search terms, and you must pass sources. Fails with INVALID_REQUEST when no sources result or a source does not support the chosen location (see list_sources), and with CONFLICT if a run is already active.",
   scope: "write",
   openWorld: true,
   input: startPipelineRunSchema.strict(),

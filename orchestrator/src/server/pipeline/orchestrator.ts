@@ -20,6 +20,7 @@ import type {
   JobStatus,
   PipelineConfig,
   PipelineRunSavedDetails,
+  PipelineRunTrigger,
 } from "@shared/types";
 import { getDataDir } from "../config/dataDir";
 import * as jobsRepo from "../repositories/jobs";
@@ -348,7 +349,11 @@ function mergeRetriedJobs(
  */
 export async function runPipeline(
   config: Partial<PipelineConfig> = {},
-  options?: { hostedUsageReservationId?: string | null },
+  options?: {
+    hostedUsageReservationId?: string | null;
+    /** Who started the run; stored on the run and used by the digest. */
+    trigger?: PipelineRunTrigger | null;
+  },
 ): Promise<{
   success: boolean;
   jobsDiscovered: number;
@@ -379,7 +384,11 @@ export async function runPipeline(
   tenantState.skippedChallengeSearchStates.clear();
   resetProgress();
   const locationIntent = await resolveLocationIntent(config);
-  const mergedConfig = { ...DEFAULT_CONFIG, ...config, locationIntent };
+  // An undefined field must not overwrite its default.
+  const definedConfig = Object.fromEntries(
+    Object.entries(config).filter(([, value]) => value !== undefined),
+  ) as Partial<PipelineConfig>;
+  const mergedConfig = { ...DEFAULT_CONFIG, ...definedConfig, locationIntent };
   const configSnapshot = {
     topN: mergedConfig.topN,
     minSuitabilityScore: mergedConfig.minSuitabilityScore,
@@ -394,9 +403,11 @@ export async function runPipeline(
     logger.warn("Failed to capture pipeline run settings snapshot", { error });
   }
 
+  const trigger = options?.trigger ?? null;
   const pipelineRun = await pipelineRepo.createPipelineRun({
     configSnapshot,
     savedDetails,
+    trigger,
   });
   tenantState.activePipelineRunId = pipelineRun.id;
 
