@@ -152,6 +152,17 @@ export const createAppSettings = (
   pipelineWebhookUrl: { value: "", default: "", override: null },
   jobCompleteWebhookUrl: { value: "", default: "", override: null },
   profileProjects: [],
+  llmFallback: {
+    configured: false,
+    active: false,
+    provider: null,
+    model: null,
+    forced: false,
+    tripped: false,
+    trippedUntil: null,
+    inactiveReason: null,
+    lastFailover: null,
+  },
   resumeProjects: {
     value: { maxProjects: 3, lockedProjectIds: [], aiSelectableProjectIds: [] },
     default: {

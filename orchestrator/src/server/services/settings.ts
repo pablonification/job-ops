@@ -3,6 +3,7 @@ import { getJobOpsAppConfig } from "@server/config/app-mode";
 import * as settingsRepo from "@server/repositories/settings";
 import { getCurrentAccountEntitlements } from "@server/services/account-entitlements";
 import { getOriginalEnvValue } from "@server/services/envSettings";
+import { describeLlmFallbackStatus } from "@server/services/llm/failover/status";
 import {
   getDefaultModelForProvider,
   settingsRegistry,
@@ -368,6 +369,11 @@ export async function getEffectiveSettings(): Promise<AppSettings> {
 
   // Always expose the effective base resume id for the active RxResume mode.
   result.rxresumeBaseResumeId = rxresumeBaseResumeId;
+
+  result.llmFallback = describeLlmFallbackStatus({
+    primaryProvider: effectiveLlmProvider,
+    primaryBaseUrl: result.llmBaseUrl?.value ?? null,
+  });
 
   return result as AppSettings;
 }

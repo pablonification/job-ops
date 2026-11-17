@@ -1,6 +1,7 @@
 import type {
   ChatStyleLanguageMode,
   ChatStyleManualLanguage,
+  LlmFallbackStatus,
   LlmPurposeApiKeyHints,
   LlmPurposeOverrides,
   RoleCvPipelineMode,
@@ -20,6 +21,7 @@ export type ModelValues = EffectiveDefault<string> & {
   llmApiKeyHint: string | null;
   llmPurposeOverrides: LlmPurposeOverrides;
   llmPurposeApiKeyHints: LlmPurposeApiKeyHints;
+  llmFallback: LlmFallbackStatus | null;
 };
 
 export type WebhookValues = EffectiveDefault<string>;
