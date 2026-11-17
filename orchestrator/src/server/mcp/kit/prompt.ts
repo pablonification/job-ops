@@ -45,13 +45,19 @@ function blankToUndefined(value: unknown): unknown {
   return typeof value === "string" && value.trim() === "" ? undefined : value;
 }
 
-/** A required job id argument. */
+/**
+ * A required job id argument. Ids are UUIDs; the pattern also refuses
+ * anything that could change the meaning of the text it is placed in.
+ */
 export function promptJobIdArg() {
   return z
     .string()
     .trim()
     .min(1, "jobId is required")
-    .max(200)
+    .regex(
+      /^[A-Za-z0-9_-]{1,64}$/,
+      "jobId must be a job id: letters, digits, - and _ only (at most 64)",
+    )
     .describe("Job id (from list_jobs or the job page URL in JobOps).");
 }
 

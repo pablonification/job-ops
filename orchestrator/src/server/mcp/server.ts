@@ -27,7 +27,9 @@ import {
   type McpToolDefinition,
   toolResult,
   toPromptArguments,
+  toSafeErrorPayload,
   toToolErrorResult,
+  truncateToolMessage,
 } from "./kit";
 import { toToolInputSchema } from "./kit/json-schema";
 import { getRegisteredPrompts, getRegisteredTools } from "./registry";
@@ -110,7 +112,9 @@ export function toPromptDescriptor(prompt: McpPromptDefinition): Prompt {
 
 /**
  * Validates the string arguments and renders the playbook. Invalid arguments
- * are a protocol error (InvalidParams), as for an unknown prompt.
+ * are a protocol error (InvalidParams), as for an unknown prompt; anything
+ * `render` throws is mapped like a tool error (code kept, message cut to 500
+ * characters, internals hidden).
  */
 export function renderPrompt(
   prompt: McpPromptDefinition,
@@ -122,14 +126,24 @@ export function renderPrompt(
   if (!parsed.success) {
     throw new McpError(
       ErrorCode.InvalidParams,
-      `Invalid arguments for prompt ${prompt.name}: ${formatZodIssues(parsed.error)}`,
+      truncateToolMessage(
+        `Invalid arguments for prompt ${prompt.name}: ${formatZodIssues(parsed.error)}`,
+      ),
     );
   }
-  const text = prompt.render(parsed.data, {
-    scope: context.scope,
-    requestOrigin: context.requestOrigin,
-    now,
-  });
+  let text: string;
+  try {
+    text = prompt.render(parsed.data, {
+      scope: context.scope,
+      requestOrigin: context.requestOrigin,
+      now,
+    });
+  } catch (error) {
+    const payload = toSafeErrorPayload(error, { prompt: prompt.name });
+    throw new McpError(ErrorCode.InternalError, payload.message, {
+      code: payload.code,
+    });
+  }
   logger.info("MCP prompt rendered", {
     route: MCP_ROUTE,
     prompt: prompt.name,
@@ -190,7 +204,7 @@ export function createJobOpsMcpServer(input: {
     if (!prompt) {
       throw new McpError(
         ErrorCode.InvalidParams,
-        `Unknown prompt: ${request.params.name}`,
+        truncateToolMessage(`Unknown prompt: ${request.params.name}`),
       );
     }
     return runWithRequestContext(input.requestContext, () =>
