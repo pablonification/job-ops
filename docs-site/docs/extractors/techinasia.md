@@ -28,6 +28,10 @@ Defaults and constraints:
 - Each search term is sent separately with the country filter `Indonesia`.
 - Results are fetched 20 per page, with a pause of about 1.5 seconds between requests and a browser-like user agent.
 - The result limit (`jobspyResultsWanted`) caps jobs per search term, up to 200.
+- Cities: Tech in Asia has no city filter in its API, so job-ops filters by city itself before a job counts toward the limit. With cities selected, at most three times the limit is scanned per term.
+- City names are matched across English and Indonesian forms for the Jakarta districts (`South Jakarta` = `Jakarta Selatan` = `Jaksel`, and so on), South Tangerang, Yogyakarta (`Jogja`) and Surakarta (`Solo`). A city filter keeps jobs in that city or inside it: `Jakarta` keeps every Jakarta district, but `Jakarta Selatan` does not keep a job listed only as `Jakarta`.
+- Paging stops early when a page holds only jobs that an earlier search term already returned.
+- A run stops starting new requests after 8 minutes (the pipeline allows 10 per source) and keeps the jobs collected so far; the run then lists a source error saying it was cut short.
 - Salary is imported only when Tech in Asia shows it and the amount is above zero (for example `IDR 7,000,000–10,000,000 / month`).
 - Job links point to `https://www.techinasia.com/jobs/<id>`. When the employer uses an external application page, the apply link points there.
 - Every job carries the country Indonesia in its location (for example `Jakarta, Jakarta Raya, Indonesia`), so the shared country and city filter keeps it.
@@ -41,7 +45,8 @@ Defaults and constraints:
 
 ### A city filter drops jobs
 
-- Cities are matched by name. Tech in Asia usually gives the city as `Jakarta`, so a filter for `Jakarta` keeps those jobs, but a narrower filter such as `Jakarta Selatan` does not.
+- Tech in Asia usually gives the city as `Jakarta` without a district, so a filter for `Jakarta` keeps those jobs, but a district filter such as `Jakarta Selatan` does not.
+- With a narrow city filter, the scan limit (three times the result limit) can be reached before enough matching jobs are found.
 
 ### Tech in Asia temporarily fails
 

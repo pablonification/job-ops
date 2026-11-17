@@ -26,11 +26,15 @@ Kalibrr is a large Indonesian job board with many tech and graduate roles. The s
 Defaults and constraints:
 
 - Each search term is sent separately with the country filter `Indonesia`.
-- Kalibrr's own keyword matching is loose (a "Tax & Audit Staff" job can rank first for "software engineer"). job-ops therefore keeps a job only when every significant word of the search term appears in its title, description, or qualifications. Words of three letters or fewer (such as `go` or `qa`) must match a whole word; longer words also match longer forms (`engineer` matches `engineering`).
+- Kalibrr's own keyword matching is loose (a "Tax & Audit Staff" job can rank first for "software engineer"). job-ops therefore keeps a job only when its **title** contains every significant word of the search term; the description is not used. Separators are ignored (`back-end` = `backend` = `back end`) and common tech-role words count as the same word: engineer/developer/programmer, go/golang, SRE/site reliability, QA/quality assurance/test, frontend/FE, backend/BE, fullstack, DevOps, ML/machine learning, PM/product manager. In a search term, `software engineer` (or developer/programmer) means any engineer or developer title.
 - Results are fetched 20 per page, with a pause of about 1.5 seconds between requests and a browser-like user agent.
-- The result limit (`jobspyResultsWanted`) caps kept jobs per search term, up to 200. Because some results are dropped, at most twice that many results are scanned per term.
+- The result limit (`jobspyResultsWanted`) caps kept jobs per search term, up to 200. Because some results are dropped, at most three times that many results are scanned per term.
+- Cities: each selected city is sent to Kalibrr's `location` filter. Jakarta districts and South Tangerang are sent as their city (`Jakarta`, `Tangerang`), because Kalibrr labels districts both in English and in Indonesian; job-ops then keeps only jobs in the selected district.
+- City names are matched across English and Indonesian forms for the Jakarta districts (`South Jakarta` = `Jakarta Selatan` = `Jaksel`, and so on), South Tangerang, Yogyakarta (`Jogja`) and Surakarta (`Solo`). A city filter keeps jobs in that city or inside it: `Jakarta` keeps every Jakarta district, but `Jakarta Selatan` does not keep a job listed only as `Jakarta`.
+- Paging stops early when a page holds only jobs that an earlier search term already returned.
+- A run stops starting new requests after 8 minutes (the pipeline allows 10 per source) and keeps the jobs collected so far; the run then lists a source error saying it was cut short.
 - Salary is imported only when Kalibrr shows it.
-- Job links point to `https://www.kalibrr.com/c/<company>/jobs/<id>/<slug>`. When the employer redirects applications elsewhere, the apply link points there.
+- Job links point to `https://www.kalibrr.com/c/<company>/jobs/<id>` (without the title slug, so the link stays the same when the employer edits the title). When the employer redirects applications elsewhere, the apply link points there.
 - Every job carries the country Indonesia in its location (for example `Central Jakarta, DKI Jakarta, Indonesia`).
 
 ## Common problems
@@ -42,11 +46,11 @@ Defaults and constraints:
 
 ### A run returns fewer jobs than Kalibrr shows on its website
 
-- The stricter keyword check drops results that do not mention every word of the search term. Use shorter or more common terms, or add several terms.
+- The title check drops results whose title does not contain every word of the search term. Use shorter terms (for example `backend` instead of `backend engineer golang`), or add several terms.
 
 ### A city filter drops jobs
 
-- Kalibrr uses English district names such as `Central Jakarta` and `South Jakarta`. A filter for `Jakarta` keeps them; a filter for `Jakarta Selatan` does not match `South Jakarta`.
+- Jobs listed only as `Jakarta` (without a district) are dropped by a district filter such as `Jakarta Selatan`. Use `Jakarta` to keep all of them.
 
 ### Kalibrr temporarily fails
 
