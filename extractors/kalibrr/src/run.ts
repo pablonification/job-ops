@@ -1,72 +1,33 @@
 import {
+  asHttpUrl,
+  asIdentifier,
+  asNumber,
+  asRecord,
+  asString,
   buildIndonesianLocation,
   buildSalaryFields,
-  createPoliteJsonClient,
+  collectPages,
   INDONESIA_COUNTRY_NAME,
-  type JobBoardProgressEvent,
-  runTermSearches,
-} from "@shared/extractors/indonesia.js";
+  indonesianSearchCity,
+  isRelevantJobTitle,
+  type JobBoardRunOptions,
+  joinList,
+  namesOf,
+  runJobBoard,
+  type UnknownRecord,
+} from "@shared/extractors/indonesia/index.js";
 import type { LocationWorkplaceType } from "@shared/location-domain.js";
 import type { ExtractorRunResult } from "@shared/types/extractors";
 import type { CreateJobInput } from "@shared/types/jobs";
-import { htmlToPlainText, isRelevantToSearchTerm } from "./relevance";
+import { stripHtmlTags } from "@shared/utils/string.js";
 
 export const KALIBRR_SOURCE = "kalibrr";
 export const KALIBRR_LABEL = "Kalibrr";
 const KALIBRR_ORIGIN = "https://www.kalibrr.com";
 const KALIBRR_SEARCH_URL = `${KALIBRR_ORIGIN}/kjs/job_board/search`;
 const MAX_PAGE_SIZE = 20;
-/** Loose upstream matching drops some results; scan at most this many results per wanted job (at least one page). */
-const SCAN_FACTOR = 2;
 
-export interface RunKalibrrOptions {
-  searchTerms?: string[];
-  maxJobsPerTerm?: number;
-  pageSize?: number;
-  delayMs?: number;
-  fetchImpl?: typeof fetch;
-  sleep?: (ms: number) => Promise<void>;
-  shouldCancel?: () => boolean;
-  onProgress?: (event: JobBoardProgressEvent) => void;
-}
-
-type UnknownRecord = Record<string, unknown>;
-
-function asRecord(value: unknown): UnknownRecord | null {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as UnknownRecord)
-    : null;
-}
-
-function asString(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
-}
-
-function asNumber(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value)
-    ? value
-    : undefined;
-}
-
-function asIdentifier(value: unknown): string | undefined {
-  if (typeof value === "number" && Number.isInteger(value)) {
-    return String(value);
-  }
-  return asString(value);
-}
-
-function asHttpUrl(value: unknown): string | undefined {
-  const raw = asString(value);
-  if (!raw) return undefined;
-  try {
-    const url = new URL(raw);
-    return url.protocol === "http:" || url.protocol === "https:"
-      ? url.toString()
-      : undefined;
-  } catch {
-    return undefined;
-  }
-}
+export type RunKalibrrOptions = JobBoardRunOptions;
 
 function toWorkplaceType(row: UnknownRecord): LocationWorkplaceType {
   if (row.is_work_from_home === true) return "remote";
@@ -74,19 +35,15 @@ function toWorkplaceType(row: UnknownRecord): LocationWorkplaceType {
   return "onsite";
 }
 
+/**
+ * Kalibrr serves `/c/<company>/jobs/<id>` without the title slug, so the URL
+ * stays stable when an employer edits the title.
+ */
 export function buildKalibrrJobUrl(args: {
   companyCode: string;
   id: string;
-  slug?: string;
 }): string {
-  const path = [
-    "c",
-    encodeURIComponent(args.companyCode),
-    "jobs",
-    encodeURIComponent(args.id),
-    ...(args.slug ? [encodeURIComponent(args.slug)] : []),
-  ].join("/");
-  return `${KALIBRR_ORIGIN}/${path}`;
+  return `${KALIBRR_ORIGIN}/c/${encodeURIComponent(args.companyCode)}/jobs/${encodeURIComponent(args.id)}`;
 }
 
 function buildDescription(
@@ -94,9 +51,7 @@ function buildDescription(
   qualifications: string | undefined,
 ): string | undefined {
   if (!qualifications) return description;
-  const hasHeading = /^qualifications?\b/i.test(
-    htmlToPlainText(qualifications),
-  );
+  const hasHeading = /^qualifications?\b/i.test(stripHtmlTags(qualifications));
   const section = hasHeading
     ? qualifications
     : `<p><strong>Qualifications</strong></p>\n${qualifications}`;
@@ -117,11 +72,7 @@ export function mapKalibrrJob(value: unknown): CreateJobInput | null {
   const companyCode = asString(company?.code) ?? asString(companyInfo?.code);
   if (!id || !title || !employer || !companyCode) return null;
 
-  const jobUrl = buildKalibrrJobUrl({
-    companyCode,
-    id,
-    slug: asString(row.slug),
-  });
+  const jobUrl = buildKalibrrJobUrl({ companyCode, id });
   const address = asRecord(asRecord(row.google_location)?.address_components);
   const workplaceType = toWorkplaceType(row);
   const { location, locationEvidence } = buildIndonesianLocation({
@@ -141,9 +92,7 @@ export function mapKalibrrJob(value: unknown): CreateJobInput | null {
           interval: asString(row.salary_interval),
         });
   const skills = Array.isArray(row.job_sds_skills)
-    ? row.job_sds_skills
-        .map((item) => asString(asRecord(asRecord(item)?.sds_skill)?.name))
-        .filter((item): item is string => Boolean(item))
+    ? namesOf(row.job_sds_skills.map((item) => asRecord(item)?.sds_skill))
     : [];
   const applyUrl = asHttpUrl(row.apply_redirect_url);
 
@@ -168,7 +117,7 @@ export function mapKalibrrJob(value: unknown): CreateJobInput | null {
     jobFunction: asString(row.function),
     isRemote: workplaceType === "remote",
     workFromHomeType: workplaceType,
-    skills: skills.length > 0 ? skills.join(", ") : undefined,
+    skills: joinList(skills),
     vacancyCount: asNumber(row.number_of_openings),
     companyLogo: asHttpUrl(companyInfo?.logo) ?? asHttpUrl(company?.logo_small),
     companyUrlDirect: asHttpUrl(companyInfo?.url),
@@ -181,6 +130,8 @@ export function buildKalibrrSearchUrl(args: {
   searchTerm: string;
   offset: number;
   limit: number;
+  /** City for Kalibrr's `location` filter (it matches both "South Jakarta" and "Jakarta Selatan" for "Jakarta"). */
+  location?: string;
 }): URL {
   const url = new URL(KALIBRR_SEARCH_URL);
   url.searchParams.set(
@@ -190,78 +141,63 @@ export function buildKalibrrSearchUrl(args: {
   url.searchParams.set("offset", String(Math.max(0, Math.floor(args.offset))));
   url.searchParams.set("text", args.searchTerm);
   url.searchParams.set("country", INDONESIA_COUNTRY_NAME);
+  if (args.location) url.searchParams.set("location", args.location);
   return url;
 }
 
+/**
+ * Requested cities go to Kalibrr's `location` filter as their base city
+ * ("Jakarta Selatan" -> "Jakarta", because Kalibrr labels districts in both
+ * languages); the shared runner then keeps only jobs in the requested
+ * district. Kalibrr's keyword search is loose, so titles must match the term.
+ */
 export async function runKalibrr(
   options: RunKalibrrOptions = {},
 ): Promise<ExtractorRunResult> {
-  const searchTerms = options.searchTerms?.length
-    ? options.searchTerms
-    : ["software engineer"];
-  const maxJobsPerTerm = Math.max(1, Math.floor(options.maxJobsPerTerm ?? 50));
-  const pageSize = Math.min(
-    MAX_PAGE_SIZE,
-    Math.max(1, Math.floor(options.pageSize ?? MAX_PAGE_SIZE)),
-  );
-  const maxScannedPerTerm = Math.max(maxJobsPerTerm * SCAN_FACTOR, pageSize);
-  const client = createPoliteJsonClient({
+  return runJobBoard({
     label: KALIBRR_LABEL,
-    fetchImpl: options.fetchImpl,
-    delayMs: options.delayMs,
-    sleep: options.sleep,
-  });
-
-  return runTermSearches({
-    searchTerms,
-    shouldCancel: options.shouldCancel,
-    onProgress: options.onProgress,
-    searchTerm: async ({ searchTerm, accept }) => {
+    options,
+    maxPageSize: MAX_PAGE_SIZE,
+    runTerm: async (context) => {
+      const locations = context.cities.length
+        ? [...new Set(context.cities.map(indonesianSearchCity))]
+        : [undefined];
       let added = 0;
-      let offset = 0;
-      while (added < maxJobsPerTerm && offset < maxScannedPerTerm) {
-        if (options.shouldCancel?.()) return;
-        const payload = asRecord(
-          await client.getJson(
-            buildKalibrrSearchUrl({
-              searchTerm,
-              offset,
-              limit: Math.min(pageSize, maxScannedPerTerm - offset),
-            }),
-          ),
+      for (const location of locations) {
+        if (added >= context.maxJobs || context.shouldStop()) return;
+        added += await collectPages(
+          { ...context, maxJobs: context.maxJobs - added },
+          {
+            toJob: mapKalibrrJob,
+            consume: (job) =>
+              isRelevantJobTitle(job.title, context.searchTerm)
+                ? context.accept(job)
+                : "filtered",
+            fetchPage: async ({ offset, limit }) => {
+              const payload = asRecord(
+                await context.client.getJson(
+                  buildKalibrrSearchUrl({
+                    searchTerm: context.searchTerm,
+                    offset,
+                    limit,
+                    location,
+                  }),
+                ),
+              );
+              if (!Array.isArray(payload?.jobs)) {
+                throw new Error(
+                  `${KALIBRR_LABEL} returned an invalid jobs response`,
+                );
+              }
+              const total = asNumber(payload.count);
+              return {
+                items: payload.jobs,
+                hasMore:
+                  total === undefined || offset + payload.jobs.length < total,
+              };
+            },
+          },
         );
-        if (!Array.isArray(payload?.jobs)) {
-          throw new Error(`${KALIBRR_LABEL} returned an invalid jobs response`);
-        }
-
-        for (const value of payload.jobs) {
-          const row = asRecord(value);
-          const job = mapKalibrrJob(row);
-          if (
-            !job ||
-            !isRelevantToSearchTerm(
-              {
-                title: job.title,
-                description: asString(row?.description),
-                qualifications: asString(row?.qualifications),
-              },
-              searchTerm,
-            )
-          ) {
-            continue;
-          }
-          if (accept(job)) added += 1;
-          if (added >= maxJobsPerTerm) break;
-        }
-
-        offset += payload.jobs.length;
-        const total = asNumber(payload.count);
-        if (
-          payload.jobs.length === 0 ||
-          (total !== undefined && offset >= total)
-        ) {
-          return;
-        }
       }
     },
   });

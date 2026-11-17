@@ -1,7 +1,6 @@
 import { matchJobLocationIntent } from "@shared/job-matching";
 import { normalizeLocationIntent } from "@shared/location-domain";
 import { describe, expect, it, vi } from "vitest";
-import { isRelevantToSearchTerm } from "../src/relevance";
 import { buildKalibrrSearchUrl, mapKalibrrJob, runKalibrr } from "../src/run";
 import sample from "./fixtures/search.json";
 
@@ -16,8 +15,21 @@ function jsonResponse(data: unknown, status = 200): Response {
 const [taxJob, softwareJob] = sample.jobs;
 const noSleep = vi.fn().mockResolvedValue(undefined);
 
+function inCity(row: typeof softwareJob, city: string, id: number) {
+  return {
+    ...row,
+    id,
+    google_location: {
+      address_components: {
+        ...row.google_location.address_components,
+        city,
+      },
+    },
+  };
+}
+
 describe("Kalibrr extractor", () => {
-  it("builds an Indonesia search URL with small pages", () => {
+  it("builds an Indonesia search URL with small pages and an optional city", () => {
     const url = buildKalibrrSearchUrl({
       searchTerm: "software engineer",
       offset: 40,
@@ -31,10 +43,20 @@ describe("Kalibrr extractor", () => {
     expect(url.searchParams.get("country")).toBe("Indonesia");
     expect(url.searchParams.get("limit")).toBe("20");
     expect(url.searchParams.get("offset")).toBe("40");
+    expect(url.searchParams.has("location")).toBe(false);
+    expect(
+      buildKalibrrSearchUrl({
+        searchTerm: "qa",
+        offset: 0,
+        limit: 20,
+        location: "Jakarta",
+      }).searchParams.get("location"),
+    ).toBe("Jakarta");
   });
 
-  it("maps a recorded job into a normalized job", () => {
+  it("maps a recorded job into a normalized job with a slug-free URL", () => {
     const job = mapKalibrrJob(softwareJob);
+    const url = "https://www.kalibrr.com/c/pt-akhdani-reka-solusi/jobs/262972";
 
     expect(job).toEqual(
       expect.objectContaining({
@@ -42,10 +64,8 @@ describe("Kalibrr extractor", () => {
         sourceJobId: "262972",
         title: "Software Engineer",
         employer: "PT Akhdani Reka Solusi",
-        jobUrl:
-          "https://www.kalibrr.com/c/pt-akhdani-reka-solusi/jobs/262972/software-engineer-5",
-        applicationLink:
-          "https://www.kalibrr.com/c/pt-akhdani-reka-solusi/jobs/262972/software-engineer-5",
+        jobUrl: url,
+        applicationLink: url,
         location: "Central Jakarta, DKI Jakarta, Indonesia",
         datePosted: "2026-11-04T02:58:41.312837+00:00",
         deadline: "2026-12-19T17:00:00+00:00",
@@ -58,6 +78,9 @@ describe("Kalibrr extractor", () => {
         companyUrlDirect: "http://www.akhdani.co.id/",
       }),
     );
+    expect(
+      mapKalibrrJob({ ...softwareJob, name: "Renamed role" })?.jobUrl,
+    ).toBe(url);
     expect(job?.salary).toBeUndefined();
     expect(job?.jobDescription).toContain(
       "Design, develop, test, and maintain",
@@ -68,17 +91,19 @@ describe("Kalibrr extractor", () => {
     expect(job?.jobDescription).toContain("Proficient in one or more");
     expect(job?.locationEvidence).toMatchObject({
       country: "Indonesia",
-      city: "Central Jakarta",
+      city: "Jakarta Pusat",
       regionHints: ["DKI Jakarta"],
       source: "kalibrr",
     });
 
-    const intent = normalizeLocationIntent({
-      selectedCountry: "indonesia",
-      cityLocations: ["Jakarta"],
-    });
     if (!job) throw new Error("expected a job");
-    expect(matchJobLocationIntent(job, intent).matched).toBe(true);
+    for (const city of ["Jakarta", "Jakarta Pusat", "Central Jakarta"]) {
+      const intent = normalizeLocationIntent({
+        selectedCountry: "indonesia",
+        cityLocations: [city],
+      });
+      expect(matchJobLocationIntent(job, intent).matched).toBe(true);
+    }
   });
 
   it("maps published salary, hybrid work and redirect apply links", () => {
@@ -108,27 +133,7 @@ describe("Kalibrr extractor", () => {
     ).toBeUndefined();
   });
 
-  it("tightens Kalibrr's loose keyword matching", () => {
-    const relevance = (row: typeof taxJob, term: string) =>
-      isRelevantToSearchTerm(
-        {
-          title: row.name,
-          description: row.description,
-          qualifications: row.qualifications,
-        },
-        term,
-      );
-
-    expect(relevance(taxJob, "software engineer")).toBe(false);
-    expect(relevance(softwareJob, "software engineer")).toBe(true);
-    expect(relevance(softwareJob, "Engineering")).toBe(false);
-    expect(relevance(softwareJob, "kotlin")).toBe(true);
-    expect(relevance(softwareJob, "go")).toBe(false);
-    expect(relevance(taxJob, "tax & audit")).toBe(true);
-    expect(relevance(taxJob, "and")).toBe(true);
-  });
-
-  it("drops irrelevant results, pages by offset and caps per term", async () => {
+  it("drops results whose title does not match the term, pages by offset and caps per term", async () => {
     const response = (offset: number) =>
       jsonResponse({
         ...sample,
@@ -163,12 +168,43 @@ describe("Kalibrr extractor", () => {
     expect(offsets).toEqual(["0", "2", "4"]);
   });
 
+  it("sends districts to the location filter as their city and keeps only the district", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      jsonResponse({
+        ...sample,
+        count: 3,
+        jobs: [
+          inCity(softwareJob, "South Jakarta", 1),
+          inCity(softwareJob, "Jakarta Selatan", 2),
+          inCity(softwareJob, "West Jakarta", 3),
+        ],
+      }),
+    );
+
+    const result = await runKalibrr({
+      searchTerms: ["software engineer"],
+      cities: ["Jakarta Selatan", "South Jakarta"],
+      fetchImpl: fetchMock,
+      sleep: noSleep,
+    });
+
+    expect(result.jobs.map((job) => job.sourceJobId)).toEqual(["1", "2"]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const url = fetchMock.mock.calls[0][0] as URL;
+    expect(url.searchParams.get("location")).toBe("Jakarta");
+  });
+
   it("bounds the number of scanned results when matches are rare", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValue(
-        jsonResponse({ ...sample, count: 1000, jobs: [taxJob, taxJob] }),
-      );
+    const fetchMock = vi.fn().mockImplementation(async (url: URL) =>
+      jsonResponse({
+        ...sample,
+        count: 1000,
+        jobs: [0, 1].map((index) => ({
+          ...taxJob,
+          id: Number(url.searchParams.get("offset")) + index,
+        })),
+      }),
+    );
 
     const result = await runKalibrr({
       searchTerms: ["software engineer"],
@@ -179,8 +215,8 @@ describe("Kalibrr extractor", () => {
     });
 
     expect(result).toEqual({ success: true, jobs: [] });
-    // Twice the cap (4 results) => two pages of two.
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    // Three times the cap (6 results) => three pages of two.
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
   it("returns a status-only error when the source fails", async () => {

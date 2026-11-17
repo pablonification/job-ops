@@ -161,6 +161,58 @@ describe("Tech in Asia extractor", () => {
     expect(noSleep).toHaveBeenCalledWith(1_500);
   });
 
+  it("stops paging a term whose first page was already taken by an earlier term", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(page(["a", "b"], { last_page: 61 })))
+      .mockResolvedValueOnce(jsonResponse(page(["a", "b"], { last_page: 61 })));
+
+    const result = await runTechInAsia({
+      searchTerms: ["qa", "qa automation"],
+      maxJobsPerTerm: 2,
+      pageSize: 2,
+      fetchImpl: fetchMock,
+      sleep: noSleep,
+    });
+
+    expect(result.jobs.map((job) => job.sourceJobId)).toEqual(["a", "b"]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("filters requested cities client-side before counting toward the cap", async () => {
+    const bandung = {
+      ...sample.data[0],
+      id: "bdg",
+      city: { ...sample.data[0].city, name: "Bandung", state: null },
+    };
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      jsonResponse({
+        ...sample,
+        last_page: 1,
+        data: [sample.data[0], sample.data[1], bandung],
+      }),
+    );
+
+    const result = await runTechInAsia({
+      searchTerms: ["qa"],
+      cities: ["Bandung"],
+      maxJobsPerTerm: 1,
+      fetchImpl: fetchMock,
+      sleep: noSleep,
+    });
+
+    expect(result.jobs.map((job) => job.sourceJobId)).toEqual(["bdg"]);
+    expect(result.jobs[0].location).toBe("Bandung, Indonesia");
+    // No server-side city parameter is sent.
+    const url = fetchMock.mock.calls[0][0] as URL;
+    expect([...url.searchParams.keys()].sort()).toEqual([
+      "country_name[]",
+      "page",
+      "per_page",
+      "query",
+    ]);
+  });
+
   it("emits per-term progress and honours cancellation", async () => {
     let cancelled = false;
     const events: string[] = [];

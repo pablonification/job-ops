@@ -18,7 +18,7 @@ describe("dealls manifest", () => {
     });
   });
 
-  it("forwards the results-wanted cap and per-term progress", async () => {
+  it("forwards the results-wanted cap, requested cities and per-term progress", async () => {
     const { manifest } = await import("../src/manifest");
     const { runDealls } = await import("../src/run");
     vi.mocked(runDealls).mockImplementation(async (options) => {
@@ -36,7 +36,7 @@ describe("dealls manifest", () => {
     await manifest.run({
       source: "dealls",
       selectedSources: ["dealls"],
-      settings: { jobspyResultsWanted: "30" },
+      settings: { jobspyResultsWanted: "30", searchCities: "Jakarta Selatan" },
       searchTerms: ["backend engineer"],
       selectedCountry: "indonesia",
       onProgress,
@@ -47,6 +47,7 @@ describe("dealls manifest", () => {
       expect.objectContaining({
         searchTerms: ["backend engineer"],
         maxJobsPerTerm: 30,
+        cities: ["Jakarta Selatan"],
         getExistingJobUrls,
       }),
     );

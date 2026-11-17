@@ -174,7 +174,44 @@ describe("Dealls extractor", () => {
     });
   });
 
-  it("keeps list data and reports an error when a detail request fails", async () => {
+  it("does not import a job whose detail request failed, so the next run retries it", async () => {
+    const internDetail = {
+      ...detailSample,
+      data: {
+        result: {
+          ...detail,
+          id: internDoc.id,
+          slug: internDoc.slug,
+          role: internDoc.role,
+          company: {
+            ...detail.company,
+            slug: "dexa-group",
+            name: "Dexa Group",
+          },
+        },
+      },
+    };
+    const result = await runDealls({
+      searchTerms: ["software engineer"],
+      maxJobsPerTerm: 2,
+      fetchImpl: routedFetch({
+        list: () => jsonResponse(searchSample),
+        "/v1/job-portal/job/slug/software-engineer-42": () =>
+          jsonResponse({}, 502),
+        "/v1/job-portal/job/slug/software-engineer-intern-14": () =>
+          jsonResponse(internDetail),
+      }),
+      sleep: noSleep,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.jobs.map((job) => job.jobUrl)).toEqual([INTERN_URL]);
+    expect(result.sourceErrors).toEqual([
+      "Dealls: 1 job detail request(s) failed; those jobs were not imported and will be retried on the next run (term: software engineer)",
+    ]);
+  });
+
+  it("fails the source when every detail request fails", async () => {
     const result = await runDealls({
       searchTerms: ["software engineer"],
       maxJobsPerTerm: 1,
@@ -186,11 +223,77 @@ describe("Dealls extractor", () => {
       sleep: noSleep,
     });
 
+    expect(result).toEqual({
+      success: false,
+      jobs: [],
+      error:
+        "Dealls: 1 job detail request(s) failed; those jobs were not imported and will be retried on the next run (term: software engineer)",
+    });
+  });
+
+  it("filters requested cities before fetching details", async () => {
+    const fetchMock = routedFetch({
+      list: () =>
+        jsonResponse({
+          ...searchSample,
+          data: { ...searchSample.data, totalPages: 1 },
+        }),
+      "/v1/job-portal/job/slug/software-engineer-intern-14": () =>
+        jsonResponse({
+          ...detailSample,
+          data: {
+            result: {
+              ...detail,
+              slug: internDoc.slug,
+              location: {
+                country: internDoc.country,
+                city: internDoc.city,
+              },
+              company: { ...detail.company, slug: "dexa-group" },
+            },
+          },
+        }),
+    });
+
+    const result = await runDealls({
+      searchTerms: ["software engineer"],
+      cities: ["South Tangerang"],
+      maxJobsPerTerm: 2,
+      fetchImpl: fetchMock,
+      sleep: noSleep,
+    });
+
+    expect(result.jobs.map((job) => job.jobUrl)).toEqual([INTERN_URL]);
+    // The Jakarta Utara job never gets a detail request.
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("returns the jobs collected so far when the time budget runs out", async () => {
+    let clock = 0;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      clock += 60_000;
+      const url = new URL(String(input));
+      return url.pathname.startsWith("/v1/explore-job/")
+        ? jsonResponse(searchSample)
+        : jsonResponse(detailSample);
+    });
+
+    const result = await runDealls({
+      searchTerms: ["software engineer", "backend"],
+      maxJobsPerTerm: 2,
+      fetchImpl: fetchMock,
+      sleep: noSleep,
+      now: () => clock,
+      timeBudgetMs: 120_000,
+    });
+
+    // List (0 -> 60s), first detail (60 -> 120s); the second detail and the
+    // next term would start past the 2-minute budget.
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(result.success).toBe(true);
-    expect(result.jobs).toHaveLength(1);
-    expect(result.jobs[0].jobDescription).toBeUndefined();
+    expect(result.jobs.map((job) => job.jobUrl)).toEqual([ENGINEER_URL]);
     expect(result.sourceErrors).toEqual([
-      "Dealls: 1 job detail request(s) failed; imported without descriptions (term: software engineer)",
+      "Dealls: stopped after 2 minutes to stay within the source time limit; kept the 1 jobs collected so far",
     ]);
   });
 

@@ -1,12 +1,22 @@
 import {
+  asHttpUrl,
+  asNumber,
+  asRecord,
+  asString,
+  asStringList,
   buildIndonesianLocation,
   buildSalaryFields,
-  createPoliteJsonClient,
+  collectPages,
+  formatRange,
   INDONESIA_COUNTRY_NAME,
-  type JobBoardProgressEvent,
-  runTermSearches,
-} from "@shared/extractors/indonesia.js";
-import type { LocationWorkplaceType } from "@shared/location-domain.js";
+  type JobBoardRunOptions,
+  joinList,
+  namesOf,
+  runJobBoard,
+  TimeBudgetExceededError,
+  toWorkplaceType,
+  type UnknownRecord,
+} from "@shared/extractors/indonesia/index.js";
 import type { ExtractorRunResult } from "@shared/types/extractors";
 import type { CreateJobInput } from "@shared/types/jobs";
 
@@ -29,72 +39,9 @@ const EMPLOYMENT_TYPE_LABELS: Record<string, string> = {
   freelance: "Freelance",
 };
 
-export interface RunDeallsOptions {
-  searchTerms?: string[];
-  maxJobsPerTerm?: number;
-  pageSize?: number;
-  delayMs?: number;
-  fetchImpl?: typeof fetch;
-  sleep?: (ms: number) => Promise<void>;
+export interface RunDeallsOptions extends JobBoardRunOptions {
   /** Already-imported job URLs; their detail requests are skipped. */
   getExistingJobUrls?: () => Promise<string[]>;
-  shouldCancel?: () => boolean;
-  onProgress?: (event: JobBoardProgressEvent) => void;
-}
-
-type UnknownRecord = Record<string, unknown>;
-
-function asRecord(value: unknown): UnknownRecord | null {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as UnknownRecord)
-    : null;
-}
-
-function asString(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
-}
-
-function asNumber(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value)
-    ? value
-    : undefined;
-}
-
-function asHttpUrl(value: unknown): string | undefined {
-  const raw = asString(value);
-  if (!raw) return undefined;
-  try {
-    const url = new URL(raw);
-    return url.protocol === "http:" || url.protocol === "https:"
-      ? url.toString()
-      : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function asStringList(value: unknown): string[] {
-  return Array.isArray(value)
-    ? value.map(asString).filter((item): item is string => Boolean(item))
-    : [];
-}
-
-function skillNames(value: unknown): string[] {
-  return Array.isArray(value)
-    ? value
-        .map((item) => asString(asRecord(item)?.name))
-        .filter((item): item is string => Boolean(item))
-    : [];
-}
-
-function toWorkplaceType(value: unknown): LocationWorkplaceType | null {
-  const normalized = asString(value)
-    ?.toLowerCase()
-    .replace(/[^a-z]/g, "");
-  if (normalized === "remote") return "remote";
-  if (normalized === "hybrid") return "hybrid";
-  if (normalized === "onsite") return "onsite";
-  return null;
 }
 
 function cleanHtml(value: unknown): string | undefined {
@@ -171,14 +118,12 @@ export function mapDeallsJob(
   );
   const skills = [
     ...new Set([
-      ...skillNames(list?.skills),
-      ...skillNames(asRecord(detail?.candidatePreference)?.skills),
+      ...namesOf(list?.skills),
+      ...namesOf(asRecord(detail?.candidatePreference)?.skills),
     ]),
   ];
   const applyUrl = asHttpUrl(pick("externalPlatformApplyUrl"));
   const companySize = asRecord(company?.size);
-  const sizeStart = asNumber(companySize?.start);
-  const sizeEnd = asNumber(companySize?.end);
 
   return {
     source: DEALLS_SOURCE,
@@ -193,24 +138,22 @@ export function mapDeallsJob(
     jobDescription: buildDescription(detail),
     datePosted: asString(pick("publishedAt")),
     ...salary,
-    jobType:
-      employmentTypes.length > 0 ? employmentTypes.join(", ") : undefined,
+    jobType: joinList(employmentTypes),
     jobFunction:
       asString(asRecord(detail?.jobRoleSubCategory)?.name) ??
       asString(asRecord(detail?.jobRoleCategory)?.name),
     isRemote: workplaceType === "remote",
     workFromHomeType: workplaceType ?? undefined,
-    skills: skills.length > 0 ? skills.join(", ") : undefined,
+    skills: joinList(skills),
     companyLogo: asHttpUrl(company?.logoUrl),
     companyUrlDirect: asHttpUrl(company?.website),
     companyIndustry: asString(company?.sector),
     companyDescription: cleanHtml(company?.description),
-    companyNumEmployees:
-      sizeStart === undefined
-        ? undefined
-        : sizeEnd === undefined
-          ? `${sizeStart}+ employees`
-          : `${sizeStart}–${sizeEnd} employees`,
+    companyNumEmployees: formatRange(
+      asNumber(companySize?.start),
+      asNumber(companySize?.end),
+      "employees",
+    ),
   };
 }
 
@@ -241,25 +184,15 @@ function isClosed(detail: UnknownRecord | null): boolean {
   );
 }
 
+/**
+ * Dealls has no verified city filter, so requested cities are applied
+ * client-side before a job counts toward the cap. Detail requests are skipped
+ * for job URLs already in job-ops; a job whose detail request fails is not
+ * imported, so the next run fetches it again.
+ */
 export async function runDealls(
   options: RunDeallsOptions = {},
 ): Promise<ExtractorRunResult> {
-  const searchTerms = options.searchTerms?.length
-    ? options.searchTerms
-    : ["software engineer"];
-  const maxJobsPerTerm = Math.max(1, Math.floor(options.maxJobsPerTerm ?? 50));
-  const pageSize = Math.min(
-    MAX_PAGE_SIZE,
-    Math.max(1, Math.floor(options.pageSize ?? MAX_PAGE_SIZE)),
-    maxJobsPerTerm,
-  );
-  const client = createPoliteJsonClient({
-    label: DEALLS_LABEL,
-    fetchImpl: options.fetchImpl,
-    delayMs: options.delayMs,
-    sleep: options.sleep,
-  });
-  const processedUrls = new Set<string>();
   let knownUrlsPromise: Promise<Set<string>> | null = null;
   const getKnownUrls = (): Promise<Set<string>> => {
     if (!knownUrlsPromise) {
@@ -273,44 +206,49 @@ export async function runDealls(
     return knownUrlsPromise;
   };
 
-  return runTermSearches({
-    searchTerms,
-    shouldCancel: options.shouldCancel,
-    onProgress: options.onProgress,
-    searchTerm: async ({
-      searchTerm,
-      termIndex,
-      termTotal,
-      accept,
-      reportError,
-    }) => {
+  return runJobBoard({
+    label: DEALLS_LABEL,
+    options,
+    maxPageSize: MAX_PAGE_SIZE,
+    runTerm: async (context) => {
       // 1. Collect list items for this term, up to the per-term cap.
       const candidates: Array<{ row: UnknownRecord; job: CreateJobInput }> = [];
-      for (let page = 1; candidates.length < maxJobsPerTerm; page += 1) {
-        if (options.shouldCancel?.()) return;
-        const payload = asRecord(
-          asRecord(
-            await client.getJson(
-              buildDeallsSearchUrl({ searchTerm, page, limit: pageSize }),
-            ),
-          )?.data,
-        );
-        if (!Array.isArray(payload?.docs)) {
-          throw new Error(`${DEALLS_LABEL} returned an invalid jobs response`);
-        }
-
-        for (const value of payload.docs) {
-          const row = asRecord(value);
-          const job = row ? mapDeallsJob(row) : null;
-          if (!row || !job || processedUrls.has(job.jobUrl)) continue;
-          processedUrls.add(job.jobUrl);
-          candidates.push({ row, job });
-          if (candidates.length >= maxJobsPerTerm) break;
-        }
-
-        const totalPages = asNumber(payload.totalPages) ?? page;
-        if (payload.docs.length === 0 || page >= totalPages) break;
-      }
+      await collectPages(context, {
+        toJob: (item) => mapDeallsJob(item),
+        consume: (job, item) => {
+          if (
+            context.isCollected(job.jobUrl) ||
+            candidates.some((candidate) => candidate.job.jobUrl === job.jobUrl)
+          ) {
+            return "duplicate";
+          }
+          if (!context.matchesCities(job)) return "filtered";
+          candidates.push({ row: asRecord(item) ?? {}, job });
+          return "added";
+        },
+        fetchPage: async ({ number, limit }) => {
+          const payload = asRecord(
+            asRecord(
+              await context.client.getJson(
+                buildDeallsSearchUrl({
+                  searchTerm: context.searchTerm,
+                  page: number,
+                  limit,
+                }),
+              ),
+            )?.data,
+          );
+          if (!Array.isArray(payload?.docs)) {
+            throw new Error(
+              `${DEALLS_LABEL} returned an invalid jobs response`,
+            );
+          }
+          return {
+            items: payload.docs,
+            hasMore: number < (asNumber(payload.totalPages) ?? number),
+          };
+        },
+      });
 
       // 2. Fetch details for jobs that are not already imported.
       const knownUrls = candidates.length > 0 ? await getKnownUrls() : null;
@@ -318,31 +256,33 @@ export async function runDealls(
       let detailsSkipped = 0;
       let detailFailures = 0;
       for (const { row, job } of candidates) {
-        if (options.shouldCancel?.()) return;
+        if (context.shouldStop()) break;
         if (knownUrls?.has(job.jobUrl)) {
           detailsSkipped += 1;
-          accept(job);
+          context.accept(job);
         } else {
-          const slug = asString(row.slug) as string;
           try {
             const detail = asRecord(
               asRecord(
-                asRecord(await client.getJson(buildDeallsDetailUrl(slug)))
-                  ?.data,
+                asRecord(
+                  await context.client.getJson(
+                    buildDeallsDetailUrl(asString(row.slug) ?? ""),
+                  ),
+                )?.data,
               )?.result,
             );
-            if (!isClosed(detail)) accept(mapDeallsJob(row, detail) ?? job);
-          } catch {
+            if (!detail) {
+              throw new Error(`${DEALLS_LABEL} returned an invalid job detail`);
+            }
+            const detailed = mapDeallsJob(row, detail);
+            if (detailed && !isClosed(detail)) context.accept(detailed);
+          } catch (error) {
+            if (error instanceof TimeBudgetExceededError) throw error;
             detailFailures += 1;
-            accept(job);
           }
           detailsFetched += 1;
         }
-        options.onProgress?.({
-          type: "details",
-          termIndex,
-          termTotal,
-          searchTerm,
+        context.reportDetails({
           detailsTotal: candidates.length,
           detailsFetched,
           detailsSkipped,
@@ -350,8 +290,8 @@ export async function runDealls(
       }
 
       if (detailFailures > 0) {
-        reportError(
-          `${DEALLS_LABEL}: ${detailFailures} job detail request(s) failed; imported without descriptions`,
+        context.reportError(
+          `${DEALLS_LABEL}: ${detailFailures} job detail request(s) failed; those jobs were not imported and will be retried on the next run`,
         );
       }
     },

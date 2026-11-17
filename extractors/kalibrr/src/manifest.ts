@@ -1,8 +1,7 @@
 import {
   INDONESIA_SUPPORTED_COUNTRY_KEYS,
-  resolveMaxJobsPerTerm,
-  toExtractorProgress,
-} from "@shared/extractors/indonesia.js";
+  jobBoardOptionsFromContext,
+} from "@shared/extractors/indonesia/index.js";
 import type { ExtractorManifest } from "@shared/types/extractors";
 import { KALIBRR_LABEL, runKalibrr } from "./run";
 
@@ -16,17 +15,7 @@ export const manifest: ExtractorManifest = {
   },
   async run(context) {
     if (context.shouldCancel?.()) return { success: true, jobs: [] };
-
-    return runKalibrr({
-      searchTerms: context.searchTerms,
-      maxJobsPerTerm: resolveMaxJobsPerTerm(context.settings),
-      shouldCancel: context.shouldCancel,
-      onProgress: (event) => {
-        if (!context.shouldCancel?.()) {
-          context.onProgress?.(toExtractorProgress(KALIBRR_LABEL, event));
-        }
-      },
-    });
+    return runKalibrr(jobBoardOptionsFromContext(context, KALIBRR_LABEL));
   },
 };
 

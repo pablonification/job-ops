@@ -18,7 +18,7 @@ describe("kalibrr manifest", () => {
     });
   });
 
-  it("forwards the results-wanted cap and per-term progress", async () => {
+  it("forwards the results-wanted cap, requested cities and per-term progress", async () => {
     const { manifest } = await import("../src/manifest");
     const { runKalibrr } = await import("../src/run");
     vi.mocked(runKalibrr).mockImplementation(async (options) => {
@@ -35,7 +35,7 @@ describe("kalibrr manifest", () => {
     await manifest.run({
       source: "kalibrr",
       selectedSources: ["kalibrr"],
-      settings: { jobspyResultsWanted: "30" },
+      settings: { jobspyResultsWanted: "30", searchCities: "Jakarta Selatan" },
       searchTerms: ["backend engineer"],
       selectedCountry: "indonesia",
       onProgress,
@@ -45,6 +45,7 @@ describe("kalibrr manifest", () => {
       expect.objectContaining({
         searchTerms: ["backend engineer"],
         maxJobsPerTerm: 30,
+        cities: ["Jakarta Selatan"],
       }),
     );
     expect(onProgress).toHaveBeenCalledWith(
