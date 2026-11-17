@@ -81,19 +81,24 @@ const sendMessageTool = defineTool({
       selectedDocumentIds: contextIdsInput("Job document"),
     })
     .strict(),
-  handler: async (input) =>
+  handler: async (input, context) =>
     runWithRequestContext({ jobId: input.jobId }, async () => {
+      if (context.signal?.aborted) {
+        throw requestTimeout("The client disconnected before sending.");
+      }
       const timeoutMs = resolveGhostwriterTimeoutMs();
       let runId: string | null = null;
-      let timedOut = false;
+      // Set once the caller stops waiting (timeout or client disconnect).
+      let stopReason: "timeout" | "disconnect" | null = null;
 
       const cancelRun = (id: string) => {
         void ghostwriterService
           .cancelRunForJob({ jobId: input.jobId, runId: id })
           .catch((error) => {
-            logger.warn("MCP could not cancel a timed-out Ghostwriter run", {
+            logger.warn("MCP could not cancel a Ghostwriter run", {
               jobId: input.jobId,
               runId: id,
+              reason: stopReason,
               error: sanitizeUnknown(error),
             });
           });
@@ -108,7 +113,7 @@ const sendMessageTool = defineTool({
         stream: {
           onReady: (payload) => {
             runId = payload.runId;
-            if (timedOut) cancelRun(payload.runId);
+            if (stopReason) cancelRun(payload.runId);
           },
           onDelta: () => {},
           onCompleted: () => {},
@@ -116,32 +121,57 @@ const sendMessageTool = defineTool({
           onError: () => {},
         },
       });
-      // After a timeout the send keeps settling in the background.
+      // After the caller stops waiting the send keeps settling in the
+      // background (as a cancelled run).
       send.catch(() => {});
 
       let timer: NodeJS.Timeout | undefined;
-      const timeout = new Promise<never>((_resolve, reject) => {
-        timer = setTimeout(() => {
-          timedOut = true;
+      let onDisconnect: (() => void) | undefined;
+      const stopped = new Promise<never>((_resolve, reject) => {
+        const stop = (reason: "timeout" | "disconnect", error: Error) => {
+          if (stopReason) return;
+          stopReason = reason;
           if (runId) cancelRun(runId);
-          reject(
+          reject(error);
+        };
+        timer = setTimeout(
+          () =>
+            stop(
+              "timeout",
+              requestTimeout(
+                `Ghostwriter did not finish within ${Math.round(timeoutMs / 1000)} seconds, so the generation was cancelled. Try a shorter request or try again.`,
+              ),
+            ),
+          timeoutMs,
+        );
+        onDisconnect = () =>
+          stop(
+            "disconnect",
             requestTimeout(
-              `Ghostwriter did not finish within ${Math.round(timeoutMs / 1000)} seconds, so the generation was cancelled. Try a shorter request or try again.`,
+              "The client disconnected, so the generation was cancelled.",
             ),
           );
-        }, timeoutMs);
+        context.signal?.addEventListener("abort", onDisconnect, {
+          once: true,
+        });
       });
 
       try {
-        const result = await Promise.race([send, timeout]);
+        const result = await Promise.race([send, stopped]);
+        const { content, ...assistantMessage } = result.assistantMessage ?? {
+          content: "",
+        };
         return {
           runId: result.runId,
-          reply: result.assistantMessage?.content ?? "",
-          assistantMessage: result.assistantMessage,
-          userMessage: result.userMessage,
+          reply: content,
+          assistantMessage,
+          userMessageId: result.userMessage.id,
         };
       } finally {
         clearTimeout(timer);
+        if (onDisconnect) {
+          context.signal?.removeEventListener("abort", onDisconnect);
+        }
       }
     }),
 });
