@@ -186,6 +186,56 @@ describe.sequential("Access token routes", () => {
     expect((await importRes.json()).error.message).toContain("read-only");
   });
 
+  it("keeps account and instance administration away from tokens", async () => {
+    const session = await login(baseUrl, "admin", "secret");
+    const { secret } = await createToken(baseUrl, session, {
+      name: "agent",
+      scope: "write",
+    });
+
+    for (const [method, path] of [
+      ["POST", "/api/workspaces/me/password"],
+      ["POST", "/api/workspaces/users"],
+      ["GET", "/api/workspaces/users"],
+      ["DELETE", "/api/database"],
+      ["GET", "/api/backups"],
+      ["DELETE", "/api/backups/backup.db"],
+      ["GET", "/api/auth/sso/identities"],
+      ["POST", "/api/settings/codex-auth"],
+      ["DELETE", "/API/Database"],
+    ] as const) {
+      const res = await fetch(`${baseUrl}${path}`, {
+        method,
+        headers: authHeaders(secret),
+        body: method === "POST" ? JSON.stringify({}) : undefined,
+      });
+      expect(res.status, `${method} ${path}`).toBe(403);
+      expect((await res.json()).error.code).toBe("FORBIDDEN");
+    }
+  });
+
+  it("requires authentication whatever the letter case of the API path", async () => {
+    await login(baseUrl, "admin", "secret");
+
+    for (const [method, path] of [
+      ["GET", "/API/jobs"],
+      ["GET", "/Api/Settings"],
+      ["GET", "/API/profile"],
+      ["DELETE", "/API/database"],
+      ["POST", "/API/manual-jobs/import"],
+    ] as const) {
+      const res = await fetch(`${baseUrl}${path}`, {
+        method,
+        headers: { "content-type": "application/json" },
+        body: method === "POST" ? JSON.stringify({}) : undefined,
+      });
+      expect(res.status, `${method} ${path}`).toBe(401);
+    }
+
+    const publicStatus = await fetch(`${baseUrl}/API/app/status`);
+    expect(publicStatus.status).toBe(200);
+  });
+
   it("rejects revoked, expired and tampered tokens", async () => {
     const session = await login(baseUrl, "admin", "secret");
     const revoked = await createToken(baseUrl, session, {

@@ -168,6 +168,16 @@ function buildUmamiProxyHeaders(req: express.Request): Headers {
   return headers;
 }
 
+/** API areas no personal access token may reach, whatever its scope. */
+const ACCESS_TOKEN_FORBIDDEN_API_AREAS = [
+  "/api/workspaces",
+  "/api/auth/sso",
+  "/api/database",
+  "/api/backups",
+  "/api/billing",
+  "/api/settings/codex-auth",
+];
+
 type AuthorizationContext = {
   userId: string;
   tenantId: string;
@@ -245,6 +255,17 @@ export function createAuthGuard() {
       normalizedPath.startsWith("/api/auth/tokens/")
     ) {
       return "Access tokens cannot manage access tokens. Sign in to the web app instead.";
+    }
+    // Account and instance administration stays with a signed-in person: a
+    // token must not be able to set a password, link a sign-in identity,
+    // manage users, wipe the database or touch backups and billing.
+    if (
+      ACCESS_TOKEN_FORBIDDEN_API_AREAS.some(
+        (area) =>
+          normalizedPath === area || normalizedPath.startsWith(`${area}/`),
+      )
+    ) {
+      return "Access tokens cannot manage accounts, sign-in, backups, billing or the database. Sign in to the web app instead.";
     }
     if (
       context.accessTokenScope === "read" &&
@@ -385,7 +406,11 @@ export function createAuthGuard() {
     next: express.NextFunction,
   ) => {
     void (async () => {
-      if (!requiresAuth(req.method, req.path)) {
+      // Express matches routes case-insensitively, so every path rule in this
+      // guard runs on the lower-cased path. Without this, "/API/jobs" would
+      // reach the jobs route while being treated as a public non-API page.
+      const guardPath = req.path.toLowerCase();
+      if (!requiresAuth(req.method, guardPath)) {
         next();
         return;
       }
@@ -421,7 +446,7 @@ export function createAuthGuard() {
       if (authContext) {
         const restriction = getAccessTokenRestriction(
           req.method,
-          req.path,
+          guardPath,
           authContext,
         );
         if (restriction) {
