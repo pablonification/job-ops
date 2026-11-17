@@ -18,6 +18,9 @@ export const EXTRACTOR_SOURCE_IDS = [
   "wazzuf",
   "freehire",
   "manual",
+  "techinasia",
+  "kalibrr",
+  "dealls",
 ] as const;
 
 export type ExtractorSourceId = (typeof EXTRACTOR_SOURCE_IDS)[number];
@@ -88,6 +91,9 @@ export const EXTRACTOR_SOURCE_METADATA: Record<
   wazzuf: { label: "WUZZUF", order: 110, category: "pipeline" },
   freehire: { label: "FreeHire", order: 115, category: "pipeline" },
   manual: { label: "Manual", order: 120, category: "manual" },
+  techinasia: { label: "Tech in Asia Jobs", order: 116, category: "pipeline" },
+  kalibrr: { label: "Kalibrr", order: 117, category: "pipeline" },
+  dealls: { label: "Dealls", order: 118, category: "pipeline" },
 };
 
 export const PIPELINE_EXTRACTOR_SOURCE_IDS = EXTRACTOR_SOURCE_IDS.filter(

@@ -266,6 +266,9 @@ export const DEMO_SOURCE_BASE_URLS: Record<JobSource, string> = {
   wazzuf: "https://wuzzuf.net",
   freehire: "https://freehire.me",
   manual: "https://example.com",
+  techinasia: "https://www.techinasia.com",
+  kalibrr: "https://www.kalibrr.com",
+  dealls: "https://dealls.com",
 };
 
 export interface DemoDefaultJob {

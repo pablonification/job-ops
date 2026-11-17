@@ -92,6 +92,15 @@ services:
         - path: ./extractors/freehire/src
           target: /app/extractors/freehire/src
           action: sync+restart
+        - path: ./extractors/techinasia/src
+          target: /app/extractors/techinasia/src
+          action: sync+restart
+        - path: ./extractors/kalibrr/src
+          target: /app/extractors/kalibrr/src
+          action: sync+restart
+        - path: ./extractors/dealls/src
+          target: /app/extractors/dealls/src
+          action: sync+restart
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3001/health"]

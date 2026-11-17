@@ -153,6 +153,27 @@ const HEALTH_PROBE_CONFIG_BY_SOURCE: Record<
     selectedCountry: DEFAULT_HEALTH_SELECTED_COUNTRY,
     settings: {},
   },
+  techinasia: {
+    searchTerm: DEFAULT_HEALTH_SEARCH_TERM,
+    selectedCountry: "indonesia",
+    settings: {
+      jobspyResultsWanted: "1",
+    },
+  },
+  kalibrr: {
+    searchTerm: DEFAULT_HEALTH_SEARCH_TERM,
+    selectedCountry: "indonesia",
+    settings: {
+      jobspyResultsWanted: "1",
+    },
+  },
+  dealls: {
+    searchTerm: DEFAULT_HEALTH_SEARCH_TERM,
+    selectedCountry: "indonesia",
+    settings: {
+      jobspyResultsWanted: "1",
+    },
+  },
 };
 
 const extractorHealthCache = new Map<

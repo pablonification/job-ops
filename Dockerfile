@@ -96,6 +96,9 @@ COPY extractors/fiveamsat/package*.json ./extractors/fiveamsat/
 COPY extractors/wazzuf/package*.json ./extractors/wazzuf/
 COPY extractors/freehire/package*.json ./extractors/freehire/
 COPY extractors/browser-utils/package*.json ./extractors/browser-utils/
+COPY extractors/techinasia/package*.json ./extractors/techinasia/
+COPY extractors/kalibrr/package*.json ./extractors/kalibrr/
+COPY extractors/dealls/package*.json ./extractors/dealls/
 
 # Install build-time Node dependencies on the native builder platform. The
 # resulting client/docs assets are architecture-neutral static files.
@@ -126,6 +129,9 @@ COPY extractors/fiveamsat ./extractors/fiveamsat
 COPY extractors/wazzuf ./extractors/wazzuf
 COPY extractors/freehire ./extractors/freehire
 COPY extractors/browser-utils ./extractors/browser-utils
+COPY extractors/techinasia ./extractors/techinasia
+COPY extractors/kalibrr ./extractors/kalibrr
+COPY extractors/dealls ./extractors/dealls
 
 # ============================================================================
 # PARALLEL BUILD STAGES
@@ -175,6 +181,9 @@ COPY extractors/fiveamsat/package*.json ./extractors/fiveamsat/
 COPY extractors/wazzuf/package*.json ./extractors/wazzuf/
 COPY extractors/freehire/package*.json ./extractors/freehire/
 COPY extractors/browser-utils/package*.json ./extractors/browser-utils/
+COPY extractors/techinasia/package*.json ./extractors/techinasia/
+COPY extractors/kalibrr/package*.json ./extractors/kalibrr/
+COPY extractors/dealls/package*.json ./extractors/dealls/
 
 # Install production Node dependencies only.
 RUN npm install --workspaces --include-workspace-root --omit=dev \
@@ -270,6 +279,9 @@ COPY extractors/fiveamsat ./extractors/fiveamsat
 COPY extractors/wazzuf ./extractors/wazzuf
 COPY extractors/freehire ./extractors/freehire
 COPY extractors/browser-utils ./extractors/browser-utils
+COPY extractors/techinasia ./extractors/techinasia
+COPY extractors/kalibrr ./extractors/kalibrr
+COPY extractors/dealls ./extractors/dealls
 
 # Create runtime directories.
 RUN mkdir -p /app/data/pdfs /app/data/cloudflare-cookies /app/codex-home
