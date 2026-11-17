@@ -1,3 +1,4 @@
+import type { TargetCompanyMatcher } from "@shared/target-companies";
 import type { Job, JobStatus } from "@shared/types";
 
 /** Every job status, for tool input enums. */
@@ -39,6 +40,14 @@ export type CompactJobSummarySource = Pick<
 >;
 
 /**
+ * Pass the request's target-company matcher (load it once with
+ * `loadTargetCompanyMatcher()`) so `isTargetCompany` reflects the setting.
+ */
+export type CompactJobSummaryOptions = {
+  targetCompanies: TargetCompanyMatcher;
+};
+
+/**
  * The job shape list-style tools return. No description or other long fields:
  * agents fetch those with `get_job`.
  */
@@ -49,6 +58,8 @@ export type CompactJobSummary = {
   location: string | null;
   status: JobStatus;
   outcome: string | null;
+  /** Employer matches the user's Target companies setting. */
+  isTargetCompany: boolean;
   score: number | null;
   sponsorMatchScore: number | null;
   source: string;
@@ -77,6 +88,7 @@ function formatSalary(job: CompactJobSummarySource): string | null {
 
 export function toCompactJobSummary(
   job: CompactJobSummarySource,
+  options: CompactJobSummaryOptions,
 ): CompactJobSummary {
   return {
     id: job.id,
@@ -85,6 +97,7 @@ export function toCompactJobSummary(
     location: job.location,
     status: job.status,
     outcome: job.outcome,
+    isTargetCompany: options.targetCompanies.matches(job.employer),
     score: job.suitabilityScore,
     sponsorMatchScore: job.sponsorMatchScore,
     source: job.source,

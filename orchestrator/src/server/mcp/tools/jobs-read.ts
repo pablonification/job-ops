@@ -3,12 +3,15 @@ import {
   defineTool,
   defineToolGroup,
   JOB_STATUS_VALUES,
+  loadTargetCompanyMatcher,
   paginationShape,
   toCompactJobSummary,
   toPageMeta,
 } from "@server/mcp/kit";
 import {
   JOB_SEARCH_SORT_VALUES,
+  type JobSearchFilters,
+  listDistinctEmployers,
   searchJobs,
 } from "@server/repositories/job-search";
 import * as jobsRepo from "@server/repositories/jobs";
@@ -16,6 +19,7 @@ import {
   applyJobPdfFreshness,
   resolvePdfFingerprintContext,
 } from "@server/services/pdf-fingerprint";
+import type { TargetCompanyMatcher } from "@shared/target-companies";
 import { z } from "zod";
 
 const dateInput = (description: string) =>
@@ -88,6 +92,12 @@ const listJobsInput = z
       .describe(
         "true: only jobs with a resume PDF; false: only jobs without one.",
       ),
+    targetCompany: z
+      .boolean()
+      .optional()
+      .describe(
+        "true: only jobs at the user's target companies (Settings > Scoring); false: only other jobs.",
+      ),
     sort: z
       .enum(JOB_SEARCH_SORT_VALUES)
       .default("discovered_desc")
@@ -100,18 +110,48 @@ const listJobs = defineTool({
   name: "list_jobs",
   title: "List and search jobs",
   description:
-    "List and search the user's jobs with filters (status, text, score, source, employer, dates, PDF) and pagination. Returns compact summaries plus total and nextOffset; call get_job for the full description and tailoring.",
+    "List and search the user's jobs with filters (status, text, score, source, employer, target company, dates, PDF) and pagination. Returns compact summaries plus total and nextOffset; call get_job for the full description and tailoring.",
   scope: "read",
   input: listJobsInput,
   handler: async (input) => {
-    const { limit, offset, sort, ...filters } = input;
-    const { total, rows } = await searchJobs({ filters, sort, limit, offset });
+    const { limit, offset, sort, targetCompany, ...baseFilters } = input;
+    const targetCompanies = await loadTargetCompanyMatcher();
+    const filters = await withTargetCompanyFilter(
+      baseFilters,
+      targetCompany,
+      targetCompanies,
+    );
+    const { total, rows } = filters
+      ? await searchJobs({ filters, sort, limit, offset })
+      : { total: 0, rows: [] };
     return {
-      jobs: rows.map(toCompactJobSummary),
+      jobs: rows.map((row) => toCompactJobSummary(row, { targetCompanies })),
       ...toPageMeta({ limit, offset, total, returned: rows.length }),
     };
   },
 });
+
+/**
+ * The target-company flag is computed in code, not stored. To keep SQL paging
+ * and `total` exact, resolve it first into the exact employer names (among
+ * jobs matching the other filters) that are or are not target companies.
+ * Returns null when nothing can match.
+ */
+async function withTargetCompanyFilter(
+  filters: JobSearchFilters,
+  targetCompany: boolean | undefined,
+  matcher: TargetCompanyMatcher,
+): Promise<JobSearchFilters | null> {
+  if (targetCompany === undefined) return filters;
+  if (matcher.isEmpty) return targetCompany ? null : filters;
+  const matched = (await listDistinctEmployers(filters)).filter((employer) =>
+    matcher.matches(employer),
+  );
+  if (targetCompany) {
+    return matched.length > 0 ? { ...filters, employerIn: matched } : null;
+  }
+  return { ...filters, employerNotIn: matched };
+}
 
 const getJobInput = z
   .object({
@@ -136,7 +176,7 @@ const getJob = defineTool({
   name: "get_job",
   title: "Get job details",
   description:
-    "Full details of one job: description, suitability score and reason, tailored resume fields, PDF state, application status and dates.",
+    "Full details of one job: description, suitability score and reason, target-company flag, tailored resume fields, PDF state, application status and dates.",
   scope: "read",
   maxResultSizeChars: 200_000,
   input: getJobInput,
@@ -160,8 +200,13 @@ const getJob = defineTool({
       jobDescription = fullDescription.slice(0, input.descriptionMaxChars);
       descriptionTruncated = true;
     }
+    const targetCompanies = await loadTargetCompanyMatcher();
     return {
-      job: { ...hydrated, jobDescription },
+      job: {
+        ...hydrated,
+        jobDescription,
+        isTargetCompany: targetCompanies.matches(hydrated.employer),
+      },
       descriptionLength: fullDescription.length,
       descriptionTruncated,
     };

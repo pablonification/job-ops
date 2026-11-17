@@ -10,6 +10,7 @@ import {
   inArray,
   isNotNull,
   isNull,
+  notInArray,
   type SQL,
   sql,
 } from "drizzle-orm";
@@ -44,6 +45,10 @@ export type JobSearchFilters = {
   /** ISO date or date-time. */
   discoveredSince?: string;
   hasPdf?: boolean;
+  /** Exact employer names to keep (used for computed filters). */
+  employerIn?: string[];
+  /** Exact employer names to drop (used for computed filters). */
+  employerNotIn?: string[];
 };
 
 export type JobSearchRow = Pick<
@@ -121,6 +126,16 @@ function buildWhere(filters: JobSearchFilters): SQL | undefined {
   }
   if (filters.hasPdf === true) conditions.push(isNotNull(jobs.pdfPath));
   if (filters.hasPdf === false) conditions.push(isNull(jobs.pdfPath));
+  if (filters.employerIn) {
+    conditions.push(
+      filters.employerIn.length > 0
+        ? inArray(jobs.employer, filters.employerIn)
+        : sql`0`,
+    );
+  }
+  if (filters.employerNotIn && filters.employerNotIn.length > 0) {
+    conditions.push(notInArray(jobs.employer, filters.employerNotIn));
+  }
 
   return and(...conditions);
 }
@@ -155,6 +170,21 @@ function buildOrderBy(sort: JobSearchSort): SQL[] {
     default:
       return [desc(jobs.discoveredAt), asc(jobs.id)];
   }
+}
+
+/**
+ * Distinct employer names among the jobs matching the filters. Lets callers
+ * apply a filter computed in code (such as target companies) as an exact
+ * employer list, so SQL paging and `total` stay correct.
+ */
+export async function listDistinctEmployers(
+  filters: JobSearchFilters,
+): Promise<string[]> {
+  const rows = await db
+    .selectDistinct({ employer: jobs.employer })
+    .from(jobs)
+    .where(buildWhere(filters));
+  return rows.map((row) => row.employer);
 }
 
 export async function searchJobs(input: {

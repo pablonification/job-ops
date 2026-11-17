@@ -285,6 +285,7 @@ describe.sequential("MCP endpoint", () => {
           "postedSince",
           "discoveredSince",
           "hasPdf",
+          "targetCompany",
           "sort",
           "limit",
           "offset",
@@ -399,6 +400,189 @@ describe.sequential("MCP endpoint", () => {
       expect(invalid.isError).toBe(true);
       expect(invalid.structuredContent.error.code).toBe("INVALID_REQUEST");
       expect(invalid.structuredContent.error.message).toContain("limit");
+    });
+
+    it("flags target companies and filters by them with exact totals and pages", async () => {
+      const gotoId = await importJob(
+        baseUrl,
+        adminSession,
+        {
+          title: "Backend Intern",
+          employer: "PT GoTo Gojek Tokopedia Tbk",
+          slug: "goto",
+        },
+        { suitabilityScore: 90 },
+      );
+      const grabId = await importJob(
+        baseUrl,
+        adminSession,
+        { title: "Mobile Intern", employer: "GrabTaxi Holdings", slug: "grab" },
+        { suitabilityScore: 80 },
+      );
+      const grabangoId = await importJob(
+        baseUrl,
+        adminSession,
+        { title: "Retail Intern", employer: "Grabango", slug: "grabango" },
+        { suitabilityScore: 70 },
+      );
+      const acmeId = await importJob(
+        baseUrl,
+        adminSession,
+        { title: "Data Intern", employer: "Acme", slug: "acme" },
+        { suitabilityScore: 60 },
+      );
+      const { secret } = await createAccessToken(baseUrl, adminSession, "read");
+      const ids = (result: ToolCallResult) =>
+        result.structuredContent.jobs.map((job: { id: string }) => job.id);
+      const setTargets = async (targetCompanies: string[] | null) => {
+        const res = await fetch(`${baseUrl}/api/settings`, {
+          method: "PATCH",
+          headers: jsonHeaders(adminSession),
+          body: JSON.stringify({ targetCompanies }),
+        });
+        expect(res.status).toBe(200);
+      };
+
+      // No setting: every flag is false and the true filter matches nothing.
+      const unset = await callTool(baseUrl, secret, "list_jobs", {});
+      expect(
+        unset.structuredContent.jobs.every(
+          (job: { isTargetCompany: boolean }) => job.isTargetCompany === false,
+        ),
+      ).toBe(true);
+      const noneYet = await callTool(baseUrl, secret, "list_jobs", {
+        targetCompany: true,
+      });
+      expect(noneYet.structuredContent).toMatchObject({
+        jobs: [],
+        total: 0,
+        hasMore: false,
+      });
+
+      await setTargets(["GoTo | Gojek", "Grab"]);
+
+      const all = await callTool(baseUrl, secret, "list_jobs", {
+        sort: "score_desc",
+      });
+      expect(
+        Object.fromEntries(
+          all.structuredContent.jobs.map(
+            (job: { id: string; isTargetCompany: boolean }) => [
+              job.id,
+              job.isTargetCompany,
+            ],
+          ),
+        ),
+      ).toEqual({
+        [gotoId]: true,
+        [grabId]: true,
+        [grabangoId]: false,
+        [acmeId]: false,
+      });
+
+      const firstPage = await callTool(baseUrl, secret, "list_jobs", {
+        targetCompany: true,
+        sort: "score_desc",
+        limit: 1,
+      });
+      expect(ids(firstPage)).toEqual([gotoId]);
+      expect(firstPage.structuredContent).toMatchObject({
+        total: 2,
+        hasMore: true,
+        nextOffset: 1,
+      });
+      const secondPage = await callTool(baseUrl, secret, "list_jobs", {
+        targetCompany: true,
+        sort: "score_desc",
+        limit: 1,
+        offset: 1,
+      });
+      expect(ids(secondPage)).toEqual([grabId]);
+      expect(secondPage.structuredContent).toMatchObject({
+        total: 2,
+        hasMore: false,
+        nextOffset: null,
+      });
+
+      const others = await callTool(baseUrl, secret, "list_jobs", {
+        targetCompany: false,
+        sort: "score_desc",
+      });
+      expect(ids(others)).toEqual([grabangoId, acmeId]);
+      expect(others.structuredContent.total).toBe(2);
+
+      const combined = await callTool(baseUrl, secret, "list_jobs", {
+        targetCompany: true,
+        minScore: 85,
+      });
+      expect(ids(combined)).toEqual([gotoId]);
+      expect(combined.structuredContent.total).toBe(1);
+
+      const detail = await callTool(baseUrl, secret, "get_job", {
+        jobId: grabId,
+        includeDescription: false,
+      });
+      expect(detail.structuredContent.job.isTargetCompany).toBe(true);
+
+      // The flag is computed: clearing the setting takes effect at once.
+      await setTargets(null);
+      const cleared = await callTool(baseUrl, secret, "list_jobs", {
+        targetCompany: false,
+      });
+      expect(cleared.structuredContent.total).toBe(4);
+      const clearedDetail = await callTool(baseUrl, secret, "get_job", {
+        jobId: grabId,
+        includeDescription: false,
+      });
+      expect(clearedDetail.structuredContent.job.isTargetCompany).toBe(false);
+    });
+
+    it("keeps each user's target companies to themselves", async () => {
+      const createUserRes = await fetch(`${baseUrl}/api/workspaces/users`, {
+        method: "POST",
+        headers: jsonHeaders(adminSession),
+        body: JSON.stringify({
+          username: "adam",
+          displayName: "Adam",
+          password: "adam-secret",
+        }),
+      });
+      expect(createUserRes.status).toBe(201);
+      const adamSession = await login(baseUrl, "adam", "adam-secret");
+
+      const adminJobId = await importJob(baseUrl, adminSession, {
+        title: "Platform Intern",
+        employer: "Xendit",
+        slug: "xendit-admin",
+      });
+      const adamJobId = await importJob(baseUrl, adamSession, {
+        title: "Platform Intern",
+        employer: "Xendit",
+        slug: "xendit-adam",
+      });
+
+      // Adam is not an admin: target companies are allowed like search settings.
+      const adamSettings = await fetch(`${baseUrl}/api/settings`, {
+        method: "PATCH",
+        headers: jsonHeaders(adamSession),
+        body: JSON.stringify({ targetCompanies: ["Xendit"] }),
+      });
+      expect(adamSettings.status).toBe(200);
+
+      const adamToken = await createAccessToken(baseUrl, adamSession, "read");
+      const adminToken = await createAccessToken(baseUrl, adminSession, "read");
+
+      const adamList = await callTool(baseUrl, adamToken.secret, "list_jobs", {
+        targetCompany: true,
+      });
+      expect(
+        adamList.structuredContent.jobs.map((job: { id: string }) => job.id),
+      ).toEqual([adamJobId]);
+
+      const adminList = await callTool(baseUrl, adminToken.secret, "list_jobs");
+      expect(adminList.structuredContent.jobs).toEqual([
+        expect.objectContaining({ id: adminJobId, isTargetCompany: false }),
+      ]);
     });
 
     it("returns job details, counts, pipeline, profile and app status", async () => {
