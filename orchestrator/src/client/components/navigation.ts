@@ -2,6 +2,7 @@ import {
   Columns3,
   Eye,
   FilePenLine,
+  FileStack,
   Home,
   Inbox,
   LayoutDashboard,
@@ -41,6 +42,12 @@ export const NAV_LINKS: NavLink[] = [
     label: "Resume Studio",
     icon: FilePenLine,
     activePaths: ["/design-resume"],
+  },
+  {
+    to: "/role-cvs",
+    label: "Role CVs",
+    icon: FileStack,
+    activePaths: ["/role-cvs"],
   },
   { to: "/tracking-inbox", label: "Tracking Inbox", icon: Inbox },
   {

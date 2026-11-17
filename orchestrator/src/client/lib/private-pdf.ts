@@ -81,3 +81,14 @@ export async function downloadDesignResumePdf(
 ): Promise<void> {
   openBlob(await api.getDesignResumePdfBlob(pdfUrl), filename);
 }
+
+export async function openRoleCvPdf(roleCvId: string): Promise<void> {
+  openBlob(await api.getRoleCvPdfBlob(roleCvId));
+}
+
+export async function downloadRoleCvPdf(
+  roleCvId: string,
+  filename: string,
+): Promise<void> {
+  openBlob(await api.getRoleCvPdfBlob(roleCvId), filename);
+}
