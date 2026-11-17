@@ -69,7 +69,7 @@ ${playbookPreamble(context)}
 ## Gather
 
 1. \`get_job(jobId: ${id})\`. If it returns \`NOT_FOUND\`, tell the owner and stop.
-2. \`get_job_timeline(jobId: ${id})\`: the current stage (the newest event's \`toStage\`) and any interview dates or notes in the events. ${roundStep}
+2. \`get_job_timeline(jobId: ${id}, limit: 100)\`: events come oldest first, so while \`hasMore\` is true fetch the next page with \`offset\` set to \`nextOffset\`; the newest event is the last one on the last page. From it take the current stage (its \`toStage\`), and from all events any interview dates or notes. ${roundStep}
 3. \`list_job_notes(jobId: ${id}, previewChars: 3000)\` for an evaluation, recruiter details or earlier prep. Build on earlier prep instead of repeating it.
 4. \`get_profile(includeDetails: true)\`. If \`configured\` is false, stop and ask the owner to set up their master resume in the JobOps web app; stories cannot be written without it.
 5. Web research, at most 6 searches, keeping every link: the company's products and news from the last 12 months; its engineering blog or tech stack; how it interviews for this kind of role and level, from its own careers pages first and then candidate reports (label those as anecdotal); and the values or principles it says it hires for.

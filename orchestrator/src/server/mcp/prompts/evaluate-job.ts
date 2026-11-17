@@ -21,8 +21,9 @@ ${playbookPreamble(context)}
 ## Gather
 
 1. \`get_job(jobId: ${id})\`. If it returns \`NOT_FOUND\`, tell the owner this id is not one of their jobs and stop. If the description is missing or only a few lines, try to read the posting at \`jobUrl\` with your own web tools; if that fails too, say the evaluation is limited and work with what there is.
-2. \`get_profile(includeDetails: true)\`. If \`configured\` is false, stop and ask the owner to set up their master resume in the JobOps web app; an evaluation without it would be guesswork.
-3. \`get_settings(keys: ["targetCompanies", "dealbreakers"])\` and \`list_job_notes(jobId: ${id}, previewChars: 2000)\` for earlier evaluations, research or contacts. Use earlier notes, but check them against the current posting.
+2. \`get_settings(keys: ["targetCompanies", "dealbreakers"])\` and \`list_job_notes(jobId: ${id}, previewChars: 2000)\` for earlier evaluations, research or contacts. Use earlier notes, but check them against the current posting.
+
+Do not load the profile yet: the requirements come from the posting first.
 
 ## Evaluate
 
@@ -31,7 +32,8 @@ Work in this order and keep each part short.
 1. Role summary: title, team or product if known, level, location and work arrangement, employment type and duration (for internships), and whether the employer is one of the owner's target companies (\`isTargetCompany\`). Flag any dealbreaker it hits.
 
 2. Requirement-to-evidence table, built in two passes.
-   - Pass 1, from the job description only, before you look at the profile: list up to 12 requirements. Give each a weight (must-have, strong plus or nice-to-have) and say whether the posting states it or you inferred it. An inferred requirement is never a must-have.
+   - Pass 1, from the job description only: list up to 12 requirements. Give each a weight (must-have, strong plus or nice-to-have) and say whether the posting states it or you inferred it. An inferred requirement is never a must-have. Write this list down before going on.
+   - Now load the profile: \`get_profile(includeDetails: true)\`. If \`configured\` is false, stop here: give the owner the role summary and the pass-1 list, and ask them to set up their master resume in the JobOps web app, since matching without it would be guesswork. If \`details.truncated\` is true, say that some resume content was left out.
    - Pass 2, against the profile: for each requirement, the match (met, partial, not met) and the evidence, naming or quoting the specific experience, project, course or skill from the profile. No evidence means not met. Do not stretch evidence: coursework is not production experience, and a skill listed with no project or role behind it is at most partial.
    - Order rows by weight, with unmet rows before met ones within a weight.
    Columns: Requirement | Weight | Stated or inferred | Match | Evidence from the profile.
@@ -52,7 +54,7 @@ Work in this order and keep each part short.
 
 7. Recommendation: exactly one of "Apply now", "Apply after addressing: <the gaps>", or "Skip", with two or three sentences of reasons. If your view differs from the JobOps score, say so and why.
 
-8. The single most useful next action, concrete. For example: prepare the CV with \`apply_role_cv_to_job(jobId: ${id}, mode: "refine")\` or \`process_job(jobId: ${id})\`; run the \`outreach_drafts\` playbook for this job; ask the owner whether they graduate in time; or skip it.
+8. The single most useful next action, concrete. For example: prepare the CV with \`apply_role_cv_to_job(jobId: ${id}, mode: "refine")\`, or \`process_job(jobId: ${id})\` for a job still in status discovered (it works only on those); run the \`outreach_drafts\` playbook for this job; ask the owner whether they graduate in time; or skip it.
 
 ## Save and report
 

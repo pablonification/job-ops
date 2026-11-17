@@ -7,6 +7,15 @@ const LANGUAGE_RULES = {
   id: 'Write in natural, professional Bahasa Indonesia (semi-formal, not textbook-stiff). Greet recruiters and engineers with "Halo Kak [Nama]" and a senior hiring manager with "Halo Pak/Bu [Nama]". Keep everyday tech terms in English the way Indonesian engineers do (backend, API, deployment, code review), and avoid word-for-word translations from English.',
 } as const;
 
+/**
+ * Placeholders are written in the drafts' language, so a draft reads
+ * naturally once the owner fills them in; the playbook says so explicitly.
+ */
+const PLACEHOLDERS = {
+  en: { name: "[Name]", link: "[link to my application]" },
+  id: { name: "[Nama]", link: "[tautan lamaran saya]" },
+} as const;
+
 export const outreachDraftsPrompt = definePrompt({
   name: "outreach_drafts",
   title: "Outreach drafts",
@@ -33,6 +42,7 @@ export const outreachDraftsPrompt = definePrompt({
     const id = JSON.stringify(jobId);
     const lang = language ?? "en";
     const languageName = lang === "id" ? "Indonesian" : "English";
+    const placeholder = PLACEHOLDERS[lang];
     return `# Outreach drafts
 
 Goal: three short messages the owner can send to people at the company behind job ${id}: a recruiter, the hiring manager, and an engineer on the team, written in ${languageName}. A specific, honest note from a candidate gets read; a generic one does not. The owner decides whether and when to send each one and sends it themselves. Nothing in this playbook is ever sent.
@@ -46,7 +56,7 @@ ${playbookPreamble(context)}
 1. \`get_job(jobId: ${id}, descriptionMaxChars: 6000)\`. If it returns \`NOT_FOUND\`, tell the owner and stop.
 2. \`get_profile(includeDetails: true)\`. If \`configured\` is false, stop and ask the owner to set up their master resume in the JobOps web app.
 3. \`list_job_notes(jobId: ${id}, previewChars: 2000)\` for an evaluation, earlier outreach or known contacts. If a note says someone was already contacted, do not draft a first message to them again; ask the owner.
-4. Web research, at most 5 searches: what the team or product does, and one or two recent, concrete things (an engineering blog post, a launch, a talk), with links. Look for the recruiter or hiring manager only on public professional pages (the company site, public LinkedIn results). Never guess a name, email address or job title; when you cannot find a person, use the placeholder [Name].
+4. Web research, at most 5 searches: what the team or product does, and one or two recent, concrete things (an engineering blog post, a launch, a talk), with links. Look for the recruiter or hiring manager only on public professional pages (the company site, public LinkedIn results). Never guess a name, email address or job title; when you cannot find a person, use the placeholder ${placeholder.name}.
 
 ## Write
 
@@ -56,7 +66,7 @@ ${playbookPreamble(context)}
 - Engineer on the team: genuine interest in their work and one specific question. No request for a referral or a job in this first message.
 - Tone: polite, direct and specific. No flattery, no "I hope this message finds you well", no "passionate", no exaggeration, no emoji.
 - ${LANGUAGE_RULES[lang]}
-- Mark every placeholder clearly ([Name], [link to my application]) and never fill one with a guess.
+- Placeholders are in square brackets and in the language of the drafts: ${placeholder.name} for a person's name and ${placeholder.link} for a link, plus others in the same style when needed. Never fill one with a guess.
 
 ## Save and report
 
