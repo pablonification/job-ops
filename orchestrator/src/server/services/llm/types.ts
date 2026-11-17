@@ -1,3 +1,6 @@
+import type { LlmCircuitBreaker } from "./failover/breaker";
+import type { LlmFallbackConfig } from "./failover/config";
+
 export type LlmProvider =
   | "atlascloud"
   | "litellm"
@@ -86,6 +89,17 @@ export type LlmServiceOptions = {
   apiKey?: string | null;
   allowEnvironmentCredentials?: boolean;
   allowCliProviders?: boolean;
+  /**
+   * Failover wiring. Defaults read the `LLM_FALLBACK_*` environment and use
+   * the process-wide circuit breaker. `false` turns failover off (the
+   * fallback service itself is built this way).
+   */
+  failover?: LlmFailoverOptions | false;
+};
+
+export type LlmFailoverOptions = {
+  config?: LlmFallbackConfig;
+  breaker?: LlmCircuitBreaker;
 };
 
 export type ProviderStrategy = {

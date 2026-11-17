@@ -7,6 +7,12 @@ import { ClaudeAgentSdkClient } from "./claude-agent-sdk/client";
 import { classifyClaudeAgentSdkError } from "./claude-agent-sdk/errors";
 import { ClaudeCliClient } from "./claude-cli/client";
 import { CodexClient } from "./codex/client";
+import {
+  type LlmFallbackTarget,
+  resolveLlmFallbackConfig,
+} from "./failover/config";
+import { isSameLlmEndpoint } from "./failover/endpoint";
+import { runWithLlmFailover } from "./failover/runner";
 import { GeminiCliClient } from "./gemini-cli/client";
 import {
   buildModeCacheKey,
@@ -24,6 +30,7 @@ import { normalizeLiteLlmBaseUrl } from "./providers/litellm";
 import type {
   JsonSchemaDefinition,
   LlmApiError,
+  LlmFailoverOptions,
   LlmProvider,
   LlmRequestOptions,
   LlmResponse,
@@ -50,6 +57,7 @@ export class LlmService {
   private readonly geminiCliClient: GeminiCliClient;
   private readonly claudeCliClient: ClaudeCliClient;
   private readonly claudeAgentSdkClient: ClaudeAgentSdkClient;
+  private readonly failover: LlmFailoverOptions | false;
 
   constructor(options: LlmServiceOptions = {}) {
     const normalizedBaseUrl =
@@ -97,9 +105,59 @@ export class LlmService {
     this.geminiCliClient = new GeminiCliClient();
     this.claudeCliClient = new ClaudeCliClient();
     this.claudeAgentSdkClient = new ClaudeAgentSdkClient();
+    this.failover = options.failover ?? {};
   }
 
+  /**
+   * The single choke point for structured LLM calls. With a fallback
+   * configured (`LLM_FALLBACK_*`), a provider-side failure of this service's
+   * provider is retried once on the fallback; without one this is exactly
+   * the provider call.
+   */
   async callJson<T>(options: LlmRequestOptions<T>): Promise<LlmResponse<T>> {
+    if (this.failover === false) return this.callProviderJson(options);
+    const config = this.failover.config ?? resolveLlmFallbackConfig();
+    if (config.state !== "ready") return this.callProviderJson(options);
+
+    const fallbackService = createFallbackLlmService(config.target);
+    if (
+      isSameLlmEndpoint(
+        { provider: this.provider, baseUrl: this.baseUrl },
+        {
+          provider: fallbackService.getProvider(),
+          baseUrl: fallbackService.getBaseUrl(),
+        },
+      )
+    ) {
+      // Falling back to the same endpoint cannot help; behave as if no
+      // fallback were configured. Settings shows why.
+      return this.callProviderJson(options);
+    }
+
+    const result = await runWithLlmFailover<T>({
+      operation: "callJson",
+      jobId: options.jobId,
+      signal: options.signal,
+      breaker: this.failover.breaker,
+      primary: {
+        provider: this.provider,
+        baseUrl: this.baseUrl,
+        apiKey: this.apiKey,
+      },
+      fallback: config,
+      callPrimary: () => this.callProviderJson(options),
+      // The fallback gets its own model; the primary's (including any
+      // per-purpose override the caller resolved) is never sent to it.
+      callFallback: () =>
+        fallbackService.callJson<T>({ ...options, model: config.target.model }),
+    });
+    if (result.success) return result;
+    return { success: false, error: result.error };
+  }
+
+  private async callProviderJson<T>(
+    options: LlmRequestOptions<T>,
+  ): Promise<LlmResponse<T>> {
     if (!this.allowCliProviders && isCliProvider(this.provider)) {
       return {
         success: false,
@@ -868,6 +926,25 @@ export class LlmService {
       .map((entry) => entry.name?.trim() || entry.model?.trim() || "")
       .filter(Boolean);
   }
+}
+
+/**
+ * The service that serves fallback calls: built only from the fallback's own
+ * provider, base URL and key. Environment credentials are off so the
+ * primary's `LLM_API_KEY` / `LLM_BASE_URL` can never reach the fallback's
+ * endpoint, and failover is off so a fallback cannot fail over again.
+ */
+export function createFallbackLlmService(
+  target: LlmFallbackTarget,
+): LlmService {
+  return new LlmService({
+    provider: target.provider,
+    baseUrl: target.baseUrl,
+    apiKey: target.apiKey,
+    allowEnvironmentCredentials: false,
+    allowCliProviders: true,
+    failover: false,
+  });
 }
 
 function normalizeProvider(
