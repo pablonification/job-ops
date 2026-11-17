@@ -35,3 +35,11 @@ export function getLegacyJobPdfPath(jobId: string): string {
 export function getTenantDesignResumePdfPath(): string {
   return join(getTenantPdfDir(), "design_resume_current.pdf");
 }
+
+export function getTenantRoleCvPdfPath(roleCvId: string): string {
+  return join(getTenantPdfDir(), `role_cv_${roleCvId}.pdf`);
+}
+
+export async function removeStoredRoleCvPdf(roleCvId: string): Promise<void> {
+  await rm(getTenantRoleCvPdfPath(roleCvId), { force: true });
+}

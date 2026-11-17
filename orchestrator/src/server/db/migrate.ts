@@ -539,6 +539,33 @@ const migrations = [
     FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
   )`,
 
+  `CREATE TABLE IF NOT EXISTS role_cvs (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL DEFAULT 'tenant_default',
+    user_id TEXT,
+    name TEXT NOT NULL,
+    role_description TEXT NOT NULL DEFAULT '',
+    tailored_headline TEXT,
+    tailored_summary TEXT,
+    tailored_skills TEXT,
+    selected_project_ids TEXT,
+    master_resume_revision TEXT,
+    generated_at TEXT,
+    pdf_path TEXT,
+    pdf_fingerprint TEXT,
+    pdf_generated_at TEXT,
+    pdf_regenerating_since TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
+  )`,
+
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_role_cvs_tenant_user_name_unique
+    ON role_cvs(tenant_id, coalesce(user_id, ''), lower(name))`,
+
+  `CREATE INDEX IF NOT EXISTS idx_role_cvs_tenant_user_updated
+    ON role_cvs(tenant_id, user_id, updated_at)`,
+
   `CREATE TABLE IF NOT EXISTS design_resume_assets (
     id TEXT PRIMARY KEY,
     tenant_id TEXT NOT NULL DEFAULT 'tenant_default',
@@ -1372,6 +1399,7 @@ function ensurePrivateUserColumns(): void {
     "post_application_messages",
     "tracer_links",
     "tracer_click_events",
+    "role_cvs",
   ]) {
     addUserColumn(tableName);
   }
@@ -1381,6 +1409,7 @@ function ensurePrivateUserColumns(): void {
     "pipeline_runs",
     "settings",
     "design_resume_documents",
+    "role_cvs",
     "post_application_integrations",
     "post_application_sync_runs",
   ]) {

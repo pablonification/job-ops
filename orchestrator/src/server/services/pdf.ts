@@ -57,6 +57,11 @@ export interface TailoredPdfContent {
 }
 
 export interface GeneratePdfOptions {
+  /**
+   * Where to write the PDF. Defaults to the tenant-scoped job PDF path for
+   * `jobId`; other documents (e.g. Role CVs) pass their own tenant-scoped path.
+   */
+  outputPath?: string;
   tracerLinksEnabled?: boolean;
   requestOrigin?: string | null;
   tracerCompanyName?: string | null;
@@ -394,7 +399,7 @@ export async function generatePdf(
       throw err;
     }
 
-    const outputPath = getTenantJobPdfPath(jobId);
+    const outputPath = options?.outputPath ?? getTenantJobPdfPath(jobId);
     const paperSize = await resolvePdfPaperSize();
     if (renderer !== "rxresume") {
       const [language, typstTheme] = await Promise.all([
