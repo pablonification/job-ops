@@ -99,6 +99,8 @@ COPY extractors/browser-utils/package*.json ./extractors/browser-utils/
 COPY extractors/techinasia/package*.json ./extractors/techinasia/
 COPY extractors/kalibrr/package*.json ./extractors/kalibrr/
 COPY extractors/dealls/package*.json ./extractors/dealls/
+COPY extractors/jobstreet/package*.json ./extractors/jobstreet/
+COPY extractors/glints/package*.json ./extractors/glints/
 COPY extractors/idbigtech/package*.json ./extractors/idbigtech/
 
 # Install build-time Node dependencies on the native builder platform. The
@@ -133,6 +135,8 @@ COPY extractors/browser-utils ./extractors/browser-utils
 COPY extractors/techinasia ./extractors/techinasia
 COPY extractors/kalibrr ./extractors/kalibrr
 COPY extractors/dealls ./extractors/dealls
+COPY extractors/jobstreet ./extractors/jobstreet
+COPY extractors/glints ./extractors/glints
 COPY extractors/idbigtech ./extractors/idbigtech
 
 # ============================================================================
@@ -186,6 +190,8 @@ COPY extractors/browser-utils/package*.json ./extractors/browser-utils/
 COPY extractors/techinasia/package*.json ./extractors/techinasia/
 COPY extractors/kalibrr/package*.json ./extractors/kalibrr/
 COPY extractors/dealls/package*.json ./extractors/dealls/
+COPY extractors/jobstreet/package*.json ./extractors/jobstreet/
+COPY extractors/glints/package*.json ./extractors/glints/
 COPY extractors/idbigtech/package*.json ./extractors/idbigtech/
 
 # Install production Node dependencies only. Do not add --omit=optional: the
@@ -293,6 +299,8 @@ COPY extractors/browser-utils ./extractors/browser-utils
 COPY extractors/techinasia ./extractors/techinasia
 COPY extractors/kalibrr ./extractors/kalibrr
 COPY extractors/dealls ./extractors/dealls
+COPY extractors/jobstreet ./extractors/jobstreet
+COPY extractors/glints ./extractors/glints
 COPY extractors/idbigtech ./extractors/idbigtech
 
 # Create runtime directories.

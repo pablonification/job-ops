@@ -174,6 +174,20 @@ const HEALTH_PROBE_CONFIG_BY_SOURCE: Record<
       jobspyResultsWanted: "1",
     },
   },
+  jobstreet: {
+    searchTerm: DEFAULT_HEALTH_SEARCH_TERM,
+    selectedCountry: "indonesia",
+    settings: {
+      jobspyResultsWanted: "1",
+    },
+  },
+  glints: {
+    searchTerm: DEFAULT_HEALTH_SEARCH_TERM,
+    selectedCountry: "indonesia",
+    settings: {
+      jobspyResultsWanted: "1",
+    },
+  },
   idbigtech: {
     searchTerm: DEFAULT_HEALTH_SEARCH_TERM,
     selectedCountry: "indonesia",
