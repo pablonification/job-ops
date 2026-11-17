@@ -3,20 +3,26 @@
  * from a reviewed draft. Shared by the REST routes (`/api/manual-jobs/fetch`,
  * `/api/manual-jobs/import`) and the MCP `import_job` tool.
  */
-import { AppError, conflict, notFound, requestTimeout } from "@infra/errors";
+import { AppError, badRequest, conflict, notFound } from "@infra/errors";
 import { logger } from "@infra/logger";
+import { fetchPublicUrl, type PublicHttpDeps } from "@server/infra/public-http";
 import { processJob } from "@server/pipeline/index";
 import * as jobsRepo from "@server/repositories/jobs";
 import { getSetting } from "@server/repositories/settings";
+import { inferManualJobDetails } from "@server/services/manualJob";
 import { getProfile } from "@server/services/profile";
 import { scoreJobSuitability } from "@server/services/scorer";
 import { settingsRegistry } from "@shared/settings-registry";
-import type { Job } from "@shared/types";
+import type { Job, ManualJobDraft } from "@shared/types";
 import { JSDOM } from "jsdom";
 import { z } from "zod";
 
 export const manualJobFetchSchema = z.object({
   url: z.string().trim().url().max(2000),
+});
+
+export const manualJobInferenceSchema = z.object({
+  jobDescription: z.string().trim().min(1).max(60000),
 });
 
 export const manualJobImportSchema = z.object({
@@ -53,6 +59,9 @@ export type ManualJobImportInput = z.infer<typeof manualJobImportSchema>;
 export const MANUAL_JOB_DESCRIPTION_MAX_CHARS = 40000;
 
 const FETCH_TIMEOUT_MS = 15000;
+/** Page bytes read (after decompression); the rest of a larger page is cut. */
+const FETCH_MAX_BYTES = 5 * 1024 * 1024;
+const FETCH_MAX_REDIRECTS = 5;
 const FETCHED_CONTENT_MAX_CHARS = 50000;
 
 const cleanOptional = (value?: string | null) => {
@@ -203,6 +212,7 @@ function extractJobPageText(html: string): string {
  */
 export async function fetchManualJobContent(
   url: string,
+  deps?: PublicHttpDeps,
 ): Promise<{ content: string; url: string }> {
   const blockedLabel = getBlockedAutofetchLabel(url);
   if (blockedLabel) {
@@ -213,38 +223,36 @@ export async function fetchManualJobContent(
     });
   }
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-  try {
-    const response = await fetch(url, {
-      signal: controller.signal,
+  const response = await fetchPublicUrl(
+    url,
+    {
+      timeoutMs: FETCH_TIMEOUT_MS,
+      maxBytes: FETCH_MAX_BYTES,
+      maxRedirects: FETCH_MAX_REDIRECTS,
       headers: {
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         Accept:
           "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Encoding": "gzip, deflate, br",
       },
+    },
+    deps,
+  );
+
+  if (response.status < 200 || response.status > 299) {
+    throw new AppError({
+      status: 502,
+      code: "UPSTREAM_ERROR",
+      message: buildFetchFailureMessage(response.status),
+      details: { upstreamStatus: response.status },
     });
-
-    if (!response.ok) {
-      throw new AppError({
-        status: 502,
-        code: "UPSTREAM_ERROR",
-        message: buildFetchFailureMessage(response.status),
-        details: { upstreamStatus: response.status },
-      });
-    }
-
-    const html = await response.text();
-    return { content: extractJobPageText(html), url };
-  } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") {
-      throw requestTimeout();
-    }
-    throw error;
-  } finally {
-    clearTimeout(timeout);
   }
+
+  return {
+    content: extractJobPageText(response.body.toString("utf8")),
+    url,
+  };
 }
 
 function startBackgroundScoring(processedJob: Job): void {
@@ -358,4 +366,122 @@ export async function importManualJob(
 
   startBackgroundScoring(processedJob);
   return scoringJob;
+}
+
+type ImportJobFields = z.infer<typeof manualJobImportSchema>["job"];
+
+/** Draft fields `importJobFromPosting` fills from the model or the caller. */
+const POSTING_TEXT_FIELDS = [
+  "title",
+  "employer",
+  "location",
+  "salary",
+  "deadline",
+  "jobType",
+  "jobLevel",
+  "jobFunction",
+  "disciplines",
+  "degreeRequired",
+  "starting",
+] as const satisfies ReadonlyArray<keyof ImportJobFields>;
+
+export type PostingOverrides = Partial<
+  Pick<
+    ImportJobFields,
+    "title" | "employer" | "location" | "salary" | "jobUrl" | "applicationLink"
+  >
+>;
+
+/**
+ * Keeps a model-extracted value only when the import schema accepts it, so a
+ * bad guess (too long, not a URL) is dropped instead of failing the import.
+ */
+function acceptedDraftValue(
+  field: keyof ImportJobFields,
+  value: string | null | undefined,
+): string | undefined {
+  const cleaned = cleanOptional(value);
+  if (!cleaned) return undefined;
+  return manualJobImportSchema.shape.job.shape[field].safeParse(cleaned).success
+    ? cleaned
+    : undefined;
+}
+
+/**
+ * The manual import dialog in one call: reads the posting (fetching `url`
+ * unless `description` is given), lets the model extract the fields,
+ * applies the caller's overrides, checks title, employer and job URL are
+ * known, and imports it. The stored description is the posting text, as in
+ * the dialog. `process` maps to the dialog's tailor checkbox; omitted, the
+ * user's setting decides.
+ */
+export async function importJobFromPosting(
+  input: {
+    url?: string;
+    description?: string;
+    overrides?: PostingOverrides;
+    process?: boolean;
+  },
+  deps?: PublicHttpDeps,
+): Promise<{ job: Job; warning: string | null }> {
+  if (!input.url && !input.description) {
+    throw badRequest("Provide url or description.");
+  }
+  const fetched =
+    input.description === undefined && input.url
+      ? await fetchManualJobContent(input.url, deps)
+      : null;
+  const text = (input.description ?? fetched?.content ?? "").trim();
+  if (!text) {
+    throw badRequest(
+      "The page had no readable text. Pass the job posting as description instead.",
+    );
+  }
+
+  const inferred = await inferManualJobDetails(
+    manualJobInferenceSchema.parse({ jobDescription: text }).jobDescription,
+  );
+  const draft: ManualJobDraft = inferred.job ?? {};
+  const overrides = input.overrides ?? {};
+
+  const fields: Partial<ImportJobFields> = {};
+  for (const field of POSTING_TEXT_FIELDS) {
+    const value =
+      cleanOptional(overrides[field as keyof PostingOverrides]) ??
+      acceptedDraftValue(field, draft[field]);
+    if (value) fields[field] = value;
+  }
+  const jobUrl =
+    cleanOptional(overrides.jobUrl) ??
+    fetched?.url ??
+    cleanOptional(input.url) ??
+    acceptedDraftValue("jobUrl", draft.jobUrl);
+  const applicationLink =
+    cleanOptional(overrides.applicationLink) ??
+    acceptedDraftValue("applicationLink", draft.applicationLink);
+
+  const missing = [
+    ...(fields.title ? [] : ["title"]),
+    ...(fields.employer ? [] : ["employer"]),
+    ...(jobUrl ? [] : ["jobUrl"]),
+  ];
+  if (missing.length > 0) {
+    throw badRequest(
+      `Could not determine ${missing.join(", ")} from the posting. Pass ${missing.length === 1 ? "it" : "them"} explicitly.`,
+      { missing, ...(inferred.warning ? { warning: inferred.warning } : {}) },
+    );
+  }
+
+  const job = await importManualJob(
+    manualJobImportSchema.parse({
+      ...(input.process === undefined ? {} : { skipTailoring: !input.process }),
+      job: {
+        ...fields,
+        jobUrl,
+        applicationLink,
+        jobDescription: text.slice(0, MANUAL_JOB_DESCRIPTION_MAX_CHARS),
+      },
+    }),
+  );
+  return { job, warning: inferred.warning ?? null };
 }

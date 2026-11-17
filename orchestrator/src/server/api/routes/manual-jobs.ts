@@ -5,16 +5,12 @@ import {
   importManualJob,
   manualJobFetchSchema,
   manualJobImportSchema,
+  manualJobInferenceSchema,
 } from "@server/services/manual-job-import";
 import { inferManualJobDetails } from "@server/services/manualJob";
 import { type Request, type Response, Router } from "express";
-import { z } from "zod";
 
 export const manualJobsRouter = Router();
-
-const manualJobInferenceSchema = z.object({
-  jobDescription: z.string().trim().min(1).max(60000),
-});
 
 /**
  * POST /api/manual-jobs/fetch - Fetch and extract job content from a URL

@@ -37,6 +37,26 @@ describe.sequential("Manual jobs API routes", () => {
       expect(res.status).toBe(400);
     });
 
+    it("refuses private, loopback and metadata addresses", async () => {
+      for (const url of [
+        "http://127.0.0.1:1/jobs/1",
+        "http://[::1]/jobs/1",
+        "http://[::ffff:10.0.0.1]/jobs/1",
+        "http://192.168.1.10/jobs/1",
+        "http://169.254.169.254/latest/meta-data/",
+      ]) {
+        const res = await fetch(`${baseUrl}/api/manual-jobs/fetch`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url }),
+        });
+        const body = await res.json();
+        expect(res.status, url).toBe(422);
+        expect(body.error.code, url).toBe("UNPROCESSABLE_ENTITY");
+        expect(body.error.message, url).toContain("private");
+      }
+    });
+
     it("rejects known blocked autofetch domains", async () => {
       const res = await fetch(`${baseUrl}/api/manual-jobs/fetch`, {
         method: "POST",
