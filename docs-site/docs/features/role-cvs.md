@@ -99,6 +99,10 @@ The PDF has its own status:
 
 PDFs use the same renderer and settings as job PDFs. Only one PDF for the same Role CV can be made at a time; a second request while one is running is rejected.
 
+### Agent access
+
+An agent connected over MCP can manage and use Role CVs with the `list_role_cvs`, `get_role_cv`, `create_role_cv`, `generate_role_cv`, `update_role_cv`, `generate_role_cv_pdf`, `delete_role_cv`, `match_job_role_cv`, `set_job_role_cv` and `apply_role_cv_to_job` tools. See [Agent Access](/docs/features/agent-access#role-cv-tools).
+
 ### API
 
 All routes return the standard `{ ok, data | error, meta.requestId }` envelope.
@@ -151,3 +155,4 @@ curl -X POST http://localhost:3001/api/jobs/<jobId>/role-cv/apply \
 - [Orchestrator: tailoring and PDFs](/docs/features/orchestrator)
 - [Settings](/docs/features/settings)
 - [Reactive Resume](/docs/features/reactive-resume)
+- [Agent Access (MCP)](/docs/features/agent-access)
