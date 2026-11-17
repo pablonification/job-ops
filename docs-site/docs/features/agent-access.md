@@ -35,22 +35,23 @@ These tools change data and need a **Read and write** token, except the three ma
 | `skip_job` | Skip a discovered or ready job. |
 | `update_job` | Edit title, employer, URLs, location, salary, deadline, description, status, tailored headline/summary/skills/projects, or turn tracer links on or off. Only the fields you pass change. |
 | `delete_job` | Delete a job with its notes, history, PDF and documents. Marked destructive. |
-| `bulk_job_action` | `skip`, `rescore` or `move_to_ready` over up to 100 job ids, 4 at a time. Waits for all of them and returns a result per job. |
-| `import_job` | Add a job from a posting URL (fetched the same way as in the manual import dialog) or pasted text. The model fills in title, employer and the rest; values you pass win. `process: true` tailors and renders it right away; the default follows the **Auto-tailor manually imported jobs** setting. |
+| `bulk_job_action` | `skip`, `rescore` or `move_to_ready` over at most 100 job ids, 4 at a time. The call waits until every job is done (it does not return early to poll) and returns a result per job. |
+| `import_job` | Add a job from a public posting URL (fetched the same way as in the manual import dialog) or pasted text. The fetched or pasted text is sent to your configured model, which fills in title, employer and the rest; values you pass win. `process: true` tailors and renders it right away; the default follows the **Auto-tailor manually imported jobs** setting. |
 | `check_job_sponsor` | Look the employer up in the visa sponsor registers and store the match on the job. |
 | `get_job_pdf_link` | *read.* The PDF download URL and whether the PDF is `current`, `stale`, `uploaded`, `regenerating` or `missing`. |
-| `list_job_notes` | *read.* A job's notes, newest first, paginated. |
+| `list_job_notes` | *read.* A job's notes, newest first, paginated with `limit`/`offset`. Each note's content is cut to `previewChars` (default 500) unless `fullContent: true`; `contentLength` gives the full length. |
 | `add_job_note`, `update_job_note`, `delete_job_note` | Add, edit or delete a note on a job (title up to 120 characters, content up to 20,000). |
-| `mark_job_applied` | Record that you applied now: adds an Applied stage, sets status `applied`, and sends the job-complete webhook. Refused if the job is already applied or in progress. |
+| `mark_job_applied` | Record that you applied now: adds an Applied stage, sets status `applied`, and sends the job-complete webhook. Refused (`CONFLICT`) if the job is already applied or in progress, unlike the web UI's **Mark applied**, which records another Applied event. |
 | `transition_job_stage` | Move an application to a stage (`recruiter_screen`, `technical_interview`, `offer`, `closed`, …) or add a timeline note (`toStage: "no_change"`, `eventType: "note"`). Dates are ISO strings. |
 | `set_job_outcome` | Set the outcome (`rejected`, `offer_accepted`, `ghosted`, …) and close the application, or pass `null` to reopen it. |
-| `get_job_timeline` | *read.* The application's stage events and tasks. |
+| `get_job_timeline` | *read.* The application's stage events (oldest first, paginated with `limit`/`offset`) and up to 50 tasks (`tasksTruncated` says when there are more). |
 
 Things to know:
 
 - Model and PDF tools (`rescore_job`, `tailor_job`, `generate_job_pdf`, `process_job`, `import_job` with processing) wait for the work and can take up to a minute. They return the updated job, including `pdfFreshness`.
 - A job that is already being processed, or whose PDF is rendering, is refused with a `CONFLICT` error. Wait, check `get_job`, and try again.
-- `bulk_job_action` with `move_to_ready` runs the model and renderer for every job. Keep batches small (about 10) so the call finishes before your client's timeout.
+- `bulk_job_action` takes at most 100 ids and waits for all of them before it answers. With `move_to_ready` it runs the model and renderer for every job, so keep those batches to about 10 jobs or the call may outlast your client's timeout.
+- A failed tailoring or render step comes back with its own code and message, for example `UPSTREAM_ERROR` "LLM is not configured", or `CONFLICT` while a PDF is already rendering. Tool error messages are cut to 500 characters.
 - The PDF link is a REST URL. Download it with the same token, for example:
 
   ```bash
@@ -59,6 +60,8 @@ Things to know:
   ```
 
 - `import_job` cannot fetch LinkedIn or Indeed pages. Paste the posting text as `description` and pass `jobUrl`.
+- `import_job` (and the manual import dialog) fetches only public web pages: `http`/`https` URLs whose host resolves to public addresses. Loopback, private, link-local (including cloud metadata), unique-local and other reserved addresses are refused with `UNPROCESSABLE_ENTITY`, also when a redirect points there. At most 5 redirects are followed and the first 5 MB of a page are read.
+- Everything `import_job` reads, fetched page or pasted text, is sent to the model you configured in Settings, like the manual import dialog does.
 
 ## Why it exists
 
@@ -147,6 +150,10 @@ A read-only token tried to change data through the REST API. Create a read and w
 ### A tool returns `CONFLICT`
 
 The job is busy: it is being processed, its PDF is rendering, or Ghostwriter is replying. Wait a moment, check the job with `get_job` (`status` is no longer `processing` and `pdfRegenerating` is `false`), then try again. `mark_job_applied` also returns `CONFLICT` for a job that is already applied; use `transition_job_stage` for later steps.
+
+### `import_job` says the URL points to a private or local address
+
+JobOps refuses to fetch addresses on your own network, so a posting on an intranet or `localhost` cannot be fetched. Open it yourself and pass the text as `description` with `jobUrl`.
 
 ### `import_job` says it could not determine the title, employer or jobUrl
 
