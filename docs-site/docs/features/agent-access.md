@@ -22,7 +22,51 @@ Available tools:
 | `get_profile` | Summary of your master resume: headline, summary, skills, experience and project ids. Email, phone and photo are left out. |
 | `get_app_status` | App mode and version, who the token acts as, its scope, and whether a master resume exists. |
 
-All tools in this release only read data.
+Tools marked read-only never change data. Write tools need a read and write token.
+
+### Pipeline, search and settings tools
+
+| Tool | Access | What it does |
+| --- | --- | --- |
+| `start_pipeline_run` | write | Start a discovery run with chosen `sources`, `searchTerms`, `country`, `cityLocations`, workplace types, `topN`, `minSuitabilityScore`, `runBudget` and `scoringInstructions`. Omitted fields use your saved search settings. Returns immediately. |
+| `get_pipeline_progress` | read | Current step, counters, the last run, and `actionRequired` when the run is paused. |
+| `cancel_pipeline_run` | write | Stop the active run. Jobs already imported are kept. |
+| `resume_pipeline_scoring` | write | Continue a run paused because no AI model was configured. |
+| `list_pipeline_runs` | read | Past runs, newest first, paginated. |
+| `get_pipeline_run` | read | One run: requested and effective settings, result summary, duration and job counts. |
+| `plan_search` | read | Turn a request such as "remote backend roles in Indonesia" into run settings with the AI model. Starts from `currentConfig`, a saved search (`presetId`), or your most recently used saved search. Saves nothing. |
+| `list_sources` | read | Source ids and labels, whether each is available on this server, supported countries, whether a country or city is required, and credential needs. `probeHealth: true` also runs a small live search per source. |
+| `list_search_presets` | read | Saved searches with their full settings. |
+| `save_search_preset` | write | Create a saved search, or rename or change one by `id`. |
+| `delete_search_preset` | write | Delete a saved search. |
+| `get_settings` | read | Your settings. Secret values are never returned: `secrets` says only whether each API key, password or token is set. `keys` limits the output. |
+| `update_settings` | write | Change settings with the same validation and permissions as the Settings page. Users who are not system admins can change only search settings. |
+| `get_watchlist_sources` | read | Your Watchlist career pages, the built-in company catalog, and the source types that accept custom URLs. |
+| `set_watchlist_sources` | write | Replace the whole Watchlist source list. Sources you leave out are removed. |
+| `ghostwriter_list_messages` | read | The Ghostwriter conversation for a job. |
+| `ghostwriter_send_message` | write | Ask Ghostwriter something about a job and wait for the complete reply. |
+| `search_visa_sponsors` | read | Look up an employer in the visa sponsor registers. |
+| `list_inbox_items` | read | Recruiter emails waiting for review in the post-application inbox, with the suggested job and stage change. |
+| `resolve_inbox_item` | write | Approve (link to the job and record the stage change) or deny one inbox item. |
+
+#### Start, then poll
+
+A pipeline run takes minutes, so `start_pipeline_run` does not wait for it:
+
+1. Call `start_pipeline_run`. It answers at once with `started: true`, or with a tool error: `CONFLICT` when a run is already active, `INVALID_REQUEST` when a source does not support the chosen country (check `list_sources` first).
+2. Call `get_pipeline_progress` every 15 to 30 seconds until `step` is `completed`, `cancelled` or `failed`.
+3. If `paused` is `true`, read `actionRequired`:
+   - `challenge`: a job site showed a bot check. Only a person can solve it, in the JobOps web UI. The run continues by itself afterwards.
+   - `llm_configuration`: no AI model is configured. Configure it in Settings (or with `update_settings`), then call `resume_pipeline_scoring`.
+4. Use `list_jobs` to review what the run found.
+
+Example request to Claude Code: "Use jobops to search LinkedIn for backend engineer roles in London, wait for the run to finish, then list the new jobs scoring above 70."
+
+#### Limits
+
+- `ghostwriter_send_message` waits at most 3 minutes, then cancels the generation and returns `REQUEST_TIMEOUT`. Set `JOBOPS_MCP_GHOSTWRITER_TIMEOUT_MS` to change the limit.
+- `list_inbox_items` reads at most 500 pending items.
+- Not available as tools: wiping the database, user and workspace administration, backups, sign-in flows for AI providers or mailboxes, billing, and access token management.
 
 ## Why it exists
 
@@ -107,6 +151,14 @@ The URL comes from `JOBOPS_PUBLIC_BASE_URL`, or from the address your browser us
 ### `403 This access token is read-only`
 
 A read-only token tried to change data through the REST API. Create a read and write token if the agent should make changes.
+
+### `start_pipeline_run` returns `CONFLICT`
+
+A run is already active for your account (only one runs at a time). Poll `get_pipeline_progress` until it finishes, or stop it with `cancel_pipeline_run`.
+
+### `update_settings` returns `FORBIDDEN: System admin access is required`
+
+The token belongs to a user who is not a system admin, and the update includes a setting other than search settings (terms, locations, workplace types and per-source limits). Ask an admin to change it, or use an admin's token.
 
 ### `get_profile` says no master resume is configured
 
