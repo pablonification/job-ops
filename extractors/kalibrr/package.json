@@ -1,0 +1,13 @@
+{
+  "name": "kalibrr-extractor",
+  "version": "0.0.1",
+  "type": "module",
+  "description": "Kalibrr extractor (Indonesia) backed by the public job board search API",
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "~5.9.0"
+  },
+  "scripts": {
+    "check:types": "tsc --noEmit"
+  }
+}

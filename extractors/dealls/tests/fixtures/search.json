@@ -1,0 +1,93 @@
+{
+  "data": {
+    "docs": [
+      {
+        "id": "6af41eb8664fdd0012b75935",
+        "slug": "software-engineer-42",
+        "role": "Software Engineer",
+        "employmentTypes": ["fullTime"],
+        "workplaceType": "onSite",
+        "publishedAt": "2026-11-11T07:52:24.896Z",
+        "status": "active",
+        "salaryType": "paid",
+        "salaryRange": null,
+        "country": {
+          "id": 102,
+          "name": "Indonesia"
+        },
+        "city": {
+          "id": 160,
+          "name": "Jakarta Utara"
+        },
+        "company": {
+          "id": "67e2884af2569d0013abc239",
+          "name": "PT Ultra Sakti",
+          "slug": "pt-ultra-sakti-1",
+          "logoUrl": "https://cdn.sejutacita.id/67e287c3056d970013cf14ed/JobPortalCompanyLogo/b48b1219-5b38-4a86-aa47-18f5e7851cdb.jpeg",
+          "sector": "Manufacturing (Pharmaceutical)",
+          "verified": true
+        },
+        "skills": [
+          {
+            "_id": "63300e04dcb6240012d8008a",
+            "name": "Web Development"
+          }
+        ],
+        "externalPlatformApplyUrl": null
+      },
+      {
+        "id": "6af19885511c9e0013fc46ba",
+        "slug": "software-engineer-intern-14",
+        "role": "Software Engineer Intern",
+        "employmentTypes": ["internship"],
+        "workplaceType": "onSite",
+        "publishedAt": "2026-11-09T09:55:17.704Z",
+        "status": "active",
+        "salaryType": "paid",
+        "salaryRange": {
+          "start": 3000000,
+          "end": 4000000
+        },
+        "country": {
+          "id": 102,
+          "name": "Indonesia"
+        },
+        "city": {
+          "id": 273,
+          "name": "Tangerang Selatan"
+        },
+        "company": {
+          "id": "6699cbe523611900123e2a3f",
+          "name": "Dexa Group",
+          "slug": "dexa-group",
+          "logoUrl": "https://cdn.sejutacita.id/6699cb40c4368e0013623062/JobPortalCompanyLogo/e1b497bb-1c44-48f3-95b2-628667a3cc97.PNG",
+          "sector": "Pharmaceutical",
+          "verified": true
+        },
+        "skills": [
+          {
+            "_id": "6334a8731861d800139ec4aa",
+            "name": "Front End"
+          },
+          {
+            "_id": "63ef079907cb4f0015b80ad9",
+            "name": "Software Engineer"
+          },
+          {
+            "_id": "64704da9eb82620012073b08",
+            "name": "Back End"
+          },
+          {
+            "_id": "64744cd0949eec0012816452",
+            "name": "Software"
+          }
+        ],
+        "externalPlatformApplyUrl": null
+      }
+    ],
+    "totalDocs": 11,
+    "totalPages": 3,
+    "page": 1
+  },
+  "code": 200
+}
