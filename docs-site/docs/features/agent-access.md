@@ -22,7 +22,9 @@ Available tools:
 | `get_profile` | Summary of your master resume: headline, summary, skills, experience and project ids. Email, phone and photo are left out. |
 | `get_app_status` | App mode and version, who the token acts as, its scope, and whether a master resume exists. |
 
-Tools marked read-only never change data. Write tools need a read and write token.
+Tools marked read-only never change data, never call the AI model and never run job searches (`get_profile` and `get_settings` may read your resume from Reactive Resume). Write tools need a read and write token.
+
+These tools call the AI model or outside services: `start_pipeline_run` (job sites and the model), `plan_search` and `ghostwriter_send_message` (the model), `check_source_health` (job sites, including billed Apify runs for Seek) and `set_watchlist_sources` (fetches custom career pages). `plan_search` works with a read-only token because it changes no data, but it is not marked read-only because it uses the model.
 
 ### Pipeline, search and settings tools
 
@@ -34,13 +36,14 @@ Tools marked read-only never change data. Write tools need a read and write toke
 | `resume_pipeline_scoring` | write | Continue a run paused because no AI model was configured. |
 | `list_pipeline_runs` | read | Past runs, newest first, paginated. |
 | `get_pipeline_run` | read | One run: requested and effective settings, result summary, duration and job counts. |
-| `plan_search` | read | Turn a request such as "remote backend roles in Indonesia" into run settings with the AI model. Starts from `currentConfig`, a saved search (`presetId`), or your most recently used saved search. Saves nothing. |
-| `list_sources` | read | Source ids and labels, whether each is available on this server, supported countries, whether a country or city is required, and credential needs. `probeHealth: true` also runs a small live search per source. |
+| `plan_search` | read (not marked read-only) | Turn a request such as "remote backend roles in Indonesia" into run settings with the AI model. Starts from `currentConfig`, a saved search (`presetId`), or your most recently used saved search. Saves nothing. |
+| `list_sources` | read | Source ids and labels, whether each is available on this server, supported countries, whether a country or city is required, and whether its credentials are configured. |
+| `check_source_health` | write | Run a small live test search on up to 5 sources to see whether they work right now. |
 | `list_search_presets` | read | Saved searches with their full settings. |
 | `save_search_preset` | write | Create a saved search, or rename or change one by `id`. |
 | `delete_search_preset` | write | Delete a saved search. |
-| `get_settings` | read | Your settings. Secret values are never returned: `secrets` says only whether each API key, password or token is set. `keys` limits the output. |
-| `update_settings` | write | Change settings with the same validation and permissions as the Settings page. Users who are not system admins can change only search settings. |
+| `get_settings` | read | Your settings, without credentials (see [What agents can see and change in settings](#what-agents-can-see-and-change-in-settings)). `keys` limits the output. |
+| `update_settings` | write | Change agent-editable settings with the same validation and permissions as the Settings page. Users who are not system admins can change only search settings. |
 | `get_watchlist_sources` | read | Your Watchlist career pages, the built-in company catalog, and the source types that accept custom URLs. |
 | `set_watchlist_sources` | write | Replace the whole Watchlist source list. Sources you leave out are removed. |
 | `ghostwriter_list_messages` | read | The Ghostwriter conversation for a job. |
@@ -57,14 +60,30 @@ A pipeline run takes minutes, so `start_pipeline_run` does not wait for it:
 2. Call `get_pipeline_progress` every 15 to 30 seconds until `step` is `completed`, `cancelled` or `failed`.
 3. If `paused` is `true`, read `actionRequired`:
    - `challenge`: a job site showed a bot check. Only a person can solve it, in the JobOps web UI. The run continues by itself afterwards.
-   - `llm_configuration`: no AI model is configured. Configure it in Settings (or with `update_settings`), then call `resume_pipeline_scoring`.
+   - `llm_configuration`: no AI model is configured. Only a person can set the provider and key, in Settings. Then call `resume_pipeline_scoring`.
 4. Use `list_jobs` to review what the run found.
 
 Example request to Claude Code: "Use jobops to search LinkedIn for backend engineer roles in London, wait for the run to finish, then list the new jobs scoring above 70."
 
+#### What agents can see and change in settings
+
+An agent reads untrusted text (job descriptions, web pages, emails), so settings that hold credentials or decide where your data goes are web-app only.
+
+| Settings | `get_settings` shows | `update_settings` |
+| --- | --- | --- |
+| Search terms, cities and location, workplace types, per-source limits, blocked companies | Value | Allowed |
+| Scoring instructions and salary penalty, auto-skip threshold | Value | Allowed |
+| Models (`model`, `modelScorer`, `modelTailoring`, `modelProjectSelection`), project selection, prompt templates, writing style, PDF and display options | Value | Allowed |
+| LLM provider, Reactive Resume base resume, backup schedule, onboarding state | Value | Web app only |
+| LLM base URL, per-purpose LLM overrides, Reactive Resume URL | URL without user info, query string or fragment | Web app only |
+| Pipeline and job-complete webhook URLs | Host only | Web app only |
+| API keys, passwords, tokens, webhook secret, UK Visa Jobs email, Adzuna app id | Only whether it is set (`hidden`) | Web app only |
+
+`get_settings` also returns `webOnly`, the full list of settings an agent cannot change. `update_settings` refuses them with a `FORBIDDEN` tool error that names the setting. A setting added in a later version is hidden and web-app only until it is classified.
+
 #### Limits
 
-- `ghostwriter_send_message` waits at most 3 minutes, then cancels the generation and returns `REQUEST_TIMEOUT`. Set `JOBOPS_MCP_GHOSTWRITER_TIMEOUT_MS` to change the limit.
+- `ghostwriter_send_message` waits at most 3 minutes, then cancels the generation and returns `REQUEST_TIMEOUT`. Set `JOBOPS_MCP_GHOSTWRITER_TIMEOUT_MS` to change the limit. If the agent disconnects first, the generation is cancelled too.
 - `list_inbox_items` reads at most 500 pending items.
 - Not available as tools: wiping the database, user and workspace administration, backups, sign-in flows for AI providers or mailboxes, billing, and access token management.
 
@@ -159,6 +178,10 @@ A run is already active for your account (only one runs at a time). Poll `get_pi
 ### `update_settings` returns `FORBIDDEN: System admin access is required`
 
 The token belongs to a user who is not a system admin, and the update includes a setting other than search settings (terms, locations, workplace types and per-source limits). Ask an admin to change it, or use an admin's token.
+
+### `update_settings` returns `FORBIDDEN: … can only be changed in the JobOps web app`
+
+The setting is web-app only for agents (credentials, LLM provider and endpoints, webhooks, Reactive Resume connection, backups). Change it on the Settings page.
 
 ### `get_profile` says no master resume is configured
 
