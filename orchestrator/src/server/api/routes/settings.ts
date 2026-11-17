@@ -4,7 +4,6 @@ import {
   forbidden,
   serviceUnavailable,
   statusToCode,
-  unauthorized,
   upstreamError,
 } from "@infra/errors";
 import { asyncRoute, fail, ok } from "@infra/http";
@@ -13,9 +12,6 @@ import { getRequestId, isSystemAdmin } from "@infra/request-context";
 import { getJobOpsAppConfig } from "@server/config/app-mode";
 import { isDemoMode, sendDemoBlocked } from "@server/config/demo";
 import { getSetting } from "@server/repositories/settings";
-import { getCurrentAccountEntitlements } from "@server/services/account-entitlements";
-import { enqueueAutoPdfRegenerationForSettingsChanges } from "@server/services/auto-pdf-regeneration";
-import { setBackupSettings } from "@server/services/backup/index";
 import { getOriginalEnvValue } from "@server/services/envSettings";
 import { resetCodexSession } from "@server/services/llm/codex/client";
 import {
@@ -27,201 +23,33 @@ import {
 import { resolveLlmApiKey } from "@server/services/llm/credentials";
 import { isHostedLocalProvider } from "@server/services/llm/hosted-policy";
 import { LlmService } from "@server/services/llm/service";
-import { clearProfileCache } from "@server/services/profile";
 import {
-  clearRxResumeResumeCache,
   extractProjectsFromResume,
   getResume,
   listResumes,
   RxResumeAuthConfigError,
   RxResumeRequestError,
   validateResumeSchema,
-  validateCredentials as validateRxResumeCredentials,
 } from "@server/services/rxresume";
 import { getEffectiveSettings } from "@server/services/settings";
+import {
+  assertHostedProviderAllowed,
+  assertLlmSettingsEditable,
+  normalizeLlmProviderValue,
+  updateSettingsForCaller,
+} from "@server/services/settings-edit";
 import { applySettingsUpdates } from "@server/services/settings-update";
-import {
-  mapGlmProviderAlias,
-  settingsRegistry,
-} from "@shared/settings-registry";
-import {
-  type UpdateSettingsInput,
-  updateSettingsSchema,
-} from "@shared/settings-schema";
+import { settingsRegistry } from "@shared/settings-registry";
+import { updateSettingsSchema } from "@shared/settings-schema";
 import { LLM_PURPOSE_VALUES, type LlmPurpose } from "@shared/types";
 import { type Request, type Response, Router } from "express";
 
 export const settingsRouter = Router();
 
-const RXRESUME_SAVE_VALIDATION_KEYS: Array<keyof UpdateSettingsInput> = [
-  "rxresumeUrl",
-  "rxresumeApiKey",
-];
-const LLM_SETTING_KEYS: Array<keyof UpdateSettingsInput> = [
-  "model",
-  "modelScorer",
-  "modelTailoring",
-  "modelProjectSelection",
-  "llmProvider",
-  "llmBaseUrl",
-  "llmApiKey",
-  "llmPurposeOverrides",
-  "llmPurposeApiKeys",
-];
-const CLI_PROVIDERS = new Set([
-  "codex",
-  "gemini_cli",
-  "claude_cli",
-  "claude_agent_sdk",
-]);
-
-// These settings describe an individual search run. They are persisted in the
-// settings repository for extractor compatibility, but are not server-level
-// maintenance settings and must remain editable by authenticated non-admins.
-const NON_ADMIN_SEARCH_SETTING_KEYS = new Set<keyof UpdateSettingsInput>([
-  "searchTerms",
-  "workplaceTypes",
-  "locationSearchScope",
-  "locationMatchStrictness",
-  "locationSearchMode",
-  "locationLatitude",
-  "locationLongitude",
-  "locationRadiusMiles",
-  "jobspyResultsWanted",
-  "gradcrackerMaxJobsPerTerm",
-  "ukvisajobsMaxJobs",
-  "adzunaMaxJobsPerTerm",
-  "startupjobsMaxJobsPerTerm",
-  "jobindexMaxJobsPerTerm",
-  "seekMaxJobsPerTerm",
-  "naukriMaxJobsPerTerm",
-  "jobspyCountryIndeed",
-  "searchCities",
-  "jobspyLocation",
-]);
-
 function requireSystemAdmin(res: Response): boolean {
   if (getJobOpsAppConfig().appMode === "hosted" || isSystemAdmin()) return true;
   fail(res, forbidden("System admin access is required"));
   return false;
-}
-
-function requireSystemAdminOrSearchSettings(
-  res: Response,
-  input: UpdateSettingsInput,
-): boolean {
-  if (
-    getJobOpsAppConfig().appMode === "hosted" ||
-    isSystemAdmin() ||
-    Object.keys(input).every((key) =>
-      NON_ADMIN_SEARCH_SETTING_KEYS.has(key as keyof UpdateSettingsInput),
-    )
-  ) {
-    return true;
-  }
-
-  fail(res, forbidden("System admin access is required"));
-  return false;
-}
-
-function hasInputKey<K extends keyof UpdateSettingsInput>(
-  input: UpdateSettingsInput,
-  key: K,
-): boolean {
-  return Object.hasOwn(input, key);
-}
-
-function shouldValidateRxResumeOnSave(input: UpdateSettingsInput): boolean {
-  return RXRESUME_SAVE_VALIDATION_KEYS.some((key) => hasInputKey(input, key));
-}
-
-async function assertLlmSettingsEditable(): Promise<void> {
-  if (getJobOpsAppConfig().appMode !== "hosted") return;
-  if (!(await getCurrentAccountEntitlements()).userEditableLlmSettings) {
-    throw forbidden("This hosted account uses the included AI provider.");
-  }
-}
-
-function assertHostedProviderAllowed(
-  provider: string | null | undefined,
-): void {
-  if (getJobOpsAppConfig().appMode !== "hosted") return;
-  if (isHostedLocalProvider(provider)) {
-    throw forbidden(
-      "Local LLM providers are unavailable in hosted mode. Configure a supported hosted HTTPS provider.",
-    );
-  }
-  if (CLI_PROVIDERS.has(normalizeLlmProviderValue(provider) ?? "")) {
-    throw forbidden("CLI LLM providers are unavailable in hosted mode.");
-  }
-}
-
-function assertHostedBaseUrlAllowed(value: string | null | undefined): void {
-  if (getJobOpsAppConfig().appMode === "hosted" && value?.trim()) {
-    throw forbidden(
-      "Custom LLM base URLs are unavailable in hosted mode. Use a supported provider endpoint.",
-    );
-  }
-}
-
-function assertHostedLlmInputAllowed(input: UpdateSettingsInput): void {
-  if (getJobOpsAppConfig().appMode !== "hosted") return;
-  assertHostedProviderAllowed(input.llmProvider);
-  for (const override of Object.values(input.llmPurposeOverrides ?? {})) {
-    assertHostedProviderAllowed(override?.provider);
-    assertHostedBaseUrlAllowed(override?.baseUrl);
-  }
-  assertHostedBaseUrlAllowed(input.llmBaseUrl);
-}
-
-function isMissingRxResumeConfigValidationResult(input: {
-  status: number;
-  message: string;
-}): boolean {
-  return input.status === 400 && /not configured/i.test(input.message);
-}
-
-function buildRxResumeValidationOptions(
-  input: UpdateSettingsInput,
-): Parameters<typeof validateRxResumeCredentials>[0] {
-  return {
-    v5: {
-      ...(hasInputKey(input, "rxresumeApiKey")
-        ? { apiKey: input.rxresumeApiKey }
-        : {}),
-      ...(hasInputKey(input, "rxresumeUrl")
-        ? { baseUrl: input.rxresumeUrl }
-        : {}),
-    },
-  };
-}
-
-function toRxResumeValidationAppError(
-  status: number,
-  message: string,
-): AppError {
-  if (status === 401) {
-    return unauthorized(message);
-  }
-
-  if (status === 400) {
-    return badRequest(message);
-  }
-
-  return new AppError({
-    status,
-    code: statusToCode(status),
-    message,
-  });
-}
-
-function normalizeLlmProviderValue(
-  provider: string | null | undefined,
-): string | undefined {
-  if (!provider) return undefined;
-  const normalized = provider.trim().toLowerCase().replace(/[-.]/g, "_");
-  const mapped = mapGlmProviderAlias(normalized);
-  return mapped === "claude" ? "anthropic" : mapped;
 }
 
 function getDefaultValidationBaseUrl(
@@ -443,81 +271,20 @@ settingsRouter.patch(
     }
 
     const input = updateSettingsSchema.parse(req.body);
-    if (!requireSystemAdminOrSearchSettings(res, input)) return;
-    if (LLM_SETTING_KEYS.some((key) => hasInputKey(input, key))) {
-      await assertLlmSettingsEditable();
-      assertHostedLlmInputAllowed(input);
-    }
-    if (shouldValidateRxResumeOnSave(input)) {
-      const validation = await validateRxResumeCredentials(
-        buildRxResumeValidationOptions(input),
-      );
-      if (!validation.ok) {
-        const status = validation.status ?? 0;
-        if (
-          isMissingRxResumeConfigValidationResult({
-            status,
-            message: validation.message,
-          })
-        ) {
-          logger.info(
-            "Skipping save-time Reactive Resume validation because credentials are incomplete",
-            {
-              requestId: getRequestId() ?? null,
-              route: "PATCH /api/settings",
-              rxresumeMode: validation.mode ?? null,
-              status,
-            },
-          );
-        } else if (status >= 400 && status < 500) {
-          fail(res, toRxResumeValidationAppError(status, validation.message));
-          return;
-        } else if (status === 0 || status >= 500) {
-          logger.warn(
-            "Reactive Resume save-time validation could not verify upstream availability",
-            {
-              requestId: getRequestId() ?? null,
-              route: "PATCH /api/settings",
-              rxresumeMode: validation.mode ?? null,
-              status,
-            },
-          );
-        }
+    try {
+      const { settings } = await updateSettingsForCaller(input, {
+        route: "PATCH /api/settings",
+      });
+      ok(res, settings);
+    } catch (error) {
+      // Permission and validation refusals are expected answers, not
+      // server errors: reply without logging them as errors.
+      if (error instanceof AppError && error.status < 500) {
+        fail(res, error);
+        return;
       }
+      throw error;
     }
-
-    const plan = await applySettingsUpdates(input);
-    if (plan.shouldClearRxResumeCaches) {
-      clearRxResumeResumeCache();
-      clearProfileCache();
-    }
-
-    const data = await getEffectiveSettings();
-
-    if (plan.shouldRefreshBackupScheduler) {
-      setBackupSettings({
-        enabled: data.backupEnabled.value,
-        hour: data.backupHour.value,
-        maxCount: data.backupMaxCount.value,
-      });
-    }
-    ok(res, data);
-
-    queueMicrotask(() => {
-      void enqueueAutoPdfRegenerationForSettingsChanges({
-        updatedSettingKeys: plan.updatedSettingKeys,
-        requestedBy: "user",
-      }).catch((error) => {
-        logger.warn(
-          "Failed to queue auto PDF regeneration for settings change",
-          {
-            route: "PATCH /api/settings",
-            updatedSettingKeys: plan.updatedSettingKeys,
-            error,
-          },
-        );
-      });
-    });
   }),
 );
 

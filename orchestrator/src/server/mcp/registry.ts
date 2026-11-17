@@ -9,8 +9,9 @@
  *    needs to change.
  * 3. Each tool declares:
  *    - `name` (snake_case, unique), `title`, `description` (key terms first);
- *    - `scope: "read" | "write"`. Read tools get `readOnlyHint`; a read-scope
- *      token calling a write tool gets a FORBIDDEN tool error;
+ *    - `scope: "read" | "write"`. Read tools get `readOnlyHint` (unless
+ *      `readOnly: false`, for read tools that call a model or spend money);
+ *      a read-scope token calling a write tool gets a FORBIDDEN tool error;
  *    - `destructive: true` for deletes/irreversible changes, `idempotent`,
  *      `openWorld` (calls job sites/LLMs) when they apply;
  *    - `input`: a zod 3 `z.object({...}).strict()` (reuse route schemas where
@@ -30,11 +31,21 @@
 import type { McpToolDefinition, McpToolGroup } from "./kit";
 import { appReadToolGroup } from "./tools/app-read";
 import { applicationsToolGroup } from "./tools/applications";
+import { ghostwriterToolGroup } from "./tools/ghostwriter";
+import { inboxToolGroup } from "./tools/inbox";
 import { jobActionsToolGroup } from "./tools/job-actions";
 import { jobNotesToolGroup } from "./tools/job-notes";
 import { jobsReadToolGroup } from "./tools/jobs-read";
+import { pipelineToolGroup } from "./tools/pipeline";
+import { settingsToolGroup } from "./tools/settings";
+import { visaSponsorsToolGroup } from "./tools/visa-sponsors";
 
 export const MCP_TOOL_GROUPS: readonly McpToolGroup[] = [
+  pipelineToolGroup,
+  settingsToolGroup,
+  ghostwriterToolGroup,
+  visaSponsorsToolGroup,
+  inboxToolGroup,
   jobsReadToolGroup,
   appReadToolGroup,
   jobActionsToolGroup,

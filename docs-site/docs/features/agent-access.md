@@ -22,6 +22,10 @@ Available tools:
 | `get_profile` | Summary of your master resume: headline, summary, skills, experience and project ids. Email, phone and photo are left out. |
 | `get_app_status` | App mode and version, who the token acts as, its scope, and whether a master resume exists. |
 
+Tools marked read-only never change data, never call the AI model and never run job searches (`get_profile` and `get_settings` may read your resume from Reactive Resume). Write tools need a read and write token.
+
+These tools call the AI model or outside services: `start_pipeline_run` (job sites and the model), `plan_search` and `ghostwriter_send_message` (the model), `check_source_health` (job sites, including billed Apify runs for Seek) and `set_watchlist_sources` (fetches custom career pages). `plan_search` works with a read-only token because it changes no data, but it is not marked read-only because it uses the model.
+
 ### Job and application tools
 
 These tools change data and need a **Read and write** token, except the three marked *read*. They call the same code as the buttons on the job page, so the results match the web UI.
@@ -62,6 +66,67 @@ Things to know:
 - `import_job` cannot fetch LinkedIn or Indeed pages. Paste the posting text as `description` and pass `jobUrl`.
 - `import_job` (and the manual import dialog) fetches only public web pages: `http`/`https` URLs whose host resolves to public addresses. Loopback, private, link-local (including cloud metadata), unique-local and other reserved addresses are refused with `UNPROCESSABLE_ENTITY`, also when a redirect points there. At most 5 redirects are followed and the first 5 MB of a page are read.
 - Everything `import_job` reads, fetched page or pasted text, is sent to the model you configured in Settings, like the manual import dialog does.
+
+### Pipeline, search and settings tools
+
+| Tool | Access | What it does |
+| --- | --- | --- |
+| `start_pipeline_run` | write | Start a discovery run with chosen `sources`, `searchTerms`, `country`, `cityLocations`, workplace types, `topN`, `minSuitabilityScore`, `runBudget` and `scoringInstructions`. Omitted fields use your saved search settings. Returns immediately. |
+| `get_pipeline_progress` | read | Current step, counters, the last run, and `actionRequired` when the run is paused. |
+| `cancel_pipeline_run` | write | Stop the active run. Jobs already imported are kept. |
+| `resume_pipeline_scoring` | write | Continue a run paused because no AI model was configured. |
+| `list_pipeline_runs` | read | Past runs, newest first, paginated. |
+| `get_pipeline_run` | read | One run: requested and effective settings, result summary, duration and job counts. |
+| `plan_search` | read (not marked read-only) | Turn a request such as "remote backend roles in Indonesia" into run settings with the AI model. Starts from `currentConfig`, a saved search (`presetId`), or your most recently used saved search. Saves nothing. |
+| `list_sources` | read | Source ids and labels, whether each is available on this server, supported countries, whether a country or city is required, and whether its credentials are configured. |
+| `check_source_health` | write | Run a small live test search on up to 5 sources to see whether they work right now. |
+| `list_search_presets` | read | Saved searches with their full settings. |
+| `save_search_preset` | write | Create a saved search, or rename or change one by `id`. |
+| `delete_search_preset` | write | Delete a saved search. |
+| `get_settings` | read | Your settings, without credentials (see [What agents can see and change in settings](#what-agents-can-see-and-change-in-settings)). `keys` limits the output. |
+| `update_settings` | write | Change agent-editable settings with the same validation and permissions as the Settings page. Users who are not system admins can change only search settings. |
+| `get_watchlist_sources` | read | Your Watchlist career pages, the built-in company catalog, and the source types that accept custom URLs. |
+| `set_watchlist_sources` | write | Replace the whole Watchlist source list. Sources you leave out are removed. |
+| `ghostwriter_list_messages` | read | The Ghostwriter conversation for a job. |
+| `ghostwriter_send_message` | write | Ask Ghostwriter something about a job and wait for the complete reply. |
+| `search_visa_sponsors` | read | Look up an employer in the visa sponsor registers. |
+| `list_inbox_items` | read | Recruiter emails waiting for review in the post-application inbox, with the suggested job and stage change. |
+| `resolve_inbox_item` | write | Approve (link to the job and record the stage change) or deny one inbox item. |
+
+#### Start, then poll
+
+A pipeline run takes minutes, so `start_pipeline_run` does not wait for it:
+
+1. Call `start_pipeline_run`. It answers at once with `started: true`, or with a tool error: `CONFLICT` when a run is already active, `INVALID_REQUEST` when a source does not support the chosen country (check `list_sources` first).
+2. Call `get_pipeline_progress` every 15 to 30 seconds until `step` is `completed`, `cancelled` or `failed`.
+3. If `paused` is `true`, read `actionRequired`:
+   - `challenge`: a job site showed a bot check. Only a person can solve it, in the JobOps web UI. The run continues by itself afterwards.
+   - `llm_configuration`: no AI model is configured. Only a person can set the provider and key, in Settings. Then call `resume_pipeline_scoring`.
+4. Use `list_jobs` to review what the run found.
+
+Example request to Claude Code: "Use jobops to search LinkedIn for backend engineer roles in London, wait for the run to finish, then list the new jobs scoring above 70."
+
+#### What agents can see and change in settings
+
+An agent reads untrusted text (job descriptions, web pages, emails), so settings that hold credentials or decide where your data goes are web-app only.
+
+| Settings | `get_settings` shows | `update_settings` |
+| --- | --- | --- |
+| Search terms, cities and location, workplace types, per-source limits, blocked companies | Value | Allowed |
+| Scoring instructions and salary penalty, auto-skip threshold | Value | Allowed |
+| Models (`model`, `modelScorer`, `modelTailoring`, `modelProjectSelection`), project selection, prompt templates, writing style, PDF and display options | Value | Allowed |
+| LLM provider, Reactive Resume base resume, backup schedule, onboarding state | Value | Web app only |
+| LLM base URL, per-purpose LLM overrides, Reactive Resume URL | URL without user info, query string or fragment | Web app only |
+| Pipeline and job-complete webhook URLs | Host only | Web app only |
+| API keys, passwords, tokens, webhook secret, UK Visa Jobs email, Adzuna app id | Only whether it is set (`hidden`) | Web app only |
+
+`get_settings` also returns `webOnly`, the full list of settings an agent cannot change. `update_settings` refuses them with a `FORBIDDEN` tool error that names the setting. A setting added in a later version is hidden and web-app only until it is classified.
+
+#### Limits
+
+- `ghostwriter_send_message` waits at most 3 minutes, then cancels the generation and returns `REQUEST_TIMEOUT`. Set `JOBOPS_MCP_GHOSTWRITER_TIMEOUT_MS` to change the limit. If the agent disconnects first, the generation is cancelled too.
+- `list_inbox_items` reads at most 500 pending items.
+- Not available as tools: wiping the database, user and workspace administration, backups, sign-in flows for AI providers or mailboxes, billing, and access token management.
 
 ## Why it exists
 
@@ -158,6 +223,18 @@ JobOps refuses to fetch addresses on your own network, so a posting on an intran
 ### `import_job` says it could not determine the title, employer or jobUrl
 
 The model could not read those fields from the posting, or the LLM is not configured. Pass the missing fields (`title`, `employer`, `jobUrl`) yourself.
+
+### `start_pipeline_run` returns `CONFLICT`
+
+A run is already active for your account (only one runs at a time). Poll `get_pipeline_progress` until it finishes, or stop it with `cancel_pipeline_run`.
+
+### `update_settings` returns `FORBIDDEN: System admin access is required`
+
+The token belongs to a user who is not a system admin, and the update includes a setting other than search settings (terms, locations, workplace types and per-source limits). Ask an admin to change it, or use an admin's token.
+
+### `update_settings` returns `FORBIDDEN: … can only be changed in the JobOps web app`
+
+The setting is web-app only for agents (credentials, LLM provider and endpoints, webhooks, Reactive Resume connection, backups). Change it on the Settings page.
 
 ### `get_profile` says no master resume is configured
 

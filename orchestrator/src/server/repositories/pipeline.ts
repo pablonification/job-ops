@@ -176,6 +176,33 @@ export async function getRecentPipelineRuns(
   return rows.map(mapRowToPipelineRun);
 }
 
+/**
+ * One page of pipeline runs, newest first, with the total count.
+ */
+export async function listPipelineRunsPage(input: {
+  limit: number;
+  offset: number;
+}): Promise<{ runs: PipelineRun[]; total: number }> {
+  const [rows, [countRow]] = await Promise.all([
+    db
+      .select()
+      .from(pipelineRuns)
+      .where(pipelineRunsScopeFilter())
+      .orderBy(desc(pipelineRuns.startedAt))
+      .limit(input.limit)
+      .offset(input.offset),
+    db
+      .select({ count: sql<number>`count(*)` })
+      .from(pipelineRuns)
+      .where(pipelineRunsScopeFilter()),
+  ]);
+
+  return {
+    runs: rows.map(mapRowToPipelineRun),
+    total: Number(countRow?.count ?? 0),
+  };
+}
+
 export async function getPipelineRunById(
   id: string,
 ): Promise<PipelineRun | null> {

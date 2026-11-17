@@ -16,6 +16,8 @@ export type McpToolContext = {
   requestId: string | null;
   /** Public origin of this instance (JOBOPS_PUBLIC_BASE_URL or request host). */
   requestOrigin: string | null;
+  /** Aborted when the client disconnects before the result is sent. */
+  signal?: AbortSignal;
 };
 
 /**
@@ -35,6 +37,11 @@ export type McpToolDefinition<
   description: string;
   /** `read` tools are callable by every token; `write` tools need write scope. */
   scope: AccessTokenScope;
+  /**
+   * Read tools only: `false` drops the read-only annotation for tools that
+   * change no data but spend money or call a model (e.g. search planning).
+   */
+  readOnly?: false;
   /** Write tools only: marks deletes and other irreversible changes. */
   destructive?: boolean;
   /** Write tools only: repeating the call with the same input has no extra effect. */
