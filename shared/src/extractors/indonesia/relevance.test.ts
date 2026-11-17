@@ -1,55 +1,136 @@
 import { describe, expect, it } from "vitest";
 import { canonicalTitleTokens, isRelevantJobTitle } from "./relevance";
 
-describe("job title relevance", () => {
-  it.each([
-    ["Back-End Engineer", "backend engineer"],
-    ["Backend Engineer", "back-end engineer"],
-    ["Back End Developer", "backend engineer"],
-    ["Golang Developer", "go developer"],
-    ["Senior Go Engineer", "golang developer"],
-    ["Site Reliability Engineer", "sre"],
-    ["SRE Lead", "site reliability"],
-    ["Quality Assurance Engineer", "qa engineer"],
-    ["QA Tester", "quality assurance"],
-    ["Software Test Engineer", "qa engineer"],
-    ["Software Developer", "software engineer"],
-    ["Backend Developer", "software engineer"],
-    ["Mobile Programmer", "software engineer"],
-    ["Software Engineer", "software"],
-    ["Front-End Developer (FE)", "frontend engineer"],
-    ["FE Engineer", "front end engineer"],
-    ["BE Engineer", "backend developer"],
-    ["Full-Stack Developer", "fullstack engineer"],
-    ["Fullstack Engineer", "full stack developer"],
-    ["iOS Developer", "ios engineer"],
-    ["Android Engineer", "android developer"],
-    ["Dev Ops Engineer", "devops"],
-    ["DevOps Engineer", "devops engineer"],
-    ["Data Engineer", "data"],
-    ["Machine Learning Engineer", "ml engineer"],
-    ["ML Engineer", "machine learning"],
-    ["Product Manager", "pm"],
-    ["Senior PM", "product manager"],
-    ["Tax & Audit Staff", "tax & audit"],
-    ["Anything", "and"],
-  ])("keeps %s for %s", (title, term) => {
-    expect(isRelevantJobTitle(title, term)).toBe(true);
-  });
+// [title, term, expected]
+const CASES: ReadonlyArray<readonly [string, string, boolean]> = [
+  // Synonyms and separators.
+  ["Back-End Engineer", "backend engineer", true],
+  ["Backend Engineer", "back-end engineer", true],
+  ["Back End Developer", "backend engineer", true],
+  ["Golang Developer", "go developer", true],
+  ["Senior Go Engineer", "golang developer", true],
+  ["Site Reliability Engineer", "sre", true],
+  ["SRE Lead", "site reliability", true],
+  ["Quality Assurance Engineer", "qa engineer", true],
+  ["QA Tester", "quality assurance", true],
+  ["Software Test Engineer", "qa engineer", true],
+  ["Front-End Developer (FE)", "frontend engineer", true],
+  ["FE Engineer", "front end engineer", true],
+  ["BE Engineer", "backend developer", true],
+  ["Full-Stack Developer", "fullstack engineer", true],
+  ["Fullstack Engineer", "full stack developer", true],
+  ["iOS Developer", "ios engineer", true],
+  ["Android Engineer", "android developer", true],
+  ["Dev Ops Engineer", "devops", true],
+  ["DevOps Engineer", "devops engineer", true],
+  ["Data Engineer", "data", true],
+  ["Machine Learning Engineer", "ml engineer", true],
+  ["ML Engineer", "machine learning", true],
+  ["Product Manager", "pm", true],
+  ["Senior PM", "product manager", true],
+  ["Tax & Audit Staff", "tax & audit", true],
+  ["Anything", "and", true],
+  ["Software Engineer", "software", true],
+  ["Java Developer", "go developer", false],
+  ["Data Analyst", "data engineer", false],
+  ["Google Ads Specialist", "go", false],
+  ["Marketing Staff", "go developer", false],
+  ["Tax & Audit Staff", "data", false],
 
-  it.each([
-    // The recorded loose match: body text mentions "software" and "data".
-    ["Tax & Audit Staff", "software engineer"],
-    ["Tax & Audit Staff", "data"],
-    // Prose would contain "go" and "developer"; the title does not.
-    ["Marketing Staff", "go developer"],
-    ["Java Developer", "go developer"],
-    ["Engineering Manager", "software engineer"],
-    ["Software Engineer", "backend engineer"],
-    ["Data Analyst", "data engineer"],
-    ["Google Ads Specialist", "go"],
-  ])("drops %s for %s", (title, term) => {
-    expect(isRelevantJobTitle(title, term)).toBe(false);
+  // Levels: intern family.
+  ["Software Engineering Internship", "intern", true],
+  ["Internship Program", "intern", true],
+  ["Interns - Product Design", "intern", true],
+  ["Magang Software Developer", "intern", true],
+  ["Data Analyst Trainee", "intern", true],
+  ["Apprentice Engineer", "intern", true],
+  ["Software Engineer Intern (2027 Start)", "intern", true],
+  ["Software Engineer", "intern", false],
+  ["Internal Auditor", "intern", false],
+
+  // Levels: graduate family.
+  ["Fresh Graduate", "new grad", true],
+  ["Graduate Software Engineer", "new grad", true],
+  ["Graduates Programme 2027", "graduate", true],
+  ["Campus Hiring - Backend Engineer", "new grad", true],
+  ["Early Career Software Engineer", "graduate", true],
+  ["Entry Level Developer", "fresh graduate", true],
+  ["Software Engineer", "new grad", false],
+
+  // Levels: junior family.
+  ["Associate Software Engineer", "junior software engineer", true],
+  ["Jr. Backend Developer", "junior", true],
+  ["Senior Software Engineer", "junior software engineer", false],
+
+  // Level and role together need both.
+  ["Software Engineer Intern (2027 Start)", "software engineer intern", true],
+  ["Software Engineering Internship", "software engineer intern", true],
+  ["SDE Intern", "software engineer intern", true],
+  ["Data Scientist Intern", "software engineer intern", false],
+  ["Software Engineer", "software engineer intern", false],
+  ["Graduate Software Engineer", "software engineer new grad", true],
+
+  // Generic software role.
+  ["Software Engineer", "software engineer", true],
+  ["Engineer", "software engineer", true],
+  ["Software Developer", "software engineer", true],
+  ["Backend Developer", "software engineer", true],
+  ["Mobile Programmer", "software engineer", true],
+  ["SDE Intern", "software engineer", true],
+  ["Software Engineer, Backend (Payments)", "software engineer", true],
+  ["Backend Engineer - Golang", "software engineer", true],
+  ["Senior Software Development Engineer", "software engineer", true],
+  ["Software Engineer Intern (2027 Start)", "software engineer", true],
+  ["Associate Software Engineer", "software engineer", true],
+  ["Site Reliability Engineer", "software engineer", true],
+  ["Machine Learning Engineer", "software engineer", true],
+  ["Data Engineer, Analytics Platform", "software engineer", true],
+  ["Cybersecurity Engineer (Redteam)", "software engineer", true],
+  [
+    "Senior Software Engineer, Flutter - Merchant Experience",
+    "developer",
+    true,
+  ],
+  ["Property Operations – ME Engineer", "software engineer", false],
+  ["Property Operations - ME Engineer", "developer", false],
+  ["Project Engineer", "software engineer", false],
+  [
+    "TikTok Shop - GTL Logistics - Project Engineer- Indonesia",
+    "software engineer",
+    false,
+  ],
+  ["SAP Technical Engineer", "software engineer", false],
+  ["Civil Engineer", "software engineer", false],
+  ["Mechanical Maintenance Engineer", "developer", false],
+  ["Field Sales Engineer", "software engineer", false],
+  ["Process Engineer", "software engineer", false],
+  ["Engineering Manager", "software engineer", false],
+  ["Mobile Engineering Manager", "software engineer", false],
+  ["Product Manager", "software engineer", false],
+  ["Tech Lead", "software engineer", false],
+  ["Tax & Audit Staff", "software engineer", false],
+  // A plain "engineer" is taken literally.
+  ["Project Engineer", "engineer", true],
+
+  // Mobile family.
+  ["Android Developer", "mobile engineer", true],
+  ["iOS Engineer", "mobile engineer", true],
+  ["Senior Software Engineer, Flutter", "mobile engineer", true],
+  ["React Native Developer", "mobile developer", true],
+  ["Kotlin Engineer", "mobile", true],
+  ["Backend Engineer", "mobile engineer", false],
+  ["React Developer", "mobile developer", false],
+
+  // Management is its own family.
+  ["Engineering Manager", "engineering manager", true],
+  ["Product Manager", "product manager", true],
+  ["Tech Lead", "tech lead", true],
+  ["Software Engineer", "engineering manager", false],
+];
+
+describe("job title relevance", () => {
+  it.each(CASES)("%s for %s: %s", (title, term, expected) => {
+    expect(isRelevantJobTitle(title, term)).toBe(expected);
   });
 
   it("normalises separators and synonyms into canonical tokens", () => {
@@ -65,6 +146,10 @@ describe("job title relevance", () => {
     expect(canonicalTitleTokens("Software Developer")).toEqual([
       "software",
       "engineer",
+    ]);
+    expect(canonicalTitleTokens("Fresh Graduate Internship")).toEqual([
+      "graduate",
+      "intern",
     ]);
   });
 });
