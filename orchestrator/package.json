@@ -97,7 +97,8 @@
     "tinykeys": "^3.1.0",
     "tsx": "^4.22.4",
     "vaul": "^1.1.2",
-    "zod": "^3.23.8"
+    "zod": "^3.23.8",
+    "zod-to-json-schema": "^3.25.2"
   },
   "devDependencies": {
     "@biomejs/biome": "2.3.12",
