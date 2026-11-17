@@ -650,5 +650,8 @@ describe("Xendit fetcher (Greenhouse with content)", () => {
     expect(
       parseXenditLocation("Remote - Indonesia; Jakarta, Indonesia"),
     ).toEqual({ inIndonesia: true, cities: ["Jakarta"], remote: true });
+    expect(
+      parseXenditLocation("Jakarta, Indonesia (Hybrid); Singapore, Singapore"),
+    ).toEqual({ inIndonesia: true, cities: ["Jakarta"], remote: false });
   });
 });

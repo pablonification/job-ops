@@ -62,7 +62,9 @@ export function parsePlaceText(value: string | null | undefined): {
   city?: string;
   country?: string;
 } {
+  // "Jakarta, Indonesia (Hybrid)": a trailing note is not part of the place.
   const parts = (value ?? "")
+    .replace(/\s*\([^()]*\)\s*$/, "")
     .split(",")
     .map((part) => part.trim())
     .filter(Boolean);
