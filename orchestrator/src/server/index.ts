@@ -19,6 +19,8 @@ import { attachChallengeViewerUpgradeProxy } from "./services/challenge-viewer";
 import { initializeDemoModeServices } from "./services/demo-mode";
 import { applyStoredEnvOverrides } from "./services/envSettings";
 import { initializeHistoricalServerEventReplaySafely } from "./services/historical-product-analytics";
+import { startPipelineRun } from "./services/pipeline-run";
+import { startPipelineScheduler } from "./services/pipeline-schedule";
 import { initialize as initializeVisaSponsors } from "./services/visa-sponsors/index";
 
 const AUTH_SESSION_CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
@@ -122,6 +124,19 @@ async function startServer() {
       }
     } catch (error) {
       logger.warn("Failed to initialize backup service", {
+        error: sanitizeUnknown(error),
+      });
+    }
+
+    // Scheduled pipeline runs (not in hosted or demo mode). Each tick is
+    // wrapped inside the scheduler; this only guards the start itself.
+    try {
+      startPipelineScheduler({
+        now: () => new Date(),
+        startRun: startPipelineRun,
+      });
+    } catch (error) {
+      logger.warn("Failed to start the pipeline scheduler", {
         error: sanitizeUnknown(error),
       });
     }

@@ -23,6 +23,11 @@ import {
 import { resolveLlmApiKey } from "@server/services/llm/credentials";
 import { isHostedLocalProvider } from "@server/services/llm/hosted-policy";
 import { LlmService } from "@server/services/llm/service";
+import { getPipelineScheduleStatus } from "@server/services/pipeline-schedule";
+import {
+  getTelegramCredentials,
+  sendTelegramMessage,
+} from "@server/services/run-digest";
 import {
   extractProjectsFromResume,
   getResume,
@@ -530,5 +535,56 @@ settingsRouter.get(
     } catch (error) {
       failRxResume(res, error);
     }
+  }),
+);
+
+/** Scheduled runs and digest: next run, last outcome, delivery status. */
+settingsRouter.get(
+  "/schedule-status",
+  asyncRoute(async (_req: Request, res: Response) => {
+    ok(res, await getPipelineScheduleStatus());
+  }),
+);
+
+const TELEGRAM_TEST_MESSAGE =
+  "JobOps test message. Telegram is set up: run digests will arrive in this chat.";
+
+/** Sends a fixed test message with the saved bot token and chat id. */
+settingsRouter.post(
+  "/telegram/test",
+  asyncRoute(async (_req: Request, res: Response) => {
+    if (!requireSystemAdmin(res)) return;
+    if (isDemoMode()) {
+      return sendDemoBlocked(
+        res,
+        "Sending Telegram messages is disabled in the public demo.",
+        { route: "POST /api/settings/telegram/test" },
+      );
+    }
+    if (getJobOpsAppConfig().appMode === "hosted") {
+      throw forbidden("The Telegram digest is not available in hosted mode.");
+    }
+
+    const credentials = await getTelegramCredentials();
+    if (!credentials) {
+      fail(res, badRequest("Save a bot token and a chat id first."));
+      return;
+    }
+
+    const result = await sendTelegramMessage({
+      botToken: credentials.botToken,
+      chatId: credentials.chatId,
+      text: TELEGRAM_TEST_MESSAGE,
+    });
+    if (!result.ok) {
+      logger.warn("Telegram test message failed", {
+        route: "POST /api/settings/telegram/test",
+        status: result.status,
+        error: result.error,
+      });
+      fail(res, upstreamError(result.error));
+      return;
+    }
+    ok(res, { sent: true });
   }),
 );

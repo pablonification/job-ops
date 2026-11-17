@@ -714,6 +714,8 @@ describe.sequential("MCP pipeline, settings and inbox tools", () => {
     });
     seeds.set("ukvisajobsEmail", "ukvj.login@example.com");
     seeds.set("adzunaAppId", "ADZAPPID123");
+    // Says where the digest goes: hidden like a credential.
+    seeds.set("telegramChatId", "-100777888999");
     const leaks = [
       ...markers.values(),
       "WHPATHSECRET",
@@ -730,6 +732,7 @@ describe.sequential("MCP pipeline, settings and inbox tools", () => {
       "POQUERY",
       "ukvj.login",
       "ADZAPPID123",
+      "777888999",
     ];
 
     await runAsUser("admin", async () => {
@@ -755,7 +758,12 @@ describe.sequential("MCP pipeline, settings and inbox tools", () => {
     for (const leak of leaks) expect(text, leak).not.toContain(leak);
 
     const view = expectToolOk(result);
-    for (const key of [...markers.keys(), "ukvisajobsEmail", "adzunaAppId"]) {
+    for (const key of [
+      ...markers.keys(),
+      "ukvisajobsEmail",
+      "adzunaAppId",
+      "telegramChatId",
+    ]) {
       expect(view.hidden[key]?.set, key).toBe(true);
       expect(view.settings, key).not.toHaveProperty(key);
       expect(view.webOnly, key).toContain(key);
