@@ -16,20 +16,43 @@ export function buildBlibliJobUrl(title: string, jobCode: string): string {
   return `${JOB_URL}${encodeURIComponent(slug)}?job=${encodeURIComponent(jobCode)}`;
 }
 
+/** The search body the careers site sends, with its paging token. */
+export function buildBlibliSearchBody(args: {
+  limit: number;
+  cursor?: string;
+}) {
+  return {
+    experiences: [],
+    employmentTypes: [],
+    locations: [],
+    departments: [],
+    companies: [],
+    companyCodes: [],
+    jobName: "",
+    itemPerPage: args.limit,
+    ...(args.cursor ? { paginationToken: args.cursor } : {}),
+  };
+}
+
 /**
- * Blibli's careers API returns every opening of the Blibli group in one
- * response and ignores filters, so the board is listed once per run and
- * filtered by title here. Jobs from group companies other than Blibli keep
- * their legal company name as the employer.
+ * Blibli's careers API lists every opening of the Blibli group, 200 per page,
+ * with a token for the next page (none on the last). The board is listed
+ * once per run and filtered by title here. Jobs from group companies other
+ * than Blibli keep their legal company name as the employer.
  */
 export const blibliFetcher: CompanyFetcher = {
   id: "blibli",
   label: LABEL,
   listing: "board",
   pageSize: 200,
-  maxPages: 1,
-  async fetchPage({ client }) {
-    const payload = asRecord(await client.postJson(SEARCH_URL, {}));
+  maxPages: 10,
+  async fetchPage({ client }, { limit, cursor }) {
+    const payload = asRecord(
+      await client.postJson(
+        SEARCH_URL,
+        buildBlibliSearchBody({ limit, cursor }),
+      ),
+    );
     const status = asRecord(payload?.status);
     if (
       !Array.isArray(payload?.responseObject) ||
@@ -37,7 +60,12 @@ export const blibliFetcher: CompanyFetcher = {
     ) {
       throw new Error(`${LABEL} returned an invalid jobs response`);
     }
-    return { items: payload.responseObject, hasMore: false };
+    const next = asString(payload.paginationToken);
+    return {
+      items: payload.responseObject,
+      hasMore: Boolean(next) && next !== cursor,
+      cursor: next,
+    };
   },
   toPosting(value, { cities }) {
     const item = asRecord(value);

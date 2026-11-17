@@ -99,8 +99,6 @@ export const gotoFetcher: CompanyFetcher = {
           requestedCities: cities,
           workplaceType,
         }),
-        isRemote: workplaceType === "remote",
-        workFromHomeType: workplaceType ?? undefined,
         jobDescription: descriptionOf(item),
         datePosted: epochMsToIso(item.createdAt),
         jobType: asString(categories?.commitment),

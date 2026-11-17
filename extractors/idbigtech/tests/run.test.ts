@@ -46,7 +46,7 @@ describe("Indonesia Big Tech run", () => {
       "Data Scientist Intern",
     ]);
     expect(result.sourceErrors).toEqual([
-      "Grab request failed with status 403 (term: data scientist)",
+      "Grab request failed with status 403; skipped for the rest of this run (term: data scientist)",
     ]);
   });
 
@@ -64,7 +64,9 @@ describe("Indonesia Big Tech run", () => {
     expect(result).toEqual({
       success: true,
       jobs: [],
-      sourceErrors: ["Grab returned an invalid jobs response (term: golang)"],
+      sourceErrors: [
+        "Grab returned an invalid jobs response; skipped for the rest of this run (term: golang)",
+      ],
     });
   });
 
@@ -85,7 +87,7 @@ describe("Indonesia Big Tech run", () => {
       success: false,
       jobs: [],
       error:
-        "Grab request failed with status 503 (term: engineer); GoTo request failed (network error) (term: engineer)",
+        "Grab request failed with status 503; skipped for the rest of this run (term: engineer); GoTo request failed (network error); skipped for the rest of this run (term: engineer)",
     });
   });
 
@@ -105,7 +107,44 @@ describe("Indonesia Big Tech run", () => {
     ).toHaveLength(1);
     expect(result.success).toBe(true);
     expect(result.sourceErrors).toEqual([
-      "GoTo request failed with status 500 (term: customer success manager)",
+      "GoTo request failed with status 500; skipped for the rest of this run (term: customer success manager)",
+    ]);
+  });
+
+  it("skips a company that is down for the remaining terms", async () => {
+    const { fetchImpl, requests } = routedFetch({
+      [GRAB]: () => jsonResponse({}, 503),
+      [GOTO]: () => jsonResponse(gotoLever),
+    });
+    const notes: string[] = [];
+    const result = await runIdBigTech({
+      ...testOptions(fetchImpl),
+      companies: ["grab", "goto"],
+      searchTerms: ["data scientist", "associate", "intern"],
+      onProgress: (event: JobBoardProgressEvent) => {
+        if (event.type === "note" && event.detail.startsWith("Grab")) {
+          notes.push(`${event.searchTerm} | ${event.detail}`);
+        }
+      },
+    });
+
+    expect(
+      requests.filter((request) =>
+        request.url.host.includes("smartrecruiters"),
+      ),
+    ).toHaveLength(1);
+    expect(result.sourceErrors).toEqual([
+      "Grab request failed with status 503; skipped for the rest of this run (term: data scientist)",
+    ]);
+    expect(result.jobs.map((job) => job.title)).toEqual([
+      "Data Scientist Intern",
+      "Facilities and Maintenance Associate",
+    ]);
+    expect(notes).toEqual([
+      "data scientist | Grab: searching",
+      "data scientist | Grab: failed",
+      "associate | Grab: skipped after an earlier failure",
+      "intern | Grab: skipped after an earlier failure",
     ]);
   });
 

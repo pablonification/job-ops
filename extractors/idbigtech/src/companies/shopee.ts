@@ -11,8 +11,8 @@ import { type CompanyFetcher, ID_BIG_TECH_SOURCE } from "../types";
 
 const LABEL = "Shopee";
 const SEARCH_URL = "https://ats.workatsea.com/ats/api/v1/user/job/list/";
-// The careers site routes ATS postings as /job-detail/<job_id>/<source>, and
-// list results always come from source 1.
+// The careers site's job pages are /job-detail/<job_id>/1 (list results all
+// come from source 1); search engines index them in this form.
 const JOB_URL = "https://careers.shopee.co.id/job-detail/";
 const INDONESIA_REGION_ID = 7;
 /** Sea's city ids in its Indonesia region (from `/user/city/job_count/`). */
@@ -24,6 +24,23 @@ export const SHOPEE_INDONESIA_CITY_IDS: Readonly<Record<number, string>> = {
   12: "Surakarta",
   13: "Yogyakarta",
 };
+
+/** Sea's careers site marks entity 2 as Monee (SeaMoney) in its own code. */
+const MONEE_ENTITY_ID = 2;
+/** Entity 5 postings are SPX Express (Shopee's logistics arm) roles. */
+const SPX_ENTITY_ID = 5;
+
+/**
+ * The business a posting belongs to: Shopee, or the Sea businesses that hire
+ * through the same system under their own names.
+ */
+export function shopeeEmployer(title: string, entityId?: number): string {
+  if (entityId === MONEE_ENTITY_ID) return "Monee";
+  if (entityId === SPX_ENTITY_ID || /\bspx\b/i.test(title)) {
+    return "SPX Express";
+  }
+  return LABEL;
+}
 
 /** City ids to search: all Indonesian ones, or those inside requested cities. */
 export function shopeeCityIds(cities: readonly string[]): number[] {
@@ -111,7 +128,7 @@ export const shopeeFetcher: CompanyFetcher = {
         source: ID_BIG_TECH_SOURCE,
         sourceJobId: jobId,
         title,
-        employer: LABEL,
+        employer: shopeeEmployer(title, asNumber(item.external_entity_id)),
         jobUrl,
         applicationLink: jobUrl,
         ...companyLocation({ cities: [cityName], requestedCities: cities }),

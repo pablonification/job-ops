@@ -4,16 +4,19 @@ import {
   asRecord,
   asString,
 } from "@shared/extractors/indonesia/index.js";
-import { decodeHtmlEntities, innerHtmlOfNext } from "../html";
-import { companyLocation, epochMsToIso } from "../location";
+import { hrefOfLinkContaining, innerHtmlOfNext } from "../html";
+import {
+  companyLocation,
+  epochMsToIso,
+  isIndonesia,
+  parsePlaceText,
+} from "../location";
 import { type CompanyFetcher, ID_BIG_TECH_SOURCE } from "../types";
 
 const LABEL = "Traveloka";
 const ORIGIN = "https://careers.traveloka.com";
 const SEARCH_URL = `${ORIGIN}/api/career/jobs/search`;
-const DESCRIPTION_HEADING = /<h1\b[^>]*>\s*Job Description\s*<\/h1>/i;
-const APPLY_LINK =
-  /<a\b[^>]*href="([^"]+)"[^>]*>(?:(?!<\/a>)[\s\S])*Apply Now/i;
+const DESCRIPTION_HEADING = /<h1\b[^<>]*>\s*Job Description\s*<\/h1>/i;
 
 export function buildTravelokaSearchUrl(page: number): URL {
   const url = new URL(SEARCH_URL);
@@ -34,10 +37,9 @@ export function parseTravelokaJobPage(html: string): {
   const description = heading
     ? asString(innerHtmlOfNext(html, "span", heading.index + heading[0].length))
     : undefined;
-  const applyHref = APPLY_LINK.exec(html)?.[1];
   return {
     description,
-    applyUrl: applyHref ? asHttpUrl(decodeHtmlEntities(applyHref)) : undefined,
+    applyUrl: asHttpUrl(hrefOfLinkContaining(html, "Apply Now")),
   };
 }
 
@@ -76,11 +78,8 @@ export const travelokaFetcher: CompanyFetcher = {
     const title = asString(item?.title);
     if (!item || !id || !title) return null;
     // "BSD City, Indonesia": city first, country last.
-    const parts = (asString(item.location) ?? "")
-      .split(",")
-      .map((part) => part.trim())
-      .filter(Boolean);
-    if (parts.at(-1)?.toLowerCase() !== "indonesia") return null;
+    const place = parsePlaceText(asString(item.location));
+    if (!isIndonesia(place.country)) return null;
 
     const jobUrl = jobUrlOf(item, id);
     return {
@@ -93,7 +92,7 @@ export const travelokaFetcher: CompanyFetcher = {
         jobUrl,
         applicationLink: jobUrl,
         ...companyLocation({
-          cities: parts.length > 1 ? [parts[0]] : [],
+          cities: [place.city],
           requestedCities: cities,
         }),
         datePosted: epochMsToIso(item.createdAt),

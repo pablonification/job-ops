@@ -2,12 +2,13 @@ import { matchJobLocationIntent } from "@shared/job-matching";
 import { normalizeLocationIntent } from "@shared/location-domain";
 import { describe, expect, it } from "vitest";
 import { buildBlibliJobUrl } from "../src/companies/blibli";
-import { shopeeCityIds } from "../src/companies/shopee";
+import { shopeeCityIds, shopeeEmployer } from "../src/companies/shopee";
 import { tiktokEmployer } from "../src/companies/tiktok";
 import { parseTravelokaJobPage } from "../src/companies/traveloka";
 import { parseXenditLocation } from "../src/companies/xendit";
 import { runIdBigTech } from "../src/run";
 import blibliSearch from "./fixtures/blibli_search.json";
+import blibliSearchPage2 from "./fixtures/blibli_search_page2.json";
 import gotoLever from "./fixtures/goto_lever.json";
 import grabDetail from "./fixtures/grab_detail.json";
 import grabSearch from "./fixtures/grab_search.json";
@@ -257,6 +258,24 @@ describe("Shopee fetcher (Sea ATS)", () => {
     expect(result.jobs[0].jobDescription).not.toContain("About the team");
   });
 
+  it("names SPX Express and Monee postings after their own business", async () => {
+    const { fetchImpl } = routedFetch({
+      "ats.workatsea.com/ats/api/v1/user/job/list/": () =>
+        jsonResponse(shopeeSearch),
+    });
+    const result = await runIdBigTech({
+      ...testOptions(fetchImpl),
+      companies: ["shopee"],
+      searchTerms: ["business operations"],
+    });
+    expect(result.jobs.map((job) => [job.employer, job.title])).toEqual([
+      ["SPX Express", "Business Operations Project, SPX Express"],
+    ]);
+    expect(shopeeEmployer("Risk Analyst", 2)).toBe("Monee");
+    expect(shopeeEmployer("Hub Lead, SPX Express")).toBe("SPX Express");
+    expect(shopeeEmployer("Backend Engineer", 1)).toBe("Shopee");
+  });
+
   it("narrows city ids to the requested cities", () => {
     expect(shopeeCityIds(["Bandung"])).toEqual([8]);
     expect(shopeeCityIds(["Solo"])).toEqual([12]);
@@ -392,6 +411,71 @@ describe("tiket.com fetcher (Workday)", () => {
     expect(result.jobs[1].jobDescription).toContain("travel app");
   });
 
+  it("resolves rows without a city from the detail before filtering by city", async () => {
+    const [intern, engineer] = tiketSearch.jobPostings;
+    // Workday lists multi-location postings as "2 Locations" and some as the
+    // site name ("Headquarters"); the recorded rows are reused with those texts.
+    const headquarters = {
+      ...engineer,
+      title: "Data Engineer",
+      externalPath: "/job/Headquarters/Data-Engineer_R-4000",
+      locationsText: "Headquarters",
+      bulletFields: ["R-4000"],
+    };
+    const { fetchImpl, requests } = routedFetch({
+      "tiketdotcom.wd3.myworkdayjobs.com/wday/cxs/tiketdotcom/Tiket_Careers/jobs":
+        () =>
+          jsonResponse({
+            total: 3,
+            jobPostings: [
+              intern,
+              { ...engineer, locationsText: "2 Locations" },
+              headquarters,
+            ],
+          }),
+      "tiketdotcom.wd3.myworkdayjobs.com/wday/cxs/tiketdotcom/Tiket_Careers/job/Jakarta-Indonesia/":
+        () =>
+          jsonResponse({
+            ...tiketDetail,
+            jobPostingInfo: {
+              ...tiketDetail.jobPostingInfo,
+              additionalLocations: ["Bali, Indonesia"],
+            },
+          }),
+      "tiketdotcom.wd3.myworkdayjobs.com/wday/cxs/tiketdotcom/Tiket_Careers/job/Headquarters/":
+        () =>
+          jsonResponse({
+            ...tiketDetail,
+            jobPostingInfo: {
+              ...tiketDetail.jobPostingInfo,
+              title: "Data Engineer",
+              location: "Headquarters",
+              jobReqId: "R-4000",
+            },
+          }),
+    });
+    const result = await runIdBigTech({
+      ...testOptions(fetchImpl),
+      companies: ["tiket"],
+      searchTerms: ["software engineer"],
+      cities: ["Bali"],
+    });
+
+    // The Jakarta intern row is filtered by city without a detail request.
+    expect(requests).toHaveLength(3);
+    expect(
+      result.jobs.map((job) => [job.title, job.location, job.sourceJobId]),
+    ).toEqual([
+      [
+        "Software Engineer II (Growth, Analytics & Discovery)",
+        "Bali, Indonesia",
+        "R-3375",
+      ],
+      ["Data Engineer", "Indonesia", "R-4000"],
+    ]);
+    expect(result.jobs[1].locationEvidence?.cityUnknown).toBe(true);
+  });
+
   it("drops list results located outside Indonesia", async () => {
     const [first] = tiketSearch.jobPostings;
     const { fetchImpl, requests } = routedFetch({
@@ -413,26 +497,42 @@ describe("tiket.com fetcher (Workday)", () => {
 });
 
 describe("Blibli fetcher (careers API with embedded summary)", () => {
+  // Page 1 is 200 jobs plus a paging token; page 2 is the rest, without one.
   const routes = () =>
     routedFetch({
-      "careers.blibli.com/ext/api/job/search": () => jsonResponse(blibliSearch),
+      "careers.blibli.com/ext/api/job/search": (request) =>
+        jsonResponse(
+          (request.body as { paginationToken?: string }).paginationToken ===
+            blibliSearch.paginationToken
+            ? blibliSearchPage2
+            : blibliSearch,
+        ),
     });
 
-  it("lists the group board once and filters titles client-side", async () => {
+  it("follows the paging token through the whole board once per run", async () => {
     const { fetchImpl, requests } = routes();
     const result = await runIdBigTech({
       ...testOptions(fetchImpl),
       companies: ["blibli"],
-      searchTerms: ["engineer", "it support", "business commercial"],
+      searchTerms: ["engineer", "it support", "audit", "business commercial"],
     });
 
-    expect(requests).toHaveLength(1);
-    expect(requests[0].method).toBe("POST");
-    // The "Hold" posting is not open.
+    expect(requests.map((request) => request.body)).toEqual([
+      expect.objectContaining({ jobName: "", itemPerPage: 200 }),
+      expect.objectContaining({
+        itemPerPage: 200,
+        paginationToken: blibliSearch.paginationToken,
+      }),
+    ]);
+    expect(requests[0].body).not.toHaveProperty("paginationToken");
+    // The "Hold" posting is not open; the audit role is on page 2.
     expect(result.jobs.map((job) => [job.employer, job.title])).toEqual([
       ["Blibli", "Cybersecurity Engineer (Redteam)"],
       ["Blibli", "Property Operations - ME Engineer"],
+      // "developer" counts as "engineer".
+      ["Blibli", "Developer Intern"],
       ["PT Global Teknologi Niaga", "Junior IT Support Staff"],
+      ["PT Global Teknologi Niaga", "Junior Internal Audit Staff"],
     ]);
     const job = result.jobs[0];
     expect(job).toMatchObject({
@@ -448,6 +548,30 @@ describe("Blibli fetcher (careers API with embedded summary)", () => {
     );
     expect(job.jobDescription).not.toContain("&lt;");
     expect(job.jobDescription).not.toContain("ExternalClass");
+  });
+
+  it("keeps a posting without a location under a city filter", async () => {
+    const { fetchImpl } = routes();
+    const result = await runIdBigTech({
+      ...testOptions(fetchImpl),
+      companies: ["blibli"],
+      searchTerms: ["software engineer intern"],
+      cities: ["Bandung"],
+    });
+
+    // "Developer Intern" has an empty location on Blibli's board.
+    expect(result.jobs.map((job) => job.title)).toEqual(["Developer Intern"]);
+    expect(result.jobs[0].location).toBe("Indonesia");
+    expect(result.jobs[0].locationEvidence).toMatchObject({
+      country: "Indonesia",
+      city: null,
+      cityUnknown: true,
+    });
+    const intent = normalizeLocationIntent({
+      selectedCountry: "indonesia",
+      cityLocations: ["Bandung"],
+    });
+    expect(matchJobLocationIntent(result.jobs[0], intent).matched).toBe(true);
   });
 
   it("shows a multi-city posting under the requested city", async () => {

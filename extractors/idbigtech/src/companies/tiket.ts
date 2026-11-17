@@ -3,7 +3,7 @@ import {
   asString,
   asStringList,
 } from "@shared/extractors/indonesia/index.js";
-import { companyLocation } from "../location";
+import { companyLocation, isIndonesia, parsePlaceText } from "../location";
 import { type CompanyFetcher, ID_BIG_TECH_SOURCE } from "../types";
 
 const LABEL = "tiket.com";
@@ -26,16 +26,19 @@ export function buildTiketSearchBody(args: {
   };
 }
 
-/** "Jakarta, Indonesia" -> Jakarta; "2 Locations" or "Headquarters" -> unknown city. */
+/**
+ * "Jakarta, Indonesia" -> Jakarta. "2 Locations" or "Headquarters" name no
+ * country; the search is restricted to Indonesia, so those stay in with an
+ * unknown city until the detail says where.
+ */
 function parseLocationsText(value: string | undefined): {
   inIndonesia: boolean;
   city?: string;
 } {
-  if (!value) return { inIndonesia: true };
-  const parts = value.split(",").map((part) => part.trim());
-  if (parts.length < 2) return { inIndonesia: true };
-  return parts.at(-1)?.toLowerCase() === "indonesia"
-    ? { inIndonesia: true, city: parts[0] }
+  const place = parsePlaceText(value);
+  if (!place.country) return { inIndonesia: true };
+  return isIndonesia(place.country)
+    ? { inIndonesia: true, city: place.city }
     : { inIndonesia: false };
 }
 
@@ -92,7 +95,7 @@ export const tiketFetcher: CompanyFetcher = {
       },
     };
   },
-  async fetchDetail({ client }, { job, item }) {
+  async fetchDetail({ client, cities }, { job, item }) {
     const path = asString(asRecord(item)?.externalPath);
     if (!path) return null;
     const payload = asRecord(await client.getJson(`${API_URL}${path}`));
@@ -103,11 +106,18 @@ export const tiketFetcher: CompanyFetcher = {
     const countryName = asString(country?.descriptor);
     if (countryName && countryName.toLowerCase() !== "indonesia") return null;
 
-    const location = parseLocationsText(asString(info.location));
+    // The detail names the primary location and any others.
+    const detailCities = [
+      asString(info.location),
+      ...asStringList(info.additionalLocations),
+    ]
+      .map(parseLocationsText)
+      .filter((place) => place.inIndonesia && place.city)
+      .map((place) => place.city);
     return {
       ...job,
-      ...(location.city
-        ? companyLocation({ cities: [location.city], requestedCities: [] })
+      ...(detailCities.length > 0
+        ? companyLocation({ cities: detailCities, requestedCities: cities })
         : {}),
       jobDescription: asString(info.jobDescription),
       datePosted: asString(info.startDate),

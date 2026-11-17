@@ -75,8 +75,9 @@ class TermCandidates {
  * the term and that are in Indonesia and the requested cities, then fetches
  * details for postings that are not already in job-ops.
  *
- * A company that fails is reported as a source error and the others carry on;
- * the source fails only when no enabled company could be listed.
+ * A company whose listing fails is reported once as a source error and
+ * skipped for the remaining terms; the others carry on. The source fails only
+ * when no enabled company could be listed.
  */
 export async function runIdBigTech(
   options: RunIdBigTechOptions = {},
@@ -95,7 +96,8 @@ export async function runIdBigTech(
 
   const listed = new Set<IdBigTechCompanyId>();
   const boards = new Map<IdBigTechCompanyId, Promise<CompanyPosting[]>>();
-  const reportedBoardFailures = new Set<IdBigTechCompanyId>();
+  /** Companies whose listing failed; they are skipped for the rest of the run. */
+  const failed = new Set<IdBigTechCompanyId>();
   let knownUrlsPromise: Promise<Set<string>> | null = null;
   const getKnownUrls = (): Promise<Set<string>> => {
     knownUrlsPromise ??= (
@@ -114,6 +116,7 @@ export async function runIdBigTech(
   ): Promise<CompanyPosting[]> {
     const postings: CompanyPosting[] = [];
     let offset = 0;
+    let cursor: string | undefined;
     for (let number = 1; number <= fetcher.maxPages; number += 1) {
       if (term.shouldStop()) break;
       const page = await fetcher.fetchPage(context, {
@@ -121,7 +124,9 @@ export async function runIdBigTech(
         number,
         offset,
         limit: fetcher.pageSize,
+        cursor,
       });
+      cursor = page.cursor;
       for (const item of page.items) {
         const posting = fetcher.toPosting(item, context);
         if (posting) postings.push(posting);
@@ -230,6 +235,12 @@ export async function runIdBigTech(
     runTerm: async (term) => {
       for (const fetcher of fetchers) {
         if (term.shouldStop()) break;
+        if (failed.has(fetcher.id)) {
+          term.reportProgress(
+            `${fetcher.label}: skipped after an earlier failure`,
+          );
+          continue;
+        }
         const context: CompanyRequestContext = {
           client: companyClient(term.client, fetcher.label),
           cities: term.cities,
@@ -249,10 +260,10 @@ export async function runIdBigTech(
           );
         } catch (error) {
           if (error instanceof TimeBudgetExceededError) throw error;
-          const boardFailed = fetcher.listing === "board";
-          if (boardFailed && reportedBoardFailures.has(fetcher.id)) continue;
-          if (boardFailed) reportedBoardFailures.add(fetcher.id);
-          term.reportError(errorMessage(fetcher.label, error));
+          failed.add(fetcher.id);
+          term.reportError(
+            `${errorMessage(fetcher.label, error)}; skipped for the rest of this run`,
+          );
           term.reportProgress(`${fetcher.label}: failed`);
         }
       }

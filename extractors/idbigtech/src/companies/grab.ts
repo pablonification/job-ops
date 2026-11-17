@@ -115,8 +115,6 @@ export const grabFetcher: CompanyFetcher = {
           requestedCities: cities,
           workplaceType,
         }),
-        isRemote: workplaceType === "remote",
-        workFromHomeType: workplaceType ?? undefined,
         datePosted: asString(item.releasedDate),
         jobType: asString(asRecord(item.typeOfEmployment)?.label),
         jobLevel: asString(asRecord(item.experienceLevel)?.label),

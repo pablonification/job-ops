@@ -29,6 +29,8 @@ export interface CompanyRequestContext {
 export interface CompanyListPage {
   items: readonly unknown[];
   hasMore: boolean;
+  /** Paging token the next request sends back (APIs that page by token). */
+  cursor?: string;
 }
 
 /**
@@ -59,6 +61,8 @@ export interface CompanyFetcher {
       number: number;
       offset: number;
       limit: number;
+      /** The previous page's `cursor` (`board` listings only). */
+      cursor?: string;
     },
   ): Promise<CompanyListPage>;
   /**

@@ -6,7 +6,7 @@ import {
   namesOf,
 } from "@shared/extractors/indonesia/index.js";
 import { unescapeHtmlDescription } from "../html";
-import { companyLocation } from "../location";
+import { companyLocation, isIndonesia, parsePlaceText } from "../location";
 import { type CompanyFetcher, ID_BIG_TECH_SOURCE } from "../types";
 
 const LABEL = "Xendit";
@@ -25,16 +25,14 @@ export function parseXenditLocation(value: string | undefined): {
 } {
   const indonesian = (value ?? "")
     .split(";")
-    .map((part) => part.trim())
-    .filter((part) => /\bindonesia\b/i.test(part));
-  const cities = indonesian
-    .map((part) => part.split(",")[0]?.trim() ?? "")
-    .map((city) => city.replace(/^remote\s*[-–]?\s*/i, "").trim())
-    .filter((city) => city && city.toLowerCase() !== "indonesia");
+    .map((part) => ({ part, place: parsePlaceText(part) }))
+    .filter(({ place }) => isIndonesia(place.country));
   return {
     inIndonesia: indonesian.length > 0,
-    cities,
-    remote: indonesian.some((part) => /\bremote\b/i.test(part)),
+    cities: indonesian
+      .map(({ place }) => place.city?.replace(/^remote\s*[-–]?\s*/i, ""))
+      .filter((city): city is string => Boolean(city)),
+    remote: indonesian.some(({ part }) => /\bremote\b/i.test(part)),
   };
 }
 
@@ -75,7 +73,6 @@ export const xenditFetcher: CompanyFetcher = {
     const jobUrl = absoluteUrl?.startsWith(JOB_URL)
       ? absoluteUrl
       : `${JOB_URL}${encodeURIComponent(id)}`;
-    const workplaceType = location.remote ? "remote" : null;
     return {
       item,
       job: {
@@ -88,10 +85,8 @@ export const xenditFetcher: CompanyFetcher = {
         ...companyLocation({
           cities: location.cities,
           requestedCities: cities,
-          workplaceType,
+          workplaceType: location.remote ? "remote" : null,
         }),
-        isRemote: location.remote,
-        workFromHomeType: workplaceType ?? undefined,
         jobDescription: content ? unescapeHtmlDescription(content) : undefined,
         datePosted: asString(item.first_published) ?? asString(item.updated_at),
         jobFunction: namesOf(item.departments)[0],

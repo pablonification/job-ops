@@ -1,0 +1,40 @@
+{
+  "itemPerPage": 200,
+  "paginationToken": null,
+  "responseObject": [
+    {
+      "jobCode": "a6af405f8c4f11",
+      "jobName": "Junior Internal Audit Staff",
+      "companyCode": "GTN",
+      "companyName": "PT Global Teknologi Niaga",
+      "employmentType": "Permanent",
+      "location": "Kota Jakarta Barat",
+      "vendor": "",
+      "postingStatus": true,
+      "recruitmentStatus": "OPEN",
+      "department": "Internal Audit (Dep)",
+      "experience": null,
+      "jobSummary": "<div class=\"ExternalClass71EE82C52E9847D5AF341FF42BB11B50\">&lt;div class=&quot;sds-body-l-book sds-text-neutral-body sds-margin-bottom-16&quot; style=&quot;font-family&#58;DarwinSans, 'Noto Sans Variable';color&#58;rgb(32,32,32);font-weight&#58;400;font-size&#58;16px;line-height&#58;20px;&quot;&gt;Job Description&lt;/div&gt;&lt;div class=&quot;job-description-container&quot; style=&quot;color&#58;rgb(0,0,0);&quot;&gt;&lt;div class=&quot;sds-body-m-book sds-text-neutral-title&quot; style=&quot;font-family&#58;DarwinSans, 'Noto Sans Variable';color&#58;rgb(19,19,19);font-weight&#58;400;font-size&#58;14px;line-height&#58;16px;&quot;&gt;&lt;div&gt;&lt;span style=&quot;font-weight&#58;bolder;&quot;&gt;Blibli OMG is part of Blibli Group&lt;/span&gt;",
+      "active": true
+    },
+    {
+      "jobCode": "a6af56e58f284d",
+      "jobName": "Warehouse Operations Development Program",
+      "companyCode": "GDPu",
+      "companyName": "PT Global Distribusi Pusaka",
+      "employmentType": "Permanent",
+      "location": "Kota Jakarta Pusat",
+      "vendor": "",
+      "postingStatus": true,
+      "recruitmentStatus": "OPEN",
+      "department": "Warehouse Jabodetabek (Dep)",
+      "experience": "Intern (0 year of experience)",
+      "jobSummary": "<div class=\"ExternalClassFCB3BFB412244D01964BD6456DE871A5\">&lt;h2&gt;&lt;strong&gt;&lt;span style=&quot;font-size&#58;14px;&quot;&gt;About the Program&lt;/span&gt;&lt;/strong&gt;&lt;/h2&gt;&lt;p&gt;&lt;span style=&quot;font-size&#58;14px;&quot;&gt;Ready to kick-start your career in logistics and supply chain operations?&lt;/span&gt;&lt;/p&gt;&lt;p&gt;&lt;span style=&quot;font-size&#58;14px;&quot;&gt;At Blibli Group, we're building a &lt;/span&gt;&lt;strong&gt;&lt;span style=&quot;font-size&#58;14px;&quot;&gt;future-ready omnichannel ecosystem&lt;/span&gt;&lt;/strong&gt;&lt;span style=&quot;font-size&#58;14px;&quot;&gt;, powered by efficient warehouse operations and talented people who are ready to grow with us.&lt;/span&gt;&lt;/p&gt;&lt;p&gt;&lt;span style=&quot;font-size&#58;14px;&quot;&gt;The &lt;/span&gt;&lt;strong&gt;&lt;span style=&quot;font-size&#58;14px;&quot;&gt;",
+      "active": true
+    }
+  ],
+  "status": {
+    "code": 1000,
+    "desc": "SUCCESS"
+  }
+}

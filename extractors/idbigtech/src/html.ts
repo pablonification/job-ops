@@ -44,7 +44,7 @@ export function unescapeHtmlDescription(value: string): string {
 
 /** Strips tags for "is there any real text?" checks. */
 export function htmlToPlainText(value: string): string {
-  return decodeHtmlEntities(value.replace(/<[^>]*>/g, " "))
+  return decodeHtmlEntities(value.replace(/<[^<>]*>/g, " "))
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -58,17 +58,40 @@ export function innerHtmlOfNext(
   tagName: string,
   fromIndex: number,
 ): string | undefined {
-  const open = new RegExp(`<${tagName}\\b[^>]*>`, "gi");
+  const open = new RegExp(`<${tagName}\\b[^<>]*>`, "gi");
   open.lastIndex = fromIndex;
   const first = open.exec(html);
   if (!first) return undefined;
   const contentStart = first.index + first[0].length;
-  const tags = new RegExp(`<(/?)${tagName}\\b[^>]*>`, "gi");
+  const tags = new RegExp(`<(/?)${tagName}\\b[^<>]*>`, "gi");
   tags.lastIndex = contentStart;
   let depth = 1;
   for (let tag = tags.exec(html); tag; tag = tags.exec(html)) {
     depth += tag[1] === "/" ? -1 : 1;
     if (depth === 0) return html.slice(contentStart, tag.index);
+  }
+  return undefined;
+}
+
+/**
+ * The `href` of the link whose text contains `text` ("Apply Now"), found by
+ * scanning backwards from each occurrence of the text to its `<a` tag.
+ */
+export function hrefOfLinkContaining(
+  html: string,
+  text: string,
+): string | undefined {
+  for (
+    let at = html.indexOf(text);
+    at >= 0;
+    at = html.indexOf(text, at + text.length)
+  ) {
+    const open = html.lastIndexOf("<a ", at);
+    if (open < 0 || html.lastIndexOf("</a>", at) > open) continue;
+    const tagEnd = html.indexOf(">", open);
+    if (tagEnd < 0 || tagEnd > at) continue;
+    const href = /\shref="([^"]*)"/i.exec(html.slice(open, tagEnd + 1))?.[1];
+    if (href) return decodeHtmlEntities(href);
   }
   return undefined;
 }
