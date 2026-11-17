@@ -50,8 +50,11 @@ export interface PoliteJsonClientOptions {
   timeoutMs?: number;
   headers?: Record<string, string>;
   sleep?: (ms: number) => Promise<void>;
-  /** Epoch ms after which no request is started. */
-  deadline?: number;
+  /**
+   * Epoch ms after which no request is started, or a function returning it
+   * (read before every request, so a runner can move it between terms).
+   */
+  deadline?: number | (() => number);
   now?: () => number;
   /** Responses larger than this fail instead of being read whole. */
   maxResponseBytes?: number;
@@ -104,7 +107,11 @@ export function createPoliteJsonClient(
   ): Promise<Response> {
     const label = requestOptions.label ?? options.label;
     const pause = requestCount > 0 ? delayMs : 0;
-    if (options.deadline !== undefined && now() + pause >= options.deadline) {
+    const deadline =
+      typeof options.deadline === "function"
+        ? options.deadline()
+        : options.deadline;
+    if (deadline !== undefined && now() + pause >= deadline) {
       throw new TimeBudgetExceededError(options.label);
     }
     if (pause > 0) await sleep(pause);

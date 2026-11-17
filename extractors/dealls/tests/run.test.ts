@@ -279,7 +279,7 @@ describe("Dealls extractor", () => {
     });
 
     const result = await runDealls({
-      searchTerms: ["software engineer", "backend"],
+      searchTerms: ["software engineer"],
       maxJobsPerTerm: 2,
       fetchImpl: fetchMock,
       sleep: noSleep,
@@ -287,8 +287,8 @@ describe("Dealls extractor", () => {
       timeBudgetMs: 120_000,
     });
 
-    // List (0 -> 60s), first detail (60 -> 120s); the second detail and the
-    // next term would start past the 2-minute budget.
+    // One term has the whole budget: list (0 -> 60s), first detail
+    // (60 -> 120s); the second detail would start past the 2-minute budget.
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(result.success).toBe(true);
     expect(result.jobs.map((job) => job.jobUrl)).toEqual([ENGINEER_URL]);

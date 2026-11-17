@@ -208,15 +208,20 @@ export interface TermSearchContext {
   maxScanned: number;
   pageSize: number;
   cities: readonly string[];
-  /** True once the run is cancelled or its time budget is spent. */
+  /** True once the run is cancelled or this term's share of the time budget is spent. */
   shouldStop: () => boolean;
   /** Whether a job URL was already collected earlier in this run. */
   isCollected: (jobUrl: string) => boolean;
   matchesCities: (job: CreateJobInput) => boolean;
   /** Collects a job in a requested city unless its URL was already collected. */
   accept: (job: CreateJobInput) => AcceptResult;
-  /** Records a non-fatal problem as a source error. */
+  /** Records a problem as a source error (it can fail a run without jobs). */
   reportError: (message: string) => void;
+  /**
+   * Records something the owner should know (results cut short, a filter
+   * not applied) as a source message that never fails the run.
+   */
+  reportNote: (message: string) => void;
   reportDetails: (progress: {
     detailsTotal: number;
     detailsFetched: number;
@@ -232,6 +237,12 @@ export interface TermSearchContext {
  * remaining terms still run; the run only fails when no term produced jobs.
  * Cancellation returns the jobs collected so far, and so does running out of
  * the time budget (with a source error saying the run was cut short).
+ *
+ * The time budget is shared fairly: each term may use at most the remaining
+ * budget divided by the remaining terms, so a slow early term cannot starve
+ * the later ones, and time an early term leaves unused goes to the rest. A
+ * term that uses up its share stops with a source note and the next term
+ * starts. With one term, the term has the whole budget.
  */
 export async function runJobBoard(args: {
   label: string;
@@ -265,31 +276,44 @@ export async function runJobBoard(args: {
   const now = options.now ?? Date.now;
   const budgetMs = options.timeBudgetMs ?? DEFAULT_TIME_BUDGET_MS;
   const deadline = now() + budgetMs;
+  let termDeadline = deadline;
   const client = createPoliteJsonClient({
     label,
     fetchImpl: options.fetchImpl,
     delayMs: options.delayMs,
     sleep: options.sleep,
-    deadline,
+    deadline: () => termDeadline,
     now,
   });
 
   const jobs: CreateJobInput[] = [];
   const seenUrls = new Set<string>();
-  const errors: string[] = [];
+  // Source messages in the order they happened; only errors can fail the run.
+  const messages: Array<{ text: string; isError: boolean }> = [];
   let outOfTime = false;
+  let termOutOfTime = false;
   const shouldStop = () => {
     if (options.shouldCancel?.()) return true;
-    if (now() >= deadline) outOfTime = true;
-    return outOfTime;
+    if (now() >= termDeadline) termOutOfTime = true;
+    return termOutOfTime;
   };
   const matchesCities = (job: CreateJobInput) =>
     jobMatchesIndonesianCities(job, cities);
 
   for (const [index, searchTerm] of searchTerms.entries()) {
-    if (shouldStop()) break;
+    if (options.shouldCancel?.() || now() >= deadline) {
+      outOfTime ||= now() >= deadline;
+      break;
+    }
     const termIndex = index + 1;
     const termTotal = searchTerms.length;
+    const termsLeft = termTotal - index;
+    const termStart = now();
+    termDeadline =
+      termsLeft > 1
+        ? termStart + Math.floor((deadline - termStart) / termsLeft)
+        : deadline;
+    termOutOfTime = false;
     options.onProgress?.({
       type: "term_start",
       termIndex,
@@ -320,7 +344,16 @@ export async function runJobBoard(args: {
           return "added";
         },
         reportError: (message) => {
-          errors.push(`${message} (term: ${searchTerm})`);
+          messages.push({
+            text: `${message} (term: ${searchTerm})`,
+            isError: true,
+          });
+        },
+        reportNote: (message) => {
+          messages.push({
+            text: `${message} (term: ${searchTerm})`,
+            isError: false,
+          });
         },
         reportDetails: (progress) => {
           options.onProgress?.({
@@ -343,11 +376,25 @@ export async function runJobBoard(args: {
       });
     } catch (error) {
       if (error instanceof TimeBudgetExceededError) {
-        outOfTime = true;
+        termOutOfTime = true;
       } else {
         const message =
           error instanceof Error ? error.message : "unexpected extractor error";
-        errors.push(`${message} (term: ${searchTerm})`);
+        messages.push({
+          text: `${message} (term: ${searchTerm})`,
+          isError: true,
+        });
+      }
+    }
+
+    if (termOutOfTime && !options.shouldCancel?.()) {
+      if (termDeadline >= deadline) {
+        outOfTime = true;
+      } else {
+        messages.push({
+          text: `${label}: used this term's share of the time limit (about ${Math.max(1, Math.round((termDeadline - termStart) / 1000))} seconds) and moved on so later search terms get their turn; kept ${jobsFoundTerm} jobs for it (term: ${searchTerm})`,
+          isError: false,
+        });
       }
     }
 
@@ -361,18 +408,23 @@ export async function runJobBoard(args: {
   }
 
   if (outOfTime) {
-    errors.push(
-      `${label}: stopped after ${Math.round(budgetMs / 60_000)} minutes to stay within the source time limit; kept the ${jobs.length} jobs collected so far`,
-    );
+    messages.push({
+      text: `${label}: stopped after ${Math.round(budgetMs / 60_000)} minutes to stay within the source time limit; kept the ${jobs.length} jobs collected so far`,
+      isError: true,
+    });
   }
+  const errors = messages
+    .filter((message) => message.isError)
+    .map((message) => message.text);
+  const texts = messages.map((message) => message.text);
   const failed =
     errors.length > 0 &&
     (args.shouldFail ? args.shouldFail({ jobs, errors }) : jobs.length === 0);
   if (failed) {
-    return { success: false, jobs: [], error: errors.join("; ") };
+    return { success: false, jobs: [], error: texts.join("; ") };
   }
-  return errors.length > 0
-    ? { success: true, jobs, sourceErrors: errors }
+  return texts.length > 0
+    ? { success: true, jobs, sourceErrors: texts }
     : { success: true, jobs };
 }
 
