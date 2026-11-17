@@ -25,6 +25,9 @@ Extractor integrations are now registered through manifests and loaded automatic
 | [FreeHire](/docs/next/extractors/freehire) | Broad job discovery through FreeHire's public agent API | No credentials required; API availability and rate limits are controlled by FreeHire | existing pipeline `searchTerms`, selected country/cities, `jobspyResultsWanted`, workplace type | Requests full Markdown descriptions and enriched job metadata, then de-duplicates original upstream URLs across sources |
 | [UKVisaJobs](/docs/next/extractors/ukvisajobs) | UK visa sponsorship-focused roles | Requires authenticated session and periodic token/cookie refresh | `UKVISAJOBS_EMAIL`, `UKVISAJOBS_PASSWORD`, `UKVISAJOBS_MAX_JOBS`, `UKVISAJOBS_SEARCH_KEYWORD` | API pagination + dataset output; orchestrator de-dupes and may fetch missing descriptions |
 | [Manual Import](/docs/next/extractors/manual) | One-off jobs not covered by scrapers | Inference quality depends on model/provider and input quality; some URLs cannot be fetched reliably | App/API endpoints (`/api/manual-jobs/infer`, `/api/manual-jobs/import`) | Accepts text/HTML/URL, runs inference, then saves and scores job after review |
+| [Tech in Asia Jobs](/docs/next/extractors/techinasia) | Indonesian startup and tech roles with published salaries | Indonesia only; public JSON API, no credentials | existing pipeline `searchTerms`, cities, `jobspyResultsWanted` | Full descriptions from the search API, rupiah salary ranges, Indonesian location evidence; polite paging with a delay between requests |
+| [Kalibrr](/docs/next/extractors/kalibrr) | Broad Indonesian job board coverage | Indonesia only; upstream keyword matching is loose, so job-ops filters results locally | existing pipeline `searchTerms`, cities, `jobspyResultsWanted` | Keeps only jobs whose title or text mentions every search word; full description plus qualifications; Indonesian location evidence |
+| [Dealls](/docs/next/extractors/dealls) | Indonesian startup roles and internships | Indonesia only; one detail request per new job | existing pipeline `searchTerms`, cities, `jobspyResultsWanted` | Skips detail requests for job links already in job-ops; monthly rupiah salaries; adds the country to city-only locations |
 
 ## Which extractor should I use?
 
@@ -40,6 +43,7 @@ Extractor integrations are now registered through manifests and loaded automatic
 - Use **Gradcracker** when targeting graduate pipelines in the UK.
 - Use **UKVisaJobs** for sponsorship-specific UK searches.
 - Use **Manual Import** when you already have a specific posting and need direct import.
+- Use **Tech in Asia Jobs**, **Kalibrr** and **Dealls** when targeting Indonesia (select Indonesia as the country to see them).
 
 Many runs combine sources: broad discovery first, then manual import for high-priority jobs that scraping misses.
 
@@ -68,4 +72,7 @@ Many runs combine sources: broad discovery first, then manual import for high-pr
 - [FreeHire](/docs/next/extractors/freehire)
 - [UKVisaJobs](/docs/next/extractors/ukvisajobs)
 - [Manual Import](/docs/next/extractors/manual)
+- [Tech in Asia Jobs](/docs/next/extractors/techinasia)
+- [Kalibrr](/docs/next/extractors/kalibrr)
+- [Dealls](/docs/next/extractors/dealls)
 - [Add an Extractor](/docs/next/workflows/add-an-extractor)
