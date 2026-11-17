@@ -112,6 +112,10 @@ export interface PipelineRunConfigSnapshot {
   locationIntent: LocationIntent;
 }
 
+/** Who started a run. Runs from before this was recorded have none. */
+export const PIPELINE_RUN_TRIGGERS = ["user", "agent", "schedule"] as const;
+export type PipelineRunTrigger = (typeof PIPELINE_RUN_TRIGGERS)[number];
+
 export interface PipelineRun {
   id: string;
   startedAt: string;
@@ -121,6 +125,50 @@ export interface PipelineRun {
   jobsProcessed: number;
   errorMessage: string | null;
   configSnapshot?: PipelineRunConfigSnapshot | null;
+  trigger?: PipelineRunTrigger | null;
+}
+
+/** What happened the last time the schedule came due. */
+export const SCHEDULE_ATTEMPT_OUTCOMES = [
+  "started",
+  "skipped_active",
+  "skipped_no_user",
+  "failed_to_start",
+] as const;
+export type ScheduleAttemptOutcome = (typeof SCHEDULE_ATTEMPT_OUTCOMES)[number];
+
+export const DIGEST_DELIVERY_STATUSES = ["sent", "failed"] as const;
+export type DigestDeliveryStatus = (typeof DIGEST_DELIVERY_STATUSES)[number];
+
+/** `GET /api/settings/schedule-status`. Never contains credentials. */
+export interface PipelineScheduleStatus {
+  /** False in hosted and demo mode; the schedule never runs there. */
+  available: boolean;
+  unavailableReason: string | null;
+  enabled: boolean;
+  timeZone: string;
+  timeZoneValid: boolean;
+  /** Next time a run will start (ISO), or null when nothing is planned. */
+  nextRunAt: string | null;
+  /** User the scheduled run runs as, or null when there is none. */
+  runAsUsername: string | null;
+  lastAttempt: {
+    /** The scheduled time that came due (ISO). */
+    occurrence: string;
+    attemptedAt: string;
+    outcome: ScheduleAttemptOutcome;
+    detail: string | null;
+  } | null;
+  lastScheduledRun: PipelineRun | null;
+  digest: {
+    mode: "scheduled" | "all" | "off";
+    telegramConfigured: boolean;
+    /** False when JOBOPS_PUBLIC_BASE_URL is unset: the digest has no links. */
+    linksAvailable: boolean;
+    lastSentAt: string | null;
+    lastStatus: DigestDeliveryStatus | null;
+    lastDetail: string | null;
+  };
 }
 
 export type PipelineRunExecutionStage =
