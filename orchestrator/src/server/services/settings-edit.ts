@@ -75,6 +75,8 @@ export const NON_ADMIN_SEARCH_SETTING_KEYS: ReadonlySet<
   "jobspyCountryIndeed",
   "searchCities",
   "jobspyLocation",
+  "targetCompanies",
+  "dealbreakers",
 ]);
 
 /** Hosted users and system admins may edit everything. */

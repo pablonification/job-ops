@@ -19,6 +19,8 @@ export interface OrchestratorFiltersProps {
   onSourceFilterChange: (value: JobSource | "all") => void;
   sponsorFilter: SponsorFilter;
   onSponsorFilterChange: (value: SponsorFilter) => void;
+  targetCompaniesOnly: boolean;
+  onTargetCompaniesOnlyChange: (value: boolean) => void;
   salaryFilter: SalaryFilter;
   onSalaryFilterChange: (value: SalaryFilter) => void;
   scoreFilter: ScoreFilter;
@@ -73,6 +75,11 @@ export type SponsorFilterPillProps = Pick<
 > & {
   sponsorLabel: string | null;
 };
+
+export type TargetCompanyFilterPillProps = Pick<
+  OrchestratorFiltersProps,
+  "targetCompaniesOnly" | "onTargetCompaniesOnlyChange"
+>;
 
 export type SalaryFilterPillProps = Pick<
   OrchestratorFiltersProps,

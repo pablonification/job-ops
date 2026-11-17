@@ -78,10 +78,13 @@ Use it when you need to narrow the current tab without changing tabs.
 What the panel includes:
 
 - source filters
+- a `Target companies` switch that shows only jobs at the companies listed in **Settings → Scoring Settings** (see [Target Companies and Dealbreakers](/docs/features/target-companies))
 - sponsor status filters
 - salary filters
 - date filters
 - sorting controls
+
+Job rows at a target company show a `Target` badge.
 
 Job rows and the detail header can also show a `Previously Applied` warning when JobOps finds a high-confidence fuzzy match against one of your past applied or in-progress jobs using title and company, not just URL dedupe. To avoid flagging genuinely new openings, JobOps only shows this warning when the matched historical application falls within 30 days of the current job's discovery date.
 

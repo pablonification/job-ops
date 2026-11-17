@@ -42,6 +42,7 @@ import {
   type UpdateSettingsInput,
   updateSettingsSchema,
 } from "@shared/settings-schema.js";
+import { normalizeTargetCompanyLines } from "@shared/target-companies.js";
 import type {
   AppSettings,
   JobStatus,
@@ -110,6 +111,8 @@ const DEFAULT_FORM_VALUES: UpdateSettingsInput = {
   missingSalaryPenalty: null,
   autoSkipScoreThreshold: null,
   blockedCompanyKeywords: [],
+  targetCompanies: [],
+  dealbreakers: "",
   ghostwriterSystemPromptTemplate: "",
   tailoringPromptTemplate: "",
   roleCvPromptTemplate: "",
@@ -370,6 +373,8 @@ const SECTION_FIELD_MAP: Record<
     "missingSalaryPenalty",
     "autoSkipScoreThreshold",
     "blockedCompanyKeywords",
+    "targetCompanies",
+    "dealbreakers",
   ],
   "reactive-resume": [
     "pdfRenderer",
@@ -492,6 +497,8 @@ const NULL_SETTINGS_PAYLOAD: UpdateSettingsInput = {
   missingSalaryPenalty: null,
   autoSkipScoreThreshold: null,
   blockedCompanyKeywords: null,
+  targetCompanies: null,
+  dealbreakers: null,
   ghostwriterSystemPromptTemplate: null,
   tailoringPromptTemplate: null,
   roleCvPromptTemplate: null,
@@ -563,6 +570,8 @@ const mapSettingsToForm = (data: AppSettings): UpdateSettingsInput => ({
   missingSalaryPenalty: data.missingSalaryPenalty.override,
   autoSkipScoreThreshold: data.autoSkipScoreThreshold.override,
   blockedCompanyKeywords: data.blockedCompanyKeywords.override ?? [],
+  targetCompanies: data.targetCompanies?.override ?? [],
+  dealbreakers: data.dealbreakers?.override ?? "",
   ghostwriterSystemPromptTemplate:
     data.ghostwriterSystemPromptTemplate.value ?? "",
   tailoringPromptTemplate: data.tailoringPromptTemplate.value ?? "",
@@ -809,6 +818,14 @@ const getDerivedSettings = (settings: AppSettings | null) => {
       blockedCompanyKeywords: {
         effective: settings?.blockedCompanyKeywords?.value ?? [],
         default: settings?.blockedCompanyKeywords?.default ?? [],
+      },
+      targetCompanies: {
+        effective: settings?.targetCompanies?.value ?? [],
+        default: settings?.targetCompanies?.default ?? [],
+      },
+      dealbreakers: {
+        effective: settings?.dealbreakers?.value ?? "",
+        default: settings?.dealbreakers?.default ?? "",
       },
     },
     promptTemplates: {
@@ -1352,6 +1369,11 @@ export const SettingsPage: React.FC = () => {
             ? null
             : normalized;
         })(),
+        targetCompanies: (() => {
+          const normalized = normalizeTargetCompanyLines(data.targetCompanies);
+          return normalized.length > 0 ? normalized : null;
+        })(),
+        dealbreakers: normalizeString(data.dealbreakers),
         ghostwriterSystemPromptTemplate: nullIfSame(
           normalizeString(data.ghostwriterSystemPromptTemplate),
           promptTemplates.ghostwriterSystemPromptTemplate.default,
@@ -1646,7 +1668,9 @@ export const SettingsPage: React.FC = () => {
           : { label: "Using defaults", variant: "secondary" as const };
       case "scoring":
         return scoring.autoSkipScoreThreshold.effective != null ||
-          scoring.blockedCompanyKeywords.effective.length > 0
+          scoring.blockedCompanyKeywords.effective.length > 0 ||
+          scoring.targetCompanies.effective.length > 0 ||
+          scoring.dealbreakers.effective.trim() !== ""
           ? { label: "Customized", variant: "outline" as const }
           : { label: "Default rules", variant: "secondary" as const };
       case "reactive-resume":

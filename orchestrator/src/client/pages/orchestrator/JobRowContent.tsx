@@ -1,6 +1,6 @@
 import { isAwaitingAiScore } from "@client/components";
 import type { JobListItem } from "@shared/types.js";
-import { Loader2, XCircle } from "lucide-react";
+import { Loader2, Star, XCircle } from "lucide-react";
 import { Tip } from "@/client/components/Tip";
 import { isPdfRegenerating, isPdfStale } from "@/client/lib/pdf-freshness";
 import { cn } from "@/lib/utils";
@@ -35,6 +35,7 @@ export const JobRowContent = ({
   const suitabilityTone = getSuitabilityScoreTone(job.suitabilityScore ?? 0);
   const showStalePdf = isPdfStale(job);
   const showRegeneratingPdf = isPdfRegenerating(job);
+  const isTargetCompany = job.isTargetCompany === true;
 
   return (
     <div className={cn("flex min-w-0 flex-1 items-center gap-3", className)}>
@@ -64,8 +65,20 @@ export const JobRowContent = ({
             <span className="before:content-['_in_']">{job.location}</span>
           )}
         </div>
-        {(job.salary?.trim() || showRegeneratingPdf || showStalePdf) && (
+        {(job.salary?.trim() ||
+          isTargetCompany ||
+          showRegeneratingPdf ||
+          showStalePdf) && (
           <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5">
+            {isTargetCompany && (
+              <span
+                className="inline-flex shrink-0 items-center gap-1 rounded-sm border border-violet-200/70 bg-violet-50 px-1.5 py-0.5 text-[10px] font-medium leading-none text-violet-700 dark:border-violet-400/25 dark:bg-violet-400/10 dark:text-violet-200"
+                title="This employer is on your target companies list"
+              >
+                <Star className="h-2.5 w-2.5" aria-hidden="true" />
+                Target
+              </span>
+            )}
             {job.salary?.trim() && (
               <span className="truncate text-xs text-muted-foreground">
                 {job.salary}

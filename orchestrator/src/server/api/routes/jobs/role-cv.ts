@@ -1,5 +1,6 @@
 import { fail, ok } from "@infra/http";
 import { resolveRequestOrigin } from "@server/infra/request-origin";
+import { hydrateJobPdfFreshness } from "@server/services/jobs/common";
 import {
   applyRoleCvToJob,
   matchJobRoleCv,
@@ -8,7 +9,7 @@ import {
 } from "@server/services/jobs/role-cv-actions";
 import { type Request, type Response, Router } from "express";
 import { z } from "zod";
-import { hydrateJobPdfFreshness, toJobsRouteError } from "./shared";
+import { toJobsRouteError } from "./shared";
 
 export const jobsRoleCvRouter = Router();
 

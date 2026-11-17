@@ -17,6 +17,7 @@ export {
 } from "./job-state";
 export {
   type CompactJobSummary,
+  type CompactJobSummaryOptions,
   type CompactJobSummarySource,
   JOB_STATUS_VALUES,
   toCompactJobSummary,
@@ -32,6 +33,7 @@ export {
 } from "./pagination";
 export { toolErrorResult, toolResult } from "./result";
 export { assertToolScope, hasScope } from "./scope";
+export { loadTargetCompanyMatcher } from "./target-companies";
 export {
   defineTool,
   defineToolGroup,

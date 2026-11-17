@@ -7,6 +7,7 @@ import {
   JOB_STATUS_VALUES,
   jobIdInput,
   loadCompactJobState,
+  loadTargetCompanyMatcher,
   MCP_ROUTE,
   toCompactJobState,
   truncateToolMessage,
@@ -337,6 +338,7 @@ const bulkJobAction = defineTool({
       forceMoveToReady: action === "move_to_ready" ? force : undefined,
       requestOrigin: context.requestOrigin,
     });
+    const targetCompanies = await loadTargetCompanyMatcher();
     return {
       action: outcome.action,
       requested: outcome.requested,
@@ -347,7 +349,7 @@ const bulkJobAction = defineTool({
           ? {
               jobId: result.jobId,
               ok: true,
-              job: toCompactJobState(result.job),
+              job: toCompactJobState(result.job, { targetCompanies }),
             }
           : {
               jobId: result.jobId,

@@ -5,6 +5,7 @@ import {
   LOCATION_SEARCH_SCOPE_VALUES,
 } from "./location-preferences";
 import { getDefaultPromptTemplate } from "./prompt-template-definitions";
+import { normalizeTargetCompanyLines } from "./target-companies";
 import {
   ROLE_CV_PIPELINE_MODE_VALUES,
   type RoleCvPipelineMode,
@@ -619,6 +620,30 @@ export const settingsRegistry = {
     parse: parseNonEmptyStringOrNull,
     serialize: (value: string | null | undefined): string | null =>
       value ?? null,
+  },
+  // One company per line; aliases on a line are separated by "|". Blank
+  // lines are accepted (the Settings textarea sends them while typing) and
+  // dropped when saved.
+  targetCompanies: {
+    kind: "typed" as const,
+    schema: z.array(z.string().trim().max(500)).max(200),
+    default: (): string[] => [],
+    parse: (raw: string | undefined): string[] | null => {
+      const parsed = parseJsonArrayOrNull(raw);
+      return parsed ? normalizeTargetCompanyLines(parsed) : null;
+    },
+    serialize: (value: string[] | null | undefined): string | null => {
+      const normalized = normalizeTargetCompanyLines(value);
+      return normalized.length > 0 ? JSON.stringify(normalized) : null;
+    },
+  },
+  dealbreakers: {
+    kind: "typed" as const,
+    schema: z.string().trim().max(4000),
+    default: (): string => "",
+    parse: parseNonEmptyStringOrNull,
+    serialize: (value: string | null | undefined): string | null =>
+      value?.trim() ? value.trim() : null,
   },
   ghostwriterSystemPromptTemplate: {
     kind: "typed" as const,

@@ -21,6 +21,7 @@ import {
 interface UseFilterBarDerivedStateArgs {
   sourceFilter: JobSource | "all";
   sponsorFilter: SponsorFilter;
+  targetCompaniesOnly: boolean;
   dateFilter: JobDateFilter;
   postedWithinDays: number | null;
   employmentTypes: EmploymentType[];
@@ -35,6 +36,7 @@ interface UseFilterBarDerivedStateArgs {
 export const useFilterBarDerivedState = ({
   sourceFilter,
   sponsorFilter,
+  targetCompaniesOnly,
   dateFilter,
   postedWithinDays,
   employmentTypes,
@@ -56,6 +58,7 @@ export const useFilterBarDerivedState = ({
     () =>
       Number(sourceFilter !== "all") +
       Number(sponsorFilter !== "all") +
+      Number(targetCompaniesOnly) +
       Number(dateFilter.dimensions.length > 0) +
       Number(postedWithinDays != null) +
       Number(employmentTypes.length > 0) +
@@ -65,6 +68,7 @@ export const useFilterBarDerivedState = ({
     [
       sourceFilter,
       sponsorFilter,
+      targetCompaniesOnly,
       dateFilter.dimensions.length,
       postedWithinDays,
       employmentTypes.length,

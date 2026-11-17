@@ -58,6 +58,8 @@ const renderFilters = (
     onSourceFilterChange: vi.fn(),
     sponsorFilter: "all" as SponsorFilter,
     onSponsorFilterChange: vi.fn(),
+    targetCompaniesOnly: false,
+    onTargetCompaniesOnlyChange: vi.fn(),
     salaryFilter: {
       mode: "at_least" as const,
       min: null,
@@ -125,6 +127,32 @@ describe("OrchestratorFilters", () => {
       sponsorFilter: "potential",
     });
 
+    expect(screen.getByRole("button", { name: /^filters/i })).toHaveTextContent(
+      "1",
+    );
+  });
+
+  it("toggles the target companies filter and counts it as active", () => {
+    const { props, rerender } = renderFilters();
+
+    const toggle = screen.getByRole("button", { name: "Target companies" });
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(toggle);
+    expect(props.onTargetCompaniesOnlyChange).toHaveBeenCalledWith(true);
+
+    rerender(<OrchestratorFilters {...props} targetCompaniesOnly />);
+    const pressed = screen.getByRole("button", { name: "Target companies" });
+    expect(pressed).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(pressed);
+    expect(props.onTargetCompaniesOnlyChange).toHaveBeenLastCalledWith(false);
+
+    rerender(
+      <OrchestratorFilters
+        {...props}
+        targetCompaniesOnly
+        isFiltersOpen={false}
+      />,
+    );
     expect(screen.getByRole("button", { name: /^filters/i })).toHaveTextContent(
       "1",
     );

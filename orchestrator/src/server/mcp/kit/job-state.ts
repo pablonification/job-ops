@@ -2,7 +2,12 @@ import { conflict } from "@infra/errors";
 import { hydrateJobPdfFreshness } from "@server/services/jobs/common";
 import type { Job, JobPdfFreshness } from "@shared/types";
 import { z } from "zod";
-import { type CompactJobSummary, toCompactJobSummary } from "./job-summary";
+import {
+  type CompactJobSummary,
+  type CompactJobSummaryOptions,
+  toCompactJobSummary,
+} from "./job-summary";
+import { loadTargetCompanyMatcher } from "./target-companies";
 
 /** `jobId` input field shared by the job tools. */
 export const jobIdInput = z
@@ -21,14 +26,27 @@ export type CompactJobState = CompactJobSummary & {
   pdfFreshness: JobPdfFreshness;
 };
 
-/** For a job whose PDF freshness is already resolved. */
-export function toCompactJobState(job: Job): CompactJobState {
-  return { ...toCompactJobSummary(job), pdfFreshness: job.pdfFreshness };
+/**
+ * For a job whose PDF freshness is already resolved. Takes the target-company
+ * matcher so a tool returning many jobs loads it once.
+ */
+export function toCompactJobState(
+  job: Job,
+  options: CompactJobSummaryOptions,
+): CompactJobState {
+  return {
+    ...toCompactJobSummary(job, options),
+    pdfFreshness: job.pdfFreshness,
+  };
 }
 
 /** Resolves the PDF freshness first, then builds the compact state. */
 export async function loadCompactJobState(job: Job): Promise<CompactJobState> {
-  return toCompactJobState(await hydrateJobPdfFreshness(job));
+  const [hydrated, targetCompanies] = await Promise.all([
+    hydrateJobPdfFreshness(job),
+    loadTargetCompanyMatcher(),
+  ]);
+  return toCompactJobState(hydrated, { targetCompanies });
 }
 
 /**

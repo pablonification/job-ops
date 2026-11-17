@@ -2,6 +2,7 @@
  * Tests for scorer.ts - focusing on robust JSON parsing from AI responses
  */
 
+import { getDefaultPromptTemplate } from "@shared/prompt-template-definitions.js";
 import { createJob } from "@shared/testing/factories";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -1149,5 +1150,230 @@ describe("salary penalty", () => {
         ScoringUnavailableError,
       );
     });
+  });
+});
+
+describe("target companies and dealbreakers in the scoring prompt", () => {
+  // The default scoring template exactly as it was before the target
+  // companies and dealbreakers placeholders were added.
+  const PREVIOUS_DEFAULT_SCORING_TEMPLATE = `You are evaluating a job listing for a candidate. Score how suitable this job is for the candidate on a scale of 0-100.
+
+SCORING CRITERIA:
+- Skills match (technologies, frameworks, languages): 0-30 points
+- Experience level match: 0-25 points
+- Location/remote work alignment: 0-15 points
+- Industry/domain fit: 0-15 points
+- Career growth potential: 0-15 points
+
+CANDIDATE PROFILE:
+{{profileJson}}
+
+SCORING INSTRUCTIONS:
+{{scoringInstructionsText}}`;
+
+  const profile = {
+    basics: { label: "Software Engineering Intern" },
+    skills: [{ name: "Backend", keywords: ["Go", "PostgreSQL"] }],
+  };
+
+  function mockSettings(
+    overrides: {
+      template?: string;
+      targetCompanies?: string[];
+      dealbreakers?: string;
+      scoringInstructions?: string;
+    } = {},
+  ) {
+    const template =
+      overrides.template ?? getDefaultPromptTemplate("scoringPromptTemplate");
+    getEffectiveSettingsMock.mockResolvedValue({
+      penalizeMissingSalary: { value: false, default: false, override: null },
+      missingSalaryPenalty: { value: 10, default: 10, override: null },
+      scoringInstructions: {
+        value: overrides.scoringInstructions ?? "",
+        default: "",
+        override: null,
+      },
+      scoringPromptTemplate: { value: template, default: "", override: null },
+      targetCompanies: {
+        value: overrides.targetCompanies ?? [],
+        default: [],
+        override: null,
+      },
+      dealbreakers: {
+        value: overrides.dealbreakers ?? "",
+        default: "",
+        override: null,
+      },
+    } as any);
+  }
+
+  async function scorePrompt(
+    job = createJob({
+      id: "job-target",
+      title: "Backend Engineer Intern",
+      employer: "PT GoTo Gojek Tokopedia Tbk",
+    }),
+  ): Promise<string> {
+    const { scoreJobSuitability } = await import("./scorer");
+    await scoreJobSuitability(job, profile);
+    return callJsonMock.mock.calls.at(-1)?.[0]?.messages?.[0]?.content ?? "";
+  }
+
+  function count(haystack: string, needle: string): number {
+    return haystack.split(needle).length - 1;
+  }
+
+  beforeEach(() => {
+    getSettingMock.mockResolvedValue(null);
+    resolveLlmModelMock.mockResolvedValue("gpt-4.1-mini");
+    callJsonMock.mockResolvedValue({
+      success: true,
+      data: { score: 70, reason: "Good match" },
+    });
+    createConfiguredLlmServiceMock.mockResolvedValue({
+      callJson: callJsonMock,
+    });
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("keeps the default-template prompt byte-identical when both settings are empty", async () => {
+    mockSettings();
+    const withNewDefault = await scorePrompt();
+
+    mockSettings({ template: PREVIOUS_DEFAULT_SCORING_TEMPLATE });
+    const withPreviousDefault = await scorePrompt();
+
+    expect(withNewDefault).toBe(withPreviousDefault);
+    expect(withNewDefault).not.toContain("TARGET COMPANIES");
+    expect(withNewDefault).not.toContain("DEALBREAKERS");
+    expect(withNewDefault).not.toContain("{{");
+  });
+
+  it("only adds the two placeholders to the previous default template", () => {
+    expect(
+      getDefaultPromptTemplate("scoringPromptTemplate").replace(
+        "{{targetCompaniesSection}}{{dealbreakersSection}}",
+        "",
+      ),
+    ).toBe(PREVIOUS_DEFAULT_SCORING_TEMPLATE);
+  });
+
+  it("fills the placeholders in the default template", async () => {
+    mockSettings({
+      scoringInstructions: "Prefer backend roles.",
+      targetCompanies: ["GoTo | Gojek | Tokopedia", "Grab"],
+      dealbreakers: "No unpaid internships.\nNo roles outside Jakarta.",
+    });
+    const prompt = await scorePrompt();
+
+    const instructionsAt = prompt.indexOf("Prefer backend roles.");
+    const targetAt = prompt.indexOf(
+      "TARGET COMPANIES (employers the candidate most wants to join):\n- GoTo (also: Gojek, Tokopedia)\n- Grab\n",
+    );
+    const dealbreakersAt = prompt.indexOf(
+      "DEALBREAKERS (conditions the candidate will not accept):\nNo unpaid internships.\nNo roles outside Jakarta.\n",
+    );
+    const jobDataAt = prompt.indexOf("JOB DATA (JSON):");
+
+    expect(instructionsAt).toBeGreaterThan(-1);
+    expect(targetAt).toBeGreaterThan(instructionsAt);
+    expect(dealbreakersAt).toBeGreaterThan(targetAt);
+    expect(jobDataAt).toBeGreaterThan(dealbreakersAt);
+    expect(count(prompt, "TARGET COMPANIES")).toBe(1);
+    expect(count(prompt, "DEALBREAKERS")).toBe(1);
+    expect(prompt).toContain(
+      'This job\'s employer matches the target company "GoTo".',
+    );
+    expect(prompt).toContain(
+      "When fit is otherwise comparable, favour a job at a target company",
+    );
+    expect(prompt).toContain("Never let it lift a poor fit to a high score.");
+    expect(prompt).toContain(
+      "If the listing clearly violates a dealbreaker, score it 20 or lower and name the violated dealbreaker in the reason.",
+    );
+  });
+
+  it("lists target companies without a match line for other employers", async () => {
+    mockSettings({ targetCompanies: ["Grab"] });
+    const prompt = await scorePrompt(
+      createJob({ id: "job-other", employer: "Grabango" }),
+    );
+
+    expect(prompt).toContain("TARGET COMPANIES");
+    expect(prompt).toContain("- Grab\n");
+    expect(prompt).not.toContain("employer matches the target company");
+  });
+
+  it("appends the context to a custom template that lacks the placeholders", async () => {
+    mockSettings({
+      template: "Custom scoring for {{jobTitle}}.",
+      targetCompanies: ["Grab"],
+      dealbreakers: "No unpaid roles.",
+    });
+    const prompt = await scorePrompt(
+      createJob({
+        id: "job-custom",
+        title: "Mobile Intern",
+        employer: "GrabTaxi Holdings",
+      }),
+    );
+
+    expect(prompt.startsWith("Custom scoring for Mobile Intern.\n\n")).toBe(
+      true,
+    );
+    expect(count(prompt, "TARGET COMPANIES")).toBe(1);
+    expect(count(prompt, "DEALBREAKERS")).toBe(1);
+    expect(prompt.indexOf("TARGET COMPANIES")).toBeLessThan(
+      prompt.indexOf("DEALBREAKERS"),
+    );
+    expect(prompt.indexOf("DEALBREAKERS")).toBeLessThan(
+      prompt.indexOf("JOB DATA (JSON):"),
+    );
+    expect(prompt).toContain(
+      'This job\'s employer matches the target company "Grab".',
+    );
+    expect(prompt).toContain("No unpaid roles.");
+  });
+
+  it("appends only the context whose placeholder a custom template lacks", async () => {
+    mockSettings({
+      template: "Custom start.{{dealbreakersSection}}\nCustom end.",
+      targetCompanies: ["Grab"],
+      dealbreakers: "No unpaid roles.",
+    });
+    const prompt = await scorePrompt();
+
+    expect(prompt).toMatch(
+      /^Custom start\.\n\nDEALBREAKERS[^\n]*\nNo unpaid roles\.\n[^\n]+\nCustom end\.\n\nTARGET COMPANIES/,
+    );
+    expect(count(prompt, "DEALBREAKERS")).toBe(1);
+    expect(count(prompt, "TARGET COMPANIES")).toBe(1);
+  });
+
+  it("leaves a custom template unchanged when both settings are empty", async () => {
+    mockSettings({ template: "Custom scoring for {{jobTitle}}." });
+    const prompt = await scorePrompt(
+      createJob({ id: "job-plain", title: "Data Intern" }),
+    );
+
+    expect(
+      prompt.startsWith("Custom scoring for Data Intern.\n\nJOB DATA"),
+    ).toBe(true);
+  });
+
+  it("never sends the computed target-company flag as job data", async () => {
+    mockSettings({ targetCompanies: ["Grab"] });
+    const prompt = await scorePrompt(
+      createJob({ id: "job-flag", employer: "Grab", isTargetCompany: true }),
+    );
+
+    const match = prompt.match(/JOB DATA \(JSON\):\n(?<job>[^\n]+)\n\n/);
+    const job = JSON.parse(match?.groups?.job ?? "{}");
+    expect(job.employer).toBe("Grab");
+    expect(job).not.toHaveProperty("isTargetCompany");
   });
 });

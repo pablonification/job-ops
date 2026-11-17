@@ -36,7 +36,7 @@ It helps you:
 
 AI fills the same fields you can edit yourself; it never starts discovery. **Describe search** returns to your brief while keeping the criteria you have edited. Rebuilding uses those current criteria as context.
 
-The configuration form keeps its existing layout and controls. **Search notes** contains any AI assumptions or limitations and is collapsed by default. Ranking preferences influence scores rather than strictly excluding listings, including salary preferences.
+The configuration form keeps its existing layout and controls. **Search notes** contains any AI assumptions or limitations and is collapsed by default. Ranking preferences influence scores rather than strictly excluding listings, including salary preferences. Scoring also uses your target companies and dealbreakers from **Settings → Scoring Settings** on every run; see [Target Companies and Dealbreakers](/docs/features/target-companies).
 
 The search description and configuration form use the same page width.
 

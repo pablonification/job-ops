@@ -220,6 +220,7 @@ export interface Job {
   sponsorMatchScore: number | null; // 0-100 fuzzy match score with visa sponsors
   sponsorMatchNames: string | null; // JSON array of matched sponsor names (when 100% matches or top match)
   appliedDuplicateMatch?: AppliedDuplicateMatch | null; // Included on detail responses and may be omitted on list responses
+  isTargetCompany?: boolean; // Computed from the targetCompanies setting on list and detail responses; never stored
 
   // JobSpy fields (nullable for non-JobSpy sources)
   jobType: string | null;
@@ -275,6 +276,7 @@ export type JobListItem = Pick<
   | "suitabilityScore"
   | "sponsorMatchScore"
   | "appliedDuplicateMatch"
+  | "isTargetCompany"
   | "jobType"
   | "jobFunction"
   | "pdfRegenerating"

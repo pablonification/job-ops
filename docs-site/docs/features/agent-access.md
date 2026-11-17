@@ -15,8 +15,8 @@ Available tools:
 
 | Tool | What it does |
 | --- | --- |
-| `list_jobs` | Search and filter jobs (statuses, free text over title/employer/location, score range, sources, employer, posted or discovered since, has PDF), sorted and paginated. Returns compact summaries, `total` and `nextOffset`. |
-| `get_job` | Full detail for one job: description, score and reason, tailored resume fields, PDF state. `descriptionMaxChars` truncates the description; `includeDescription: false` leaves it out. |
+| `list_jobs` | Search and filter jobs (statuses, free text over title/employer/location, score range, sources, employer, target company, posted or discovered since, has PDF), sorted and paginated. Returns compact summaries with `isTargetCompany`, `total` and `nextOffset`. |
+| `get_job` | Full detail for one job: description, score and reason, target-company flag (`isTargetCompany`), tailored resume fields, PDF state. `descriptionMaxChars` truncates the description; `includeDescription: false` leaves it out. |
 | `get_job_counts` | Number of jobs per status and in total. |
 | `get_pipeline_status` | Whether a pipeline run is active, its progress, and the last five runs. |
 | `get_profile` | Summary of your master resume: headline, summary, skills, experience and project ids. Email, phone and photo are left out. |
