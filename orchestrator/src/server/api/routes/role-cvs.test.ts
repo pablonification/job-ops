@@ -307,6 +307,15 @@ describe.sequential("Role CV routes", () => {
       "CONFLICT",
     );
 
+    const [rendering, deletedMidRender] = await Promise.all([
+      api(baseUrl, `/role-cvs/${roleCv.id}/generate-pdf`, { method: "POST" }),
+      new Promise((resolve) => setTimeout(resolve, 50)).then(() =>
+        api(baseUrl, `/role-cvs/${roleCv.id}`, { method: "DELETE" }),
+      ),
+    ]);
+    expect(rendering.res.status).toBe(200);
+    expect(deletedMidRender.res.status).toBe(409);
+
     state.pdfDelayMs = 0;
     const again = await api(baseUrl, `/role-cvs/${roleCv.id}/generate-pdf`, {
       method: "POST",

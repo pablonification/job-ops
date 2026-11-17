@@ -284,6 +284,13 @@ export async function updateRoleCv(
 }
 
 export async function deleteRoleCv(id: string): Promise<void> {
+  // A render in flight would write its file after the delete and orphan it.
+  const row = await requireRoleCvRow(id);
+  if (isPdfLockActive(row)) {
+    throw conflict(
+      "This Role CV PDF is being generated. Delete it once that finishes.",
+    );
+  }
   const deleted = await roleCvsRepo.deleteRoleCvRow(id);
   if (deleted === 0) throw notFound("Role CV not found");
   await removeStoredRoleCvPdf(id);
