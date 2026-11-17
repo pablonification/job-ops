@@ -24,20 +24,53 @@ const noteContentInput = z
   .string()
   .describe("Note text (Markdown is fine), 1-20000 characters.");
 
+const DEFAULT_NOTE_PREVIEW_CHARS = 500;
+
 const listJobNotes = defineTool({
   name: "list_job_notes",
   title: "List a job's notes",
   description:
-    "The user's notes on one job (title and content), most recently updated first, with pagination.",
+    "The user's notes on one job, most recently updated first, with pagination. Content is cut to previewChars (default 500) unless fullContent is true; contentLength gives the full length.",
   scope: "read",
-  input: z.object({ jobId: jobIdInput, ...paginationShape }).strict(),
-  handler: async ({ jobId, limit, offset }) => {
+  input: z
+    .object({
+      jobId: jobIdInput,
+      ...paginationShape,
+      previewChars: z
+        .number()
+        .int()
+        .min(50)
+        .max(20000)
+        .default(DEFAULT_NOTE_PREVIEW_CHARS)
+        .describe(
+          `Characters of each note's content to return (default ${DEFAULT_NOTE_PREVIEW_CHARS}).`,
+        ),
+      fullContent: z
+        .boolean()
+        .default(false)
+        .describe("Return every note's full content (up to 20000 each)."),
+    })
+    .strict(),
+  handler: async ({ jobId, limit, offset, previewChars, fullContent }) => {
     await requireJob(jobId);
     const { items, page } = paginateArray(await jobsRepo.listJobNotes(jobId), {
       limit,
       offset,
     });
-    return { notes: items, ...page };
+    return {
+      notes: items.map((note) => {
+        const truncated = !fullContent && note.content.length > previewChars;
+        return {
+          ...note,
+          content: truncated
+            ? note.content.slice(0, previewChars)
+            : note.content,
+          contentLength: note.content.length,
+          contentTruncated: truncated,
+        };
+      }),
+      ...page,
+    };
   },
 });
 

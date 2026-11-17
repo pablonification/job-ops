@@ -1,6 +1,9 @@
 import type { AccessTokenScope } from "@shared/types";
 import type { z } from "zod";
 
+/** Route label for logs written by MCP tools and the services they call. */
+export const MCP_ROUTE = "POST /mcp";
+
 /**
  * What every tool handler receives besides its parsed input. Tenant and user
  * scoping is NOT passed here on purpose: handlers run inside the caller's

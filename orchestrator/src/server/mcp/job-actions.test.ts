@@ -8,6 +8,52 @@ import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { startServer, stopServer } from "../api/routes/test-utils";
 
+const PUBLIC_TEST_IP = "93.184.215.14";
+const jobSite = vi.hoisted(() => ({ port: 0 }));
+
+// The posting fetch keeps all its checks; only DNS and the socket are
+// replaced, so "jobs.example.test" (a public address) is served by a local
+// test server and nothing leaves the machine.
+vi.mock("@server/infra/public-http", async () => {
+  const { request } = await import("node:http");
+  const deps: import("@server/infra/public-http").PublicHttpDeps = {
+    resolve: async (hostname) => {
+      if (hostname === "jobs.example.test") {
+        return [{ address: PUBLIC_TEST_IP, family: 4 }];
+      }
+      throw new Error(`ENOTFOUND ${hostname}`);
+    },
+    transport: ({ url, headers, signal }) =>
+      new Promise((resolve, reject) => {
+        const req = request(
+          {
+            host: "127.0.0.1",
+            port: jobSite.port,
+            path: `${url.pathname}${url.search}`,
+            headers: { ...headers, Host: url.host },
+            signal,
+          },
+          resolve,
+        );
+        req.on("error", reject);
+        req.end();
+      }),
+  };
+  return {
+    // Loaded per call: startServer resets the module registry, and the real
+    // module must share the app's AppError class.
+    fetchPublicUrl: async (
+      url: string,
+      options: import("@server/infra/public-http").PublicHttpOptions,
+    ) => {
+      const actual = await vi.importActual<
+        typeof import("@server/infra/public-http")
+      >("@server/infra/public-http");
+      return actual.fetchPublicUrl(url, options, deps);
+    },
+  };
+});
+
 const AUTH_ENV = {
   BASIC_AUTH_USER: "admin",
   BASIC_AUTH_PASSWORD: "secret",
@@ -276,16 +322,32 @@ describe.sequential("MCP job action tools", () => {
       }),
     });
     expect(createUserRes.status).toBe(201);
-    const adamToken = await createAccessToken(
-      baseUrl,
-      await login(baseUrl, "adam", "adam-secret"),
-      "write",
-    );
+    const adamSession = await login(baseUrl, "adam", "adam-secret");
+    const adamToken = await createAccessToken(baseUrl, adamSession, "write");
+    const adminNote = await callOk(baseUrl, writeToken, "add_job_note", {
+      jobId,
+      title: "Private",
+      content: "Admin only",
+    });
+    const noteId = adminNote.note.id as string;
+    const adamJobId = await createJob(baseUrl, adamSession, {
+      title: "Adam Role",
+      employer: "Acme",
+      slug: "adam-own",
+    });
+
     for (const [name, args] of [
       ["skip_job", { jobId }],
       ["delete_job", { jobId }],
+      ["update_job", { jobId, tailoredSummary: "Overwritten" }],
       ["add_job_note", { jobId, title: "Hi", content: "Mine now" }],
+      ["update_job_note", { jobId, noteId, title: "Mine now" }],
+      ["delete_job_note", { jobId, noteId }],
+      // Someone else's note through one's own job is not found either.
+      ["update_job_note", { jobId: adamJobId, noteId, title: "Mine now" }],
+      ["delete_job_note", { jobId: adamJobId, noteId }],
       ["mark_job_applied", { jobId }],
+      ["transition_job_stage", { jobId, toStage: "offer" }],
       ["get_job_pdf_link", { jobId }],
     ] as const) {
       const error = await callError(baseUrl, adamToken, name, args);
@@ -293,6 +355,17 @@ describe.sequential("MCP job action tools", () => {
     }
     const stillThere = await callOk(baseUrl, writeToken, "get_job", { jobId });
     expect(stillThere.job.status).toBe("discovered");
+    expect(stillThere.job.tailoredSummary ?? null).toBeNull();
+    const adminNotes = await callOk(baseUrl, writeToken, "list_job_notes", {
+      jobId,
+    });
+    expect(adminNotes.notes).toMatchObject([
+      { id: noteId, title: "Private", content: "Admin only" },
+    ]);
+    const timeline = await callOk(baseUrl, writeToken, "get_job_timeline", {
+      jobId,
+    });
+    expect(timeline.events).toEqual([]);
   });
 
   it("rescores, tailors, renders and processes jobs", async () => {
@@ -406,6 +479,38 @@ describe.sequential("MCP job action tools", () => {
     }
     setJobColumns(tempDir, jobId, { status: "discovered" });
 
+    // A failed pipeline step reaches the agent with its real message.
+    vi.mocked(pipeline.processJob).mockResolvedValueOnce({
+      success: false,
+      error: "LLM is not configured. Set a model in Settings.",
+    });
+    expect(
+      await callError(baseUrl, writeToken, "process_job", { jobId }),
+    ).toEqual({
+      code: "UPSTREAM_ERROR",
+      message: "LLM is not configured. Set a model in Settings.",
+    });
+    vi.mocked(pipeline.processJob).mockResolvedValueOnce({
+      success: false,
+      error: "PDF regeneration is already in progress for this job.",
+      errorCode: "CONFLICT",
+    });
+    expect(
+      (await callError(baseUrl, writeToken, "process_job", { jobId })).code,
+    ).toBe("CONFLICT");
+    // Long upstream text is cut before it reaches the agent.
+    vi.mocked(pipeline.generateFinalPdf).mockResolvedValueOnce({
+      success: false,
+      error: `Renderer said: ${"x".repeat(5000)}`,
+      errorCode: "UPSTREAM_ERROR",
+    });
+    const longError = await callError(baseUrl, writeToken, "generate_job_pdf", {
+      jobId,
+    });
+    expect(longError.message).toHaveLength(500);
+    expect(longError.message.startsWith("Renderer said: xxx")).toBe(true);
+    expect(longError.message.endsWith("…")).toBe(true);
+
     vi.mocked(pipeline.processJob).mockClear();
     const processed = await callOk(baseUrl, writeToken, "process_job", {
       jobId,
@@ -500,6 +605,14 @@ describe.sequential("MCP job action tools", () => {
         })
       ).code,
     ).toBe("NOT_FOUND");
+    const urlTaken = await callError(baseUrl, writeToken, "update_job", {
+      jobId: second,
+      jobUrl: "https://example.com/jobs/first",
+    });
+    expect(urlTaken).toEqual({
+      code: "CONFLICT",
+      message: "Another job already uses that job URL",
+    });
     // Tracer links need a public URL; a loopback instance is refused.
     const tracer = await callError(baseUrl, writeToken, "update_job", {
       jobId: second,
@@ -658,6 +771,36 @@ describe.sequential("MCP job action tools", () => {
       jobId,
     });
     expect(remaining.total).toBe(1);
+
+    const longContent = "Interview prep. ".repeat(100);
+    const long = await callOk(baseUrl, writeToken, "add_job_note", {
+      jobId,
+      title: "Long",
+      content: longContent,
+    });
+    const previews = await callOk(baseUrl, readToken, "list_job_notes", {
+      jobId,
+    });
+    const preview = previews.notes.find(
+      (note: { id: string }) => note.id === long.note.id,
+    );
+    expect(preview).toMatchObject({
+      contentLength: longContent.trim().length,
+      contentTruncated: true,
+    });
+    expect(preview.content).toHaveLength(500);
+    const shortPreview = previews.notes.find(
+      (note: { id: string }) => note.id !== long.note.id,
+    );
+    expect(shortPreview.contentTruncated).toBe(false);
+    const full = await callOk(baseUrl, readToken, "list_job_notes", {
+      jobId,
+      fullContent: true,
+    });
+    expect(
+      full.notes.find((note: { id: string }) => note.id === long.note.id)
+        .content,
+    ).toBe(longContent.trim());
   });
 
   it("imports jobs from a fetched URL or pasted text", async () => {
@@ -677,18 +820,24 @@ describe.sequential("MCP job action tools", () => {
       warning: null,
     });
 
-    // A local page stands in for the job site.
-    const jobSite: HttpServer = createServer((_req, res) => {
+    // A local server stands in for jobs.example.test (see the mock above).
+    const siteServer: HttpServer = createServer((req, res) => {
+      if (req.url === "/moved") {
+        res.writeHead(302, { Location: "http://192.168.1.20/admin" });
+        res.end();
+        return;
+      }
       res.writeHead(200, { "Content-Type": "text/html" });
       res.end(
         "<html><head><title>Platform Engineer - Traveloka</title></head><body><nav>Menu</nav><main>Build Go services for flights.</main></body></html>",
       );
     });
     await new Promise<void>((resolve) =>
-      jobSite.listen(0, "127.0.0.1", resolve),
+      siteServer.listen(0, "127.0.0.1", resolve),
     );
-    const address = jobSite.address();
-    const postingUrl = `http://127.0.0.1:${typeof address === "object" && address ? address.port : 0}/careers/42`;
+    const address = siteServer.address();
+    jobSite.port = typeof address === "object" && address ? address.port : 0;
+    const postingUrl = "http://jobs.example.test/careers/42";
 
     try {
       vi.mocked(pipeline.processJob).mockClear();
@@ -712,8 +861,26 @@ describe.sequential("MCP job action tools", () => {
       );
       expect(inferredFrom).toContain("Build Go services for flights.");
       expect(inferredFrom).not.toContain("Menu");
+
+      // The server's own network is off limits, directly or by redirect.
+      for (const url of [
+        `http://127.0.0.1:${jobSite.port}/careers/42`,
+        "http://[::1]/careers/42",
+        "http://169.254.169.254/latest/meta-data/",
+        "http://jobs.example.test/moved",
+      ]) {
+        const refused = await callError(baseUrl, writeToken, "import_job", {
+          url,
+        });
+        expect(refused.code, url).toBe("UNPROCESSABLE_ENTITY");
+        expect(refused.message, url).toContain("private");
+      }
+      const scheme = await callError(baseUrl, writeToken, "import_job", {
+        url: "ftp://jobs.example.test/posting",
+      });
+      expect(scheme.code).toBe("UNPROCESSABLE_ENTITY");
     } finally {
-      await new Promise<void>((resolve) => jobSite.close(() => resolve()));
+      await new Promise<void>((resolve) => siteServer.close(() => resolve()));
     }
 
     const noUrl = await callError(baseUrl, writeToken, "import_job", {
@@ -851,7 +1018,23 @@ describe.sequential("MCP job action tools", () => {
           event.metadata?.note === "Asked about salary band",
       ),
     ).toBe(true);
-    expect(timeline.tasks).toEqual([]);
+    expect(timeline).toMatchObject({
+      total: 3,
+      hasMore: false,
+      tasks: [],
+      tasksTotal: 0,
+      tasksTruncated: false,
+    });
+    const firstEvent = await callOk(baseUrl, readToken, "get_job_timeline", {
+      jobId,
+      limit: 1,
+    });
+    expect(firstEvent.events).toHaveLength(1);
+    expect(firstEvent).toMatchObject({
+      total: 3,
+      hasMore: true,
+      nextOffset: 1,
+    });
     expect(timeline.job).toMatchObject({ id: jobId, status: "in_progress" });
     expect(
       (await callError(baseUrl, readToken, "get_job_timeline", { jobId: "x" }))

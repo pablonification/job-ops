@@ -7,7 +7,9 @@ import {
   JOB_STATUS_VALUES,
   jobIdInput,
   loadCompactJobState,
+  MCP_ROUTE,
   toCompactJobState,
+  truncateToolMessage,
 } from "@server/mcp/kit";
 import {
   buildJobActionExecutionOptions,
@@ -30,17 +32,15 @@ import {
   updateJobWithSideEffects,
 } from "@server/services/jobs/updates";
 import {
-  fetchManualJobContent,
-  importManualJob,
-  MANUAL_JOB_DESCRIPTION_MAX_CHARS,
+  importJobFromPosting,
+  manualJobFetchSchema,
   manualJobImportSchema,
+  manualJobInferenceSchema,
 } from "@server/services/manual-job-import";
-import { inferManualJobDetails } from "@server/services/manualJob";
 import { pdfExists } from "@server/services/pdf";
-import type { Job, JobAction, ManualJobDraft } from "@shared/types";
+import type { Job, JobAction } from "@shared/types";
 import { z } from "zod";
 
-const MCP_ROUTE = "POST /mcp";
 const BULK_ACTION_MAX_JOBS = 100;
 
 function parseJsonArray(value: string | null): unknown[] | null {
@@ -349,78 +349,41 @@ const bulkJobAction = defineTool({
               ok: true,
               job: toCompactJobState(result.job),
             }
-          : { jobId: result.jobId, ok: false, error: result.error },
+          : {
+              jobId: result.jobId,
+              ok: false,
+              error: {
+                code: result.error.code,
+                message: truncateToolMessage(result.error.message),
+              },
+            },
       ),
     };
   },
 });
 
-const IMPORT_FIELD_LIMITS = {
-  title: 500,
-  employer: 500,
-  location: 200,
-  salary: 200,
-  deadline: 100,
-  jobType: 200,
-  jobLevel: 200,
-  jobFunction: 200,
-  disciplines: 200,
-  degreeRequired: 200,
-  starting: 200,
-} as const;
-
-type ImportTextField = keyof typeof IMPORT_FIELD_LIMITS;
-
-function cleanText(value: string | null | undefined, max: number) {
-  const trimmed = value?.trim();
-  return trimmed ? trimmed.slice(0, max) : undefined;
-}
-
-function cleanUrl(value: string | null | undefined): string | undefined {
-  const trimmed = value?.trim();
-  if (!trimmed || trimmed.length > 2000) return undefined;
-  try {
-    const url = new URL(trimmed);
-    return url.protocol === "http:" || url.protocol === "https:"
-      ? trimmed
-      : undefined;
-  } catch {
-    return undefined;
-  }
-}
+const importFields = manualJobImportSchema.shape.job.shape;
 
 const importJobInput = z
   .object({
-    url: z
-      .string()
-      .trim()
-      .url()
-      .max(2000)
+    url: manualJobFetchSchema.shape.url
       .optional()
       .describe(
-        "Posting URL to fetch and read. LinkedIn and Indeed block fetching: pass description instead.",
+        "Public posting URL to fetch and read. LinkedIn and Indeed block fetching: pass description instead.",
       ),
-    description: z
-      .string()
-      .trim()
-      .min(1)
-      .max(60000)
+    description: manualJobInferenceSchema.shape.jobDescription
       .optional()
       .describe("Pasted job posting text. When given, the URL is not fetched."),
-    jobUrl: z
-      .string()
-      .trim()
-      .url()
-      .max(2000)
+    jobUrl: importFields.jobUrl
       .optional()
       .describe(
         "Posting URL to store. Defaults to url, then to a URL found in the text. Required when neither exists.",
       ),
-    title: z.string().trim().min(1).max(500).optional(),
-    employer: z.string().trim().min(1).max(500).optional(),
-    location: z.string().trim().min(1).max(200).optional(),
-    salary: z.string().trim().min(1).max(200).optional(),
-    applicationLink: z.string().trim().url().max(2000).optional(),
+    title: importFields.title.optional(),
+    employer: importFields.employer.optional(),
+    location: importFields.location,
+    salary: importFields.salary,
+    applicationLink: importFields.applicationLink,
     process: z
       .boolean()
       .optional()
@@ -434,69 +397,20 @@ const importJob = defineTool({
   name: "import_job",
   title: "Import a job from a URL or text",
   description:
-    "Add a job the pipeline did not find, from a posting URL (fetched) or pasted text, like the manual import dialog. The model extracts title, employer, location and other fields; values you pass override them. Returns the new job. With processing, the job comes back as processing and turns ready when scoring finishes (poll get_job).",
+    "Add a job the pipeline did not find, from a public posting URL (fetched) or pasted text, like the manual import dialog. The text is sent to the configured model, which extracts title, employer, location and other fields; values you pass override them. Returns the new job. With processing, the job comes back as processing and turns ready when scoring finishes (poll get_job).",
   scope: "write",
   openWorld: true,
   input: importJobInput,
-  handler: async (input) => {
-    if (!input.url && !input.description) {
-      throw badRequest("Provide url or description.");
-    }
-    const fetched =
-      input.description === undefined && input.url
-        ? await fetchManualJobContent(input.url)
-        : null;
-    const text = (input.description ?? fetched?.content ?? "").trim();
-    if (!text) {
-      throw badRequest(
-        "The page had no readable text. Pass the job posting as description instead.",
-      );
-    }
-
-    const inferred = await inferManualJobDetails(text);
-    const draft: ManualJobDraft = inferred.job ?? {};
-    const textFields: Partial<Record<ImportTextField, string>> = {};
-    for (const [field, max] of Object.entries(IMPORT_FIELD_LIMITS) as Array<
-      [ImportTextField, number]
-    >) {
-      const value = cleanText(
-        (input as Partial<Record<ImportTextField, string>>)[field] ??
-          draft[field],
-        max,
-      );
-      if (value) textFields[field] = value;
-    }
-    const jobUrl =
-      input.jobUrl ?? fetched?.url ?? input.url ?? cleanUrl(draft.jobUrl);
-    const missing = [
-      ...(textFields.title ? [] : ["title"]),
-      ...(textFields.employer ? [] : ["employer"]),
-      ...(jobUrl ? [] : ["jobUrl"]),
-    ];
-    if (missing.length > 0) {
-      throw badRequest(
-        `Could not determine ${missing.join(", ")} from the posting. Pass ${missing.length === 1 ? "it" : "them"} explicitly.`,
-        { missing, ...(inferred.warning ? { warning: inferred.warning } : {}) },
-      );
-    }
-
-    const job = await importManualJob(
-      manualJobImportSchema.parse({
-        ...(input.process === undefined
-          ? {}
-          : { skipTailoring: !input.process }),
-        job: {
-          ...textFields,
-          jobUrl,
-          applicationLink:
-            input.applicationLink ?? cleanUrl(draft.applicationLink),
-          jobDescription: text.slice(0, MANUAL_JOB_DESCRIPTION_MAX_CHARS),
-        },
-      }),
-    );
+  handler: async ({ url, description, process, ...overrides }) => {
+    const { job, warning } = await importJobFromPosting({
+      url,
+      description,
+      overrides,
+      process,
+    });
     return {
       job: await loadCompactJobState(job),
-      warning: inferred.warning ?? null,
+      warning,
       next:
         job.status === "processing"
           ? "Tailored and rendered. Scoring runs in the background; poll get_job until status is ready."

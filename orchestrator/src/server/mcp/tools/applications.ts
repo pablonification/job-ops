@@ -4,6 +4,9 @@ import {
   defineToolGroup,
   jobIdInput,
   loadCompactJobState,
+  MCP_ROUTE,
+  paginateArray,
+  paginationShape,
 } from "@server/mcp/kit";
 import { getStageEvents, getTasks } from "@server/services/applicationTracking";
 import {
@@ -18,8 +21,6 @@ import {
   type StageEventMetadata,
 } from "@shared/types";
 import { z } from "zod";
-
-const MCP_ROUTE = "POST /mcp";
 
 /** ISO date input converted to the unix seconds the stage APIs store. */
 const unixSecondsInput = (description: string) =>
@@ -148,31 +149,37 @@ const setJobOutcomeTool = defineTool({
   },
 });
 
+const MAX_TIMELINE_TASKS = 50;
+
 const getJobTimeline = defineTool({
   name: "get_job_timeline",
   title: "Get an application's timeline",
-  description:
-    "Stage history of a job's application (stage events oldest first, with notes and outcomes) and its tasks such as follow-ups and interview prep.",
+  description: `Stage history of a job's application (stage events oldest first, with notes and outcomes, paginated with limit/offset) and up to ${MAX_TIMELINE_TASKS} of its tasks such as follow-ups and interview prep (tasksTruncated tells when there are more).`,
   scope: "read",
   input: z
     .object({
       jobId: jobIdInput,
+      ...paginationShape,
       includeCompletedTasks: z
         .boolean()
         .default(true)
         .describe("Include completed tasks. Default true."),
     })
     .strict(),
-  handler: async ({ jobId, includeCompletedTasks }) => {
+  handler: async ({ jobId, limit, offset, includeCompletedTasks }) => {
     const job = await requireJob(jobId);
     const [events, tasks] = await Promise.all([
       getStageEvents(jobId),
       getTasks(jobId, includeCompletedTasks),
     ]);
+    const { items, page } = paginateArray(events, { limit, offset });
     return {
       job: await loadCompactJobState(job),
-      events,
-      tasks,
+      events: items,
+      ...page,
+      tasks: tasks.slice(0, MAX_TIMELINE_TASKS),
+      tasksTotal: tasks.length,
+      tasksTruncated: tasks.length > MAX_TIMELINE_TASKS,
     };
   },
 });

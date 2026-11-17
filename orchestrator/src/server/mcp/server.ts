@@ -16,6 +16,7 @@ import { MCP_SERVER_INSTRUCTIONS } from "./instructions";
 import {
   assertToolScope,
   invalidToolInput,
+  MCP_ROUTE,
   type McpToolContext,
   type McpToolDefinition,
   toolResult,
@@ -83,7 +84,7 @@ export async function executeTool(
     result = toToolErrorResult(error, { tool: tool.name });
   }
   logger.info("MCP tool call completed", {
-    route: "POST /mcp",
+    route: MCP_ROUTE,
     tool: tool.name,
     isError: result.isError === true,
     durationMs: Date.now() - startedAt,
