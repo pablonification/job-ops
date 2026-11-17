@@ -78,7 +78,7 @@ Use it when you need to narrow the current tab without changing tabs.
 What the panel includes:
 
 - source filters
-- a `Target companies` switch that shows only jobs at the companies listed in **Settings → Scoring Settings** (see [Target Companies and Dealbreakers](/docs/features/target-companies))
+- a `Target companies` switch that shows only jobs at the companies listed in **Settings → Scoring Settings** (see [Target Companies and Dealbreakers](/docs/next/features/target-companies))
 - sponsor status filters
 - salary filters
 - date filters

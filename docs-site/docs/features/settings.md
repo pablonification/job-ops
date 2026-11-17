@@ -376,7 +376,7 @@ Run a saved search every day at a set time, in your time zone, and get the best 
 - Optional auto-skip threshold for low-score jobs
 - Block jobs from companies that match configured keyword tokens
 
-Target companies and dealbreakers are empty by default; while both are empty, scoring prompts are unchanged. Like search terms, they can be changed by any signed-in user for their own workspace, not only by system admins. See [Target Companies and Dealbreakers](/docs/features/target-companies) for the matching rules.
+Target companies and dealbreakers are empty by default; while both are empty, scoring prompts are unchanged. Like search terms, they can be changed by any signed-in user for their own workspace, not only by system admins. See [Target Companies and Dealbreakers](/docs/next/features/target-companies) for the matching rules.
 
 Per-search ranking preferences live in **Find jobs**. Add them to the search description, then review or edit them in **Configure your search** before starting.
 

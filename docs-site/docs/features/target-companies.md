@@ -69,7 +69,7 @@ If you use a custom scoring prompt without these placeholders, JobOps adds the b
 
 ### Agent access
 
-The `list_jobs` tool returns `isTargetCompany` for each job and takes a `targetCompany` filter (`true` or `false`). `get_job` also returns `isTargetCompany`. See [Agent Access](/docs/features/agent-access).
+The `list_jobs` tool returns `isTargetCompany` for each job and takes a `targetCompany` filter (`true` or `false`). `get_job` also returns `isTargetCompany`. See [Agent Access](/docs/next/features/agent-access).
 
 ## Common problems
 
@@ -91,4 +91,4 @@ The `list_jobs` tool returns `isTargetCompany` for each job and takes a `targetC
 - [Settings](/docs/features/settings)
 - [Orchestrator](/docs/features/orchestrator)
 - [Pipeline Run](/docs/features/pipeline-run)
-- [Agent Access](/docs/features/agent-access)
+- [Agent Access](/docs/next/features/agent-access)
