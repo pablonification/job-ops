@@ -9,7 +9,7 @@
  * Agents read untrusted text (job descriptions, fetched pages, emails), so
  * settings that decide where data goes or hold credentials stay web-only:
  * LLM provider and endpoints, webhooks, Reactive Resume connection, source
- * logins and backups.
+ * logins, backups and the Telegram digest destination.
  */
 import { getJobOpsAppConfig } from "@server/config/app-mode";
 import {
@@ -87,6 +87,18 @@ export const AGENT_SETTING_POLICIES: Partial<
   onboardingLlmCompleted: VISIBLE_WEB_ONLY,
   onboardingResumeConfirmedSource: VISIBLE_WEB_ONLY,
   onboardingLegacyMigrationPending: VISIBLE_WEB_ONLY,
+
+  // Scheduled runs and the digest: when runs start and what the digest
+  // holds. The chat id says where data goes; the bot token is a secret.
+  scheduleEnabled: AGENT_EDITABLE,
+  scheduleTime: AGENT_EDITABLE,
+  scheduleTimeZone: AGENT_EDITABLE,
+  scheduleWeekdays: AGENT_EDITABLE,
+  scheduleCatchUpMinutes: AGENT_EDITABLE,
+  scheduleSearchPresetId: AGENT_EDITABLE,
+  digestMode: AGENT_EDITABLE,
+  digestMaxJobs: AGENT_EDITABLE,
+  telegramChatId: HIDDEN_WEB_ONLY,
 
   // Search.
   searchTerms: AGENT_EDITABLE,

@@ -13,6 +13,7 @@ import { logger } from "@infra/logger";
 import { trackServerProductEvent } from "@infra/product-analytics";
 import { runWithRequestContext } from "@infra/request-context";
 import { getPrivateDataScope } from "@server/tenancy/private-scope";
+import { withoutUndefined } from "@server/utils/without-undefined";
 import { createLocationIntentFromLegacyInputs } from "@shared/location-domain.js";
 import { resolveResumeProjectSelection } from "@shared/resume-projects";
 import type {
@@ -20,6 +21,7 @@ import type {
   JobStatus,
   PipelineConfig,
   PipelineRunSavedDetails,
+  PipelineRunTrigger,
 } from "@shared/types";
 import { getDataDir } from "../config/dataDir";
 import * as jobsRepo from "../repositories/jobs";
@@ -46,6 +48,7 @@ import {
   extractProjectsFromProfile,
   resolveResumeProjectsSettings,
 } from "../services/resumeProjects";
+import { queueRunDigest } from "../services/run-digest";
 import { LlmNotConfiguredError } from "../services/scorer";
 import { generateTailoring, type TailoredData } from "../services/summary";
 import {
@@ -348,7 +351,11 @@ function mergeRetriedJobs(
  */
 export async function runPipeline(
   config: Partial<PipelineConfig> = {},
-  options?: { hostedUsageReservationId?: string | null },
+  options?: {
+    hostedUsageReservationId?: string | null;
+    /** Who started the run; stored on the run and used by the digest. */
+    trigger?: PipelineRunTrigger | null;
+  },
 ): Promise<{
   success: boolean;
   jobsDiscovered: number;
@@ -379,7 +386,12 @@ export async function runPipeline(
   tenantState.skippedChallengeSearchStates.clear();
   resetProgress();
   const locationIntent = await resolveLocationIntent(config);
-  const mergedConfig = { ...DEFAULT_CONFIG, ...config, locationIntent };
+  // An undefined field must not overwrite its default.
+  const mergedConfig = {
+    ...DEFAULT_CONFIG,
+    ...withoutUndefined(config),
+    locationIntent,
+  };
   const configSnapshot = {
     topN: mergedConfig.topN,
     minSuitabilityScore: mergedConfig.minSuitabilityScore,
@@ -394,9 +406,11 @@ export async function runPipeline(
     logger.warn("Failed to capture pipeline run settings snapshot", { error });
   }
 
+  const trigger = options?.trigger ?? null;
   const pipelineRun = await pipelineRepo.createPipelineRun({
     configSnapshot,
     savedDetails,
+    trigger,
   });
   tenantState.activePipelineRunId = pipelineRun.id;
 
@@ -405,6 +419,22 @@ export async function runPipeline(
     let jobsDiscovered = 0;
     let jobsProcessed = 0;
     let pipelineUsageUnits = 0;
+    // The digest tells the owner about each kind of pause once per run.
+    const pauseNoticesSent = new Set<"challenge" | "configuration">();
+    const notifyPause = (
+      reason: "challenge" | "configuration",
+      sources?: string[],
+    ) => {
+      if (pauseNoticesSent.has(reason)) return;
+      pauseNoticesSent.add(reason);
+      queueRunDigest({
+        kind: "paused",
+        pipelineRunId: pipelineRun.id,
+        trigger,
+        reason,
+        sources,
+      });
+    };
     let resultSummary =
       savedDetails?.resultSummary ?? createPipelineRunResultSummary();
     const persistResultSummary = async (
@@ -468,6 +498,16 @@ export async function runPipeline(
         });
 
         progressHelpers.challengeRequired(pendingChallenges);
+        notifyPause(
+          "challenge",
+          Array.from(
+            new Set(
+              pendingChallenges.map(
+                (challenge) => challenge.extractorName || challenge.extractorId,
+              ),
+            ),
+          ),
+        );
 
         // Block until all challenges are resolved by the solve-challenge API.
         // The Promise is resolved by `resolvePipelineChallenge()`, which is
@@ -545,9 +585,10 @@ export async function runPipeline(
 
       ensureNotCancelled(scopeKey);
       jobsDiscovered = discoveredJobs.length;
-      const { created, skipped, fuzzyMerged } = await importJobsStep({
-        discoveredJobs,
-      });
+      const { created, skipped, fuzzyMerged, createdJobIds } =
+        await importJobsStep({
+          discoveredJobs,
+        });
 
       await persistResultSummary({ stage: "import" });
       await pipelineRepo.updatePipelineRun(pipelineRun.id, {
@@ -577,6 +618,7 @@ export async function runPipeline(
           const message = error.message;
           progressHelpers.configurationRequired(message);
           pipelineLogger.warn("Pipeline paused — LLM not configured", error);
+          notifyPause("configuration");
 
           await new Promise<void>((resolve) => {
             tenantState.activeLlmConfigState = { resolve };
@@ -649,6 +691,15 @@ export async function runPipeline(
         jobsScored: scoredJobs.length,
         jobsProcessed: processedCount,
       });
+      queueRunDigest({
+        kind: "completed",
+        pipelineRunId: pipelineRun.id,
+        trigger,
+        jobsFound: jobsDiscovered,
+        newJobIds: createdJobIds ?? [],
+        jobsScored: scoredJobs.length,
+        jobsTailored: processedCount,
+      });
 
       pipelineUsageUnits = 1;
       return {
@@ -694,6 +745,12 @@ export async function runPipeline(
 
       await notifyPipelineWebhookStep("pipeline.failed", {
         pipelineRunId: pipelineRun.id,
+        error: message,
+      });
+      queueRunDigest({
+        kind: "failed",
+        pipelineRunId: pipelineRun.id,
+        trigger,
         error: message,
       });
 

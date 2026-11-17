@@ -8,6 +8,7 @@ import type {
   LocationMatchStrictness,
   LocationSearchScope,
 } from "../location-preferences";
+import type { DigestMode, ScheduleWeekday } from "../pipeline-schedule";
 import type { RoleCvPipelineMode } from "./role-cvs";
 
 export { TYPST_THEME_LABELS, TYPST_THEME_VALUES };
@@ -341,6 +342,15 @@ export interface AppSettings {
   backupEnabled: Resolved<boolean>;
   backupHour: Resolved<number>;
   backupMaxCount: Resolved<number>;
+  scheduleEnabled: Resolved<boolean>;
+  scheduleTime: Resolved<string>;
+  scheduleTimeZone: Resolved<string>;
+  scheduleWeekdays: Resolved<ScheduleWeekday[]>;
+  scheduleCatchUpMinutes: Resolved<number>;
+  scheduleSearchPresetId: Resolved<string>;
+  digestMode: Resolved<DigestMode>;
+  digestMaxJobs: Resolved<number>;
+  telegramChatId: Resolved<string>;
   penalizeMissingSalary: Resolved<boolean>;
   missingSalaryPenalty: Resolved<number>;
   autoSkipScoreThreshold: Resolved<number | null>;
@@ -364,6 +374,7 @@ export interface AppSettings {
   adzunaAppKeyHint: string | null;
   apifyTokenHint: string | null;
   webhookSecretHint: string | null;
+  telegramBotTokenHint: string | null;
 
   // Computed:
   profileProjects: ResumeProjectCatalogItem[];

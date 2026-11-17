@@ -1,4 +1,5 @@
 import type { IdBigTechCompanyId } from "@shared/extractors/indonesia/big-tech.js";
+import type { DigestMode, ScheduleWeekday } from "@shared/pipeline-schedule.js";
 import type {
   ChatStyleLanguageMode,
   ChatStyleManualLanguage,
@@ -58,6 +59,18 @@ export type EnvSettingsValues = {
 
 export type SourceSettingsValues = {
   idbigtechCompanies: EffectiveDefault<IdBigTechCompanyId[]>;
+};
+
+export type ScheduleValues = {
+  scheduleEnabled: EffectiveDefault<boolean>;
+  scheduleTime: EffectiveDefault<string>;
+  scheduleTimeZone: EffectiveDefault<string>;
+  scheduleWeekdays: EffectiveDefault<ScheduleWeekday[]>;
+  scheduleCatchUpMinutes: EffectiveDefault<number>;
+  scheduleSearchPresetId: EffectiveDefault<string>;
+  digestMode: EffectiveDefault<DigestMode>;
+  digestMaxJobs: EffectiveDefault<number>;
+  telegramChatId: EffectiveDefault<string>;
 };
 
 export type BackupValues = {

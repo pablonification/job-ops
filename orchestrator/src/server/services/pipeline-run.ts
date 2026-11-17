@@ -9,7 +9,7 @@
  */
 import { badRequest, conflict, serviceUnavailable } from "@infra/errors";
 import { logger } from "@infra/logger";
-import { runWithRequestContext } from "@infra/request-context";
+import { getUserId, runWithRequestContext } from "@infra/request-context";
 import { isDemoMode } from "@server/config/demo";
 import {
   type ExtractorRegistry,
@@ -21,26 +21,37 @@ import {
   resumePipelineScoring,
   runPipeline,
 } from "@server/pipeline/index";
+import * as pipelineSearchPresetsRepo from "@server/repositories/pipeline-search-presets";
+import * as settingsRepo from "@server/repositories/settings";
 import { trackCanonicalActivationEvent } from "@server/services/activation-funnel";
 import { simulatePipelineRun } from "@server/services/demo-simulator";
 import { closeHiringCafeBrowser } from "@server/services/hiring-cafe-browser";
 import { reserveHostedUsage } from "@server/services/hosted-usage";
 import { ensurePipelineSearchTerms } from "@server/services/pipeline-search-terms";
 import { getPrivateDataScope } from "@server/tenancy/private-scope";
+import { withoutUndefined } from "@server/utils/without-undefined";
 import {
   createLocationIntent,
   planLocationSources,
 } from "@shared/location-intelligence.js";
-import type { StartPipelineRunConfig } from "./pipeline-search-config";
-
-export {
+import { parseSearchCitiesSetting } from "@shared/search-cities";
+import { settingsRegistry } from "@shared/settings-registry";
+import type { PipelineRunTrigger, PipelineSearchPreset } from "@shared/types";
+import {
+  pipelineSearchPresetConfigSchema,
   type StartPipelineRunConfig,
   startPipelineRunSchema,
 } from "./pipeline-search-config";
 
-/** Who asked for a run. Logged with the run start; not persisted yet. */
-export const PIPELINE_RUN_TRIGGERS = ["user", "agent", "schedule"] as const;
-export type PipelineRunTrigger = (typeof PIPELINE_RUN_TRIGGERS)[number];
+/** Who asked for a run. Stored on the run and shown in run history. */
+export {
+  PIPELINE_RUN_TRIGGERS,
+  type PipelineRunTrigger,
+} from "@shared/types";
+export {
+  type StartPipelineRunConfig,
+  startPipelineRunSchema,
+} from "./pipeline-search-config";
 
 export type StartPipelineRunResult =
   | { status: "started"; message: "Search started" }
@@ -56,6 +67,145 @@ function toSelectedSourcesValue(
   return [...sources]
     .sort((left, right) => left.localeCompare(right))
     .join("|");
+}
+
+const NO_SOURCES_MESSAGE =
+  "No job sources to search. Choose sources for this run, or save a search in the run dialog first.";
+
+/** Fields that only make sense together: where to search. */
+const LOCATION_PLACE_KEYS = ["country", "cityLocations", "proximity"] as const;
+
+/** A saved search (preset) as run settings. */
+function presetToRunConfig(
+  preset: PipelineSearchPreset,
+): StartPipelineRunConfig {
+  const parsed = pipelineSearchPresetConfigSchema.safeParse(preset.config);
+  if (!parsed.success) {
+    throw badRequest(
+      `The saved search "${preset.name}" is incomplete. Open it in the run dialog and save it again.`,
+    );
+  }
+  const config = parsed.data;
+  return startPipelineRunSchema.parse({
+    topN: config.topN,
+    minSuitabilityScore: config.minSuitabilityScore,
+    sources: config.sources,
+    runBudget: config.runBudget,
+    searchTerms: config.searchTerms,
+    scoringInstructions: config.scoringInstructions,
+    country: config.country,
+    cityLocations: config.cityLocations,
+    // As in the run dialog: the map point is used only in radius mode.
+    proximity:
+      config.locationMode === "radius" ? (config.proximity ?? null) : null,
+    workplaceTypes: config.workplaceTypes,
+    searchScope: config.searchScope,
+    matchStrictness: config.matchStrictness,
+    watchlistSelectedSourceIds: config.watchlistSelectedSourceIds,
+  });
+}
+
+/**
+ * Where to search, from the stored search settings (the same values
+ * `runPipeline` falls back to). Used when there is no saved search.
+ */
+async function storedSearchSettingsConfig(): Promise<StartPipelineRunConfig> {
+  const stored = await settingsRepo.getAllSettings();
+  const registry = settingsRegistry;
+  const latitude = registry.locationLatitude.parse(stored.locationLatitude);
+  const longitude = registry.locationLongitude.parse(stored.locationLongitude);
+  const radiusMode =
+    registry.locationSearchMode.parse(stored.locationSearchMode) === "radius";
+  return withoutUndefined({
+    country: stored.jobspyCountryIndeed?.trim() || undefined,
+    cityLocations: parseSearchCitiesSetting(
+      stored.searchCities ?? stored.jobspyLocation,
+    ),
+    proximity:
+      radiusMode && latitude != null && longitude != null
+        ? {
+            latitude,
+            longitude,
+            radiusMiles:
+              registry.locationRadiusMiles.parse(stored.locationRadiusMiles) ??
+              registry.locationRadiusMiles.default(),
+          }
+        : null,
+    workplaceTypes:
+      registry.workplaceTypes.parse(stored.workplaceTypes) ?? undefined,
+    searchScope:
+      registry.locationSearchScope.parse(stored.locationSearchScope) ??
+      undefined,
+    matchStrictness:
+      registry.locationMatchStrictness.parse(stored.locationMatchStrictness) ??
+      undefined,
+  }) as StartPipelineRunConfig;
+}
+
+export type ResolvedPipelineRunConfig = {
+  config: StartPipelineRunConfig;
+  /** The saved search the omitted fields came from, if any. */
+  savedSearch: { id: string; name: string } | null;
+};
+
+/**
+ * The run settings to use when the caller gives none or only some.
+ *
+ * Layers, lowest first; a field set in a higher layer wins:
+ * 1. The stored search settings (country, cities or map point, workplace
+ *    types, location scope and strictness). Only used when there is no
+ *    saved search; search terms are filled later from the stored terms.
+ * 2. The current user's saved search: `savedSearchId` when given (an
+ *    unknown id is an error), else the most recently used one.
+ * 3. The caller's explicit fields. Undefined fields never override. Where
+ *    to search (country, cities, map point) is taken as a group: if the
+ *    caller sets any of them, the lower layers' place is not mixed in.
+ *
+ * Throws `badRequest` when no sources result (nothing saved and none
+ * passed); it never falls back to the built-in default sources.
+ */
+export async function resolvePipelineRunConfig(
+  requested: StartPipelineRunConfig,
+  options: { savedSearchId?: string | null; requireSources?: boolean } = {},
+): Promise<ResolvedPipelineRunConfig> {
+  const explicit = withoutUndefined(requested) as StartPipelineRunConfig;
+  const savedSearchId = options.savedSearchId?.trim() || null;
+
+  // Saved searches belong to a user; without one there are none to use.
+  const presets = getUserId()
+    ? await pipelineSearchPresetsRepo.listPipelineSearchPresets()
+    : [];
+  const preset = savedSearchId
+    ? presets.find((candidate) => candidate.id === savedSearchId)
+    : presets[0];
+  if (savedSearchId && !preset) {
+    throw badRequest(
+      "The saved search chosen for this run no longer exists. Pick another saved search.",
+    );
+  }
+  const base = preset
+    ? presetToRunConfig(preset)
+    : await storedSearchSettingsConfig();
+
+  const callerSetsPlace = LOCATION_PLACE_KEYS.some((key) =>
+    Object.hasOwn(explicit, key),
+  );
+  const lower = callerSetsPlace
+    ? Object.fromEntries(
+        Object.entries(base).filter(
+          ([key]) => !(LOCATION_PLACE_KEYS as readonly string[]).includes(key),
+        ),
+      )
+    : base;
+  const config = { ...lower, ...explicit } as StartPipelineRunConfig;
+
+  if ((options.requireSources ?? true) && !config.sources?.length) {
+    throw badRequest(NO_SOURCES_MESSAGE);
+  }
+  return {
+    config,
+    savedSearch: preset ? { id: preset.id, name: preset.name } : null,
+  };
 }
 
 /**
@@ -91,12 +241,34 @@ export async function loadExtractorRegistry(
  * hosted quota error. In demo mode it returns a simulated result instead.
  */
 export async function startPipelineRun(args: {
+  /** May be partial: omitted fields come from `resolvePipelineRunConfig`. */
   config: StartPipelineRunConfig;
   trigger: PipelineRunTrigger;
   /** Public origin for analytics; null when there is no HTTP request. */
   requestOrigin?: string | null;
+  /** Saved search to fill omitted fields from; default the latest used. */
+  savedSearchId?: string | null;
+  /**
+   * The config was already resolved by the caller (the scheduler, from the
+   * search it chose): use it as is, so no field comes from another search.
+   */
+  configResolved?: boolean;
 }): Promise<StartPipelineRunResult> {
-  const { config, trigger } = args;
+  const { trigger } = args;
+  // The demo simulates a run and needs no real sources.
+  const requireSources = !isDemoMode();
+  let config: StartPipelineRunConfig;
+  if (args.configResolved) {
+    config = args.config;
+    if (requireSources && !config.sources?.length) {
+      throw badRequest(NO_SOURCES_MESSAGE);
+    }
+  } else {
+    ({ config } = await resolvePipelineRunConfig(args.config, {
+      savedSearchId: args.savedSearchId,
+      requireSources,
+    }));
+  }
   const locationIntent = createLocationIntent({
     selectedCountry: config.country,
     cityLocations: config.cityLocations,
@@ -157,7 +329,8 @@ export async function startPipelineRun(args: {
   // Start in the background, inside the caller's tenant/user context.
   runWithRequestContext({}, () => {
     runPipeline(
-      {
+      // Omitted fields stay absent so runPipeline's defaults apply.
+      withoutUndefined({
         topN: config.topN,
         minSuitabilityScore: config.minSuitabilityScore,
         sources: config.sources,
@@ -165,8 +338,11 @@ export async function startPipelineRun(args: {
         runBudget: config.runBudget,
         locationIntent,
         watchlistSelectedSourceIds: config.watchlistSelectedSourceIds,
+      }),
+      {
+        hostedUsageReservationId: pipelineUsage.reservation?.id ?? null,
+        trigger,
       },
-      { hostedUsageReservationId: pipelineUsage.reservation?.id ?? null },
     ).catch((error) => {
       logger.error("Background pipeline run failed", error);
     });

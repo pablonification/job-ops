@@ -177,6 +177,10 @@ const pipelineRunsHasConfigSnapshot = tableHasColumn(
   "config_snapshot",
 );
 const pipelineRunsHasTenantId = tableHasColumn("pipeline_runs", "tenant_id");
+const pipelineRunsHasRunTrigger = tableHasColumn(
+  "pipeline_runs",
+  "run_trigger",
+);
 const jobsHasPdfRegenerating = tableHasColumn("jobs", "pdf_regenerating");
 const jobsHasJobBrief = tableHasColumn("jobs", "job_brief");
 const watchlistJobStatesHasUserId = tableHasColumn(
@@ -352,6 +356,7 @@ const migrations = [
     requested_config TEXT,
     effective_config TEXT,
     result_summary TEXT,
+    run_trigger TEXT,
     FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
   )`,
 
@@ -498,6 +503,26 @@ const migrations = [
 
   `CREATE INDEX IF NOT EXISTS idx_access_tokens_tenant_user
     ON access_tokens(tenant_id, user_id)`,
+
+  // Scheduled runs: one row per tenant with the last claimed occurrence, so
+  // a scheduled minute fires at most once, across restarts too.
+  `CREATE TABLE IF NOT EXISTS pipeline_schedule_state (
+    tenant_id TEXT PRIMARY KEY,
+    owner_user_id TEXT,
+    last_fired_occurrence TEXT,
+    last_fired_local_date TEXT,
+    settings_saved_at TEXT,
+    reported_invalid_time_zone TEXT,
+    last_attempt_at TEXT,
+    last_outcome TEXT CHECK (last_outcome IN ('started', 'skipped_active', 'skipped_no_user', 'failed_to_start')),
+    last_outcome_detail TEXT,
+    last_digest_at TEXT,
+    last_digest_status TEXT CHECK (last_digest_status IN ('sent', 'failed')),
+    last_digest_detail TEXT,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+    FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE SET NULL
+  )`,
 
   `CREATE TABLE IF NOT EXISTS sso_identities (
     id TEXT PRIMARY KEY,
@@ -969,14 +994,16 @@ const migrations = [
     requested_config TEXT,
     effective_config TEXT,
     result_summary TEXT,
+    run_trigger TEXT,
     FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
   )`,
+  // run_trigger is carried over so run history keeps "scheduled" on reboot.
   pipelineRunsHasConfigSnapshot
-    ? `INSERT OR REPLACE INTO pipeline_runs_new (id, tenant_id, started_at, completed_at, status, jobs_discovered, jobs_processed, error_message, config_snapshot, requested_config, effective_config, result_summary)
-   SELECT id, ${pipelineRunsHasTenantId ? `COALESCE(tenant_id, ${sqlString(DEFAULT_TENANT_ID)})` : sqlString(DEFAULT_TENANT_ID)}, started_at, completed_at, status, jobs_discovered, jobs_processed, error_message, config_snapshot, NULL, NULL, NULL
+    ? `INSERT OR REPLACE INTO pipeline_runs_new (id, tenant_id, started_at, completed_at, status, jobs_discovered, jobs_processed, error_message, config_snapshot, requested_config, effective_config, result_summary, run_trigger)
+   SELECT id, ${pipelineRunsHasTenantId ? `COALESCE(tenant_id, ${sqlString(DEFAULT_TENANT_ID)})` : sqlString(DEFAULT_TENANT_ID)}, started_at, completed_at, status, jobs_discovered, jobs_processed, error_message, config_snapshot, NULL, NULL, NULL, ${pipelineRunsHasRunTrigger ? "run_trigger" : "NULL"}
    FROM pipeline_runs`
-    : `INSERT OR REPLACE INTO pipeline_runs_new (id, tenant_id, started_at, completed_at, status, jobs_discovered, jobs_processed, error_message, config_snapshot, requested_config, effective_config, result_summary)
-   SELECT id, ${sqlString(DEFAULT_TENANT_ID)}, started_at, completed_at, status, jobs_discovered, jobs_processed, error_message, NULL, NULL, NULL, NULL
+    : `INSERT OR REPLACE INTO pipeline_runs_new (id, tenant_id, started_at, completed_at, status, jobs_discovered, jobs_processed, error_message, config_snapshot, requested_config, effective_config, result_summary, run_trigger)
+   SELECT id, ${sqlString(DEFAULT_TENANT_ID)}, started_at, completed_at, status, jobs_discovered, jobs_processed, error_message, NULL, NULL, NULL, NULL, NULL
    FROM pipeline_runs`,
   `DROP TABLE IF EXISTS pipeline_runs`,
   `ALTER TABLE pipeline_runs_new RENAME TO pipeline_runs`,
@@ -1247,6 +1274,10 @@ const migrations = [
   `ALTER TABLE job_chat_threads ADD COLUMN selected_email_ids TEXT NOT NULL DEFAULT '[]'`,
   `ALTER TABLE job_chat_threads ADD COLUMN selected_document_ids TEXT NOT NULL DEFAULT '[]'`,
   `ALTER TABLE pipeline_runs ADD COLUMN config_snapshot TEXT`,
+  `ALTER TABLE pipeline_runs ADD COLUMN run_trigger TEXT`,
+  `ALTER TABLE pipeline_schedule_state ADD COLUMN last_fired_local_date TEXT`,
+  `ALTER TABLE pipeline_schedule_state ADD COLUMN settings_saved_at TEXT`,
+  `ALTER TABLE pipeline_schedule_state ADD COLUMN reported_invalid_time_zone TEXT`,
   `ALTER TABLE analytics_install_state ADD COLUMN raw_event_replay_version INTEGER NOT NULL DEFAULT 0`,
   `ALTER TABLE analytics_install_state ADD COLUMN raw_event_replay_completed_at TEXT`,
 
@@ -1344,7 +1375,10 @@ for (const migration of migrations) {
           .includes("alter table job_chat_threads add column") ||
         migration
           .toLowerCase()
-          .includes("alter table analytics_install_state add column")) &&
+          .includes("alter table analytics_install_state add column") ||
+        migration
+          .toLowerCase()
+          .includes("alter table pipeline_schedule_state add column")) &&
       message.toLowerCase().includes("duplicate column name");
 
     if (isDuplicateColumn) {

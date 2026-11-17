@@ -3,7 +3,11 @@ import { ListItem } from "@client/components/layout";
 import { PipelineProgress } from "@client/components/PipelineProgress";
 import { queryKeys } from "@client/lib/queryKeys";
 import { sourceLabel } from "@shared/extractors";
-import type { PipelineRun, PipelineRunInsights } from "@shared/types";
+import type {
+  PipelineRun,
+  PipelineRunInsights,
+  PipelineRunTrigger,
+} from "@shared/types";
 import { useQuery } from "@tanstack/react-query";
 import {
   Activity,
@@ -94,6 +98,22 @@ function RunStatusBadge(props: { status: PipelineRunDisplayStatus }) {
   );
 }
 
+const TRIGGER_LABELS: Record<PipelineRunTrigger, string> = {
+  schedule: "Scheduled",
+  agent: "Agent",
+  user: "Manual",
+};
+
+/** Marks runs that were not started by hand; manual runs need no badge. */
+function RunTriggerBadge(props: { trigger?: PipelineRunTrigger | null }) {
+  if (!props.trigger || props.trigger === "user") return null;
+  return (
+    <Badge variant="outline" className="text-[11px] font-normal">
+      {TRIGGER_LABELS[props.trigger]}
+    </Badge>
+  );
+}
+
 function formatSourceList(sources: string[]) {
   if (sources.length === 0) return "None";
   return sources.join(", ");
@@ -149,6 +169,7 @@ function RunsList(props: {
                   <span className="text-xs text-muted-foreground">
                     Run {run.id.slice(0, 8)}
                   </span>
+                  <RunTriggerBadge trigger={run.trigger} />
                 </div>
                 <div className="mt-1 text-sm text-muted-foreground">
                   Duration {duration}

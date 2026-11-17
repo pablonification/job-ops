@@ -351,6 +351,10 @@ Readiness requires:
 
 Create, list and revoke personal access tokens for Claude Code and other MCP clients. Each new token is shown once together with a ready-to-run `claude mcp add` command. See [Agent Access (MCP)](/docs/next/features/agent-access).
 
+### Schedule & digest
+
+Run a saved search every day at a set time, in your time zone, and get the best new jobs on Telegram. Shows the next run, what happened at the last scheduled time and whether the last digest was delivered. **Send test message** checks the saved bot token and chat id. System admins only; not available in hosted mode. See [Scheduled Runs and Telegram Digest](/docs/next/features/scheduled-runs).
+
 ### Backup
 
 ![Backup settings section](/img/features/settings-backup-section.png)
@@ -511,6 +515,7 @@ curl -X POST "http://localhost:3001/api/backups"
 
 - [Reactive Resume](/docs/next/features/reactive-resume)
 - [Database Backups](/docs/next/getting-started/database-backups)
+- [Scheduled Runs and Telegram Digest](/docs/next/features/scheduled-runs)
 - [Overview](/docs/next/features/overview)
 - [Orchestrator](/docs/next/features/orchestrator)
 - [Ghostwriter](/docs/next/features/ghostwriter)

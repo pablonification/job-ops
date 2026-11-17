@@ -71,7 +71,7 @@ Things to know:
 
 | Tool | Access | What it does |
 | --- | --- | --- |
-| `start_pipeline_run` | write | Start a discovery run with chosen `sources`, `searchTerms`, `country`, `cityLocations`, workplace types, `topN`, `minSuitabilityScore`, `runBudget` and `scoringInstructions`. Omitted fields use your saved search settings. Returns immediately. |
+| `start_pipeline_run` | write | Start a discovery run with chosen `sources`, `searchTerms`, `country`, `cityLocations`, workplace types, `topN`, `minSuitabilityScore`, `runBudget` and `scoringInstructions`. Every field is optional: omitted fields come from your most recently used saved search, and passing a country, cities or map point replaces its whole location. With no saved search, the location comes from your search settings and you must pass `sources`; otherwise the run is refused with `INVALID_REQUEST` (it never falls back to built-in default sources). Returns immediately. |
 | `get_pipeline_progress` | read | Current step, counters, the last run, and `actionRequired` when the run is paused. |
 | `cancel_pipeline_run` | write | Stop the active run. Jobs already imported are kept. |
 | `resume_pipeline_scoring` | write | Continue a run paused because no AI model was configured. |
@@ -134,10 +134,11 @@ An agent reads untrusted text (job descriptions, web pages, emails), so settings
 | Search terms, cities and location, workplace types, per-source limits, blocked companies | Value | Allowed |
 | Scoring instructions and salary penalty, auto-skip threshold | Value | Allowed |
 | Models (`model`, `modelScorer`, `modelTailoring`, `modelProjectSelection`), project selection, prompt templates, writing style, PDF and display options | Value | Allowed |
+| Schedule (`scheduleEnabled`, `scheduleTime`, `scheduleTimeZone`, `scheduleWeekdays`, `scheduleCatchUpMinutes`, `scheduleSearchPresetId`) and digest options (`digestMode`, `digestMaxJobs`) | Value | Allowed |
 | LLM provider, Reactive Resume base resume, backup schedule, onboarding state | Value | Web app only |
 | LLM base URL, per-purpose LLM overrides, Reactive Resume URL | URL without user info, query string or fragment | Web app only |
 | Pipeline and job-complete webhook URLs | Host only | Web app only |
-| API keys, passwords, tokens, webhook secret, UK Visa Jobs email, Adzuna app id | Only whether it is set (`hidden`) | Web app only |
+| API keys, passwords, tokens (including the Telegram bot token), webhook secret, UK Visa Jobs email, Adzuna app id, Telegram chat id | Only whether it is set (`hidden`) | Web app only |
 
 `get_settings` also returns `webOnly`, the full list of settings an agent cannot change. `update_settings` refuses them with a `FORBIDDEN` tool error that names the setting. A setting added in a later version is hidden and web-app only until it is classified.
 

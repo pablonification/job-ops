@@ -39,6 +39,7 @@ import {
   startPipelineRun,
   startPipelineRunSchema,
 } from "@server/services/pipeline-run";
+import { getNextScheduledRunAt } from "@server/services/pipeline-schedule";
 import {
   createPipelineSearchPresetSchema,
   pipelineSearchPlanSchema,
@@ -106,10 +107,17 @@ pipelineRouter.get("/status", async (_req: Request, res: Response) => {
   try {
     const { isRunning } = getPipelineStatus();
     const lastRun = await pipelineRepo.getLatestPipelineRun();
+    const nextScheduledRun = await getNextScheduledRunAt().catch((error) => {
+      logger.warn("Could not compute the next scheduled run", {
+        route: "/api/pipeline/status",
+        error,
+      });
+      return null;
+    });
     const data: PipelineStatusResponse = {
       isRunning,
       lastRun,
-      nextScheduledRun: null,
+      nextScheduledRun,
     };
     ok(res, data);
   } catch (error) {

@@ -11,8 +11,9 @@ import {
   unauthorized,
 } from "@infra/errors";
 import { logger } from "@infra/logger";
-import { getRequestId, isSystemAdmin } from "@infra/request-context";
+import { getRequestId, getUserId, isSystemAdmin } from "@infra/request-context";
 import { getJobOpsAppConfig } from "@server/config/app-mode";
+import { recordScheduleSaved } from "@server/repositories/pipeline-schedule";
 import { getCurrentAccountEntitlements } from "@server/services/account-entitlements";
 import { enqueueAutoPdfRegenerationForSettingsChanges } from "@server/services/auto-pdf-regeneration";
 import { setBackupSettings } from "@server/services/backup/index";
@@ -24,6 +25,7 @@ import {
 } from "@server/services/rxresume";
 import { getEffectiveSettings } from "@server/services/settings";
 import { applySettingsUpdates } from "@server/services/settings-update";
+import { getActiveTenantId } from "@server/tenancy/context";
 import { mapGlmProviderAlias } from "@shared/settings-registry";
 import type { UpdateSettingsInput } from "@shared/settings-schema";
 import type { AppSettings } from "@shared/types";
@@ -79,6 +81,57 @@ export const NON_ADMIN_SEARCH_SETTING_KEYS: ReadonlySet<
   "dealbreakers",
   "idbigtechCompanies",
 ]);
+
+/**
+ * Scheduled runs and the Telegram digest decide when the server does work
+ * and where it sends data: admin-only (they are not in the non-admin list
+ * above) and unavailable in hosted mode.
+ */
+export const SCHEDULE_AND_DIGEST_SETTING_KEYS: ReadonlySet<
+  keyof UpdateSettingsInput
+> = new Set<keyof UpdateSettingsInput>([
+  "scheduleEnabled",
+  "scheduleTime",
+  "scheduleTimeZone",
+  "scheduleWeekdays",
+  "scheduleCatchUpMinutes",
+  "scheduleSearchPresetId",
+  "digestMode",
+  "digestMaxJobs",
+  "telegramBotToken",
+  "telegramChatId",
+]);
+
+/** Keys that change when or as whom scheduled runs start. */
+const SCHEDULE_OWNER_KEYS: ReadonlySet<keyof UpdateSettingsInput> = new Set<
+  keyof UpdateSettingsInput
+>([
+  "scheduleEnabled",
+  "scheduleTime",
+  "scheduleTimeZone",
+  "scheduleWeekdays",
+  "scheduleCatchUpMinutes",
+  "scheduleSearchPresetId",
+]);
+
+/**
+ * Hosted mode has no scheduler: refuse turning scheduling or the digest on
+ * there. Clearing (null) stays allowed so "reset to defaults" still works.
+ */
+function assertScheduleSettingsAllowed(input: UpdateSettingsInput): void {
+  if (getJobOpsAppConfig().appMode !== "hosted") return;
+  const setsValue = Object.entries(input).some(
+    ([key, value]) =>
+      SCHEDULE_AND_DIGEST_SETTING_KEYS.has(key as keyof UpdateSettingsInput) &&
+      value !== null &&
+      value !== undefined,
+  );
+  if (setsValue) {
+    throw forbidden(
+      "Scheduled runs and the Telegram digest are not available in hosted mode.",
+    );
+  }
+}
 
 /** Hosted users and system admins may edit everything. */
 export function canEditAllSettings(): boolean {
@@ -245,6 +298,7 @@ export async function updateSettingsForCaller(
   options: { route: string },
 ): Promise<{ settings: AppSettings; updatedSettingKeys: string[] }> {
   assertCanEditSettings(input);
+  assertScheduleSettingsAllowed(input);
   if (LLM_SETTING_KEYS.some((key) => hasInputKey(input, key))) {
     await assertLlmSettingsEditable();
     assertHostedLlmInputAllowed(input);
@@ -255,6 +309,27 @@ export async function updateSettingsForCaller(
   if (plan.shouldClearRxResumeCaches) {
     clearRxResumeResumeCache();
     clearProfileCache();
+  }
+
+  // Saving the schedule: earlier times no longer fire (no surprise run on
+  // an edit), and scheduled runs run as whoever saved it.
+  if (
+    Object.keys(input).some((key) =>
+      SCHEDULE_OWNER_KEYS.has(key as keyof UpdateSettingsInput),
+    )
+  ) {
+    // Bookkeeping only: the settings are already saved, so a failure here
+    // is logged rather than failing the request.
+    await recordScheduleSaved({
+      tenantId: getActiveTenantId(),
+      userId: getUserId() ?? null,
+      now: new Date().toISOString(),
+    }).catch((error) => {
+      logger.warn("Could not record the schedule save", {
+        route: options.route,
+        error,
+      });
+    });
   }
 
   const settings = await getEffectiveSettings();

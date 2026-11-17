@@ -61,6 +61,8 @@ saved budget when you start the run.
 
 **Find jobs** always opens search setup. Adding a job does not change that entry point.
 
+Click **Save as** to keep the setup as a saved search. A saved search can also run by itself every day: see [Scheduled Runs and Telegram Digest](/docs/next/features/scheduled-runs).
+
 #### Search area
 
 **Map radius** is the default search-area mode. It does not require an address or postcode.
@@ -221,6 +223,7 @@ For formats and limits, see [Manual Import Extractor](/docs/next/extractors/manu
 
 ## Related pages
 
+- [Scheduled Runs and Telegram Digest](/docs/next/features/scheduled-runs)
 - [Find Jobs and Apply Workflow](/docs/next/workflows/find-jobs-and-apply-workflow)
 - [Manual Import Extractor](/docs/next/extractors/manual)
 - [Orchestrator](/docs/next/features/orchestrator)

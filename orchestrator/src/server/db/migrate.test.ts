@@ -701,6 +701,87 @@ describe.sequential("database migrations", () => {
     }
   });
 
+  it("keeps the run trigger across reboots and creates the schedule state table", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "job-ops-migrate-"));
+    const runMigrations = `import { join } from "node:path"; import { pathToFileURL } from "node:url"; await import(pathToFileURL(join(process.cwd(), "src/server/db/migrate.ts")).href);`;
+    const exec = (script: string) =>
+      execFileSync(
+        process.execPath,
+        ["--import", "tsx", "--input-type=module", "-e", script],
+        { env: { ...process.env, DATA_DIR: tempDir ?? "" }, stdio: "pipe" },
+      );
+
+    // An install from before scheduled runs: pipeline_runs has no trigger.
+    exec(`
+      import { join } from "node:path";
+      import Database from "better-sqlite3";
+      const db = new Database(join(process.env.DATA_DIR, "jobs.db"));
+      db.exec(\`
+        CREATE TABLE pipeline_runs (
+          id TEXT PRIMARY KEY,
+          started_at TEXT NOT NULL DEFAULT (datetime('now')),
+          completed_at TEXT,
+          status TEXT NOT NULL DEFAULT 'running',
+          jobs_discovered INTEGER NOT NULL DEFAULT 0,
+          jobs_processed INTEGER NOT NULL DEFAULT 0,
+          error_message TEXT,
+          config_snapshot TEXT
+        );
+        INSERT INTO pipeline_runs (id, status) VALUES ('old-run', 'completed');
+      \`);
+      db.close();
+    `);
+
+    exec(`
+      ${runMigrations}
+      import Database from "better-sqlite3";
+      const db = new Database(join(process.env.DATA_DIR, "jobs.db"));
+      const old = db.prepare("SELECT run_trigger FROM pipeline_runs WHERE id = ?").get("old-run");
+      if (!old || old.run_trigger !== null) throw new Error(\`old run changed: \${JSON.stringify(old)}\`);
+      db.prepare("INSERT INTO pipeline_runs (id, status, run_trigger) VALUES (?, ?, ?)").run("scheduled-run", "completed", "schedule");
+      db.close();
+    `);
+
+    // pipeline_runs is rebuilt on every boot; the trigger must survive it.
+    exec(`
+      ${runMigrations}
+      import Database from "better-sqlite3";
+      const db = new Database(join(process.env.DATA_DIR, "jobs.db"));
+      db.pragma("foreign_keys = ON");
+      const row = db.prepare("SELECT run_trigger FROM pipeline_runs WHERE id = ?").get("scheduled-run");
+      if (row?.run_trigger !== "schedule") {
+        throw new Error(\`run trigger lost on reboot: \${JSON.stringify(row)}\`);
+      }
+
+      const stateColumns = db.prepare("PRAGMA table_info(pipeline_schedule_state)").all().map((column) => column.name);
+      for (const required of ["last_fired_occurrence", "last_fired_local_date", "settings_saved_at", "reported_invalid_time_zone"]) {
+        if (!stateColumns.includes(required)) throw new Error(\`pipeline_schedule_state.\${required} missing\`);
+      }
+
+      const fks = db.prepare("PRAGMA foreign_key_list(pipeline_schedule_state)").all();
+      const hasFk = (from, table, onDelete) => fks.some((fk) => fk.from === from && fk.table === table && String(fk.on_delete).toUpperCase() === onDelete);
+      if (!hasFk("tenant_id", "tenants", "CASCADE") || !hasFk("owner_user_id", "users", "SET NULL")) {
+        throw new Error("pipeline_schedule_state is missing its foreign keys");
+      }
+
+      db.prepare("INSERT INTO users(id, username) VALUES (?, ?)").run("owner-1", "owner");
+      db.prepare("INSERT INTO pipeline_schedule_state(tenant_id, owner_user_id, last_fired_occurrence, last_outcome) VALUES (?, ?, ?, ?)")
+        .run("tenant_default", "owner-1", "2026-11-17T01:00:00.000Z", "started");
+      let rejected = false;
+      try {
+        db.prepare("UPDATE pipeline_schedule_state SET last_outcome = ? WHERE tenant_id = ?").run("exploded", "tenant_default");
+      } catch { rejected = true; }
+      if (!rejected) throw new Error("unknown schedule outcome accepted");
+
+      db.prepare("DELETE FROM users WHERE id = ?").run("owner-1");
+      const state = db.prepare("SELECT owner_user_id, last_fired_occurrence FROM pipeline_schedule_state WHERE tenant_id = ?").get("tenant_default");
+      if (state?.owner_user_id !== null || state?.last_fired_occurrence !== "2026-11-17T01:00:00.000Z") {
+        throw new Error(\`schedule state wrong after owner deletion: \${JSON.stringify(state)}\`);
+      }
+      db.close();
+    `);
+  });
+
   it("enforces private unique indexes when user_id is null", async () => {
     tempDir = await mkdtemp(join(tmpdir(), "job-ops-migrate-"));
     const script = `

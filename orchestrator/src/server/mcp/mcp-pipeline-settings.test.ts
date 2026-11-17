@@ -174,6 +174,66 @@ describe.sequential("MCP pipeline, settings and inbox tools", () => {
     );
   });
 
+  it("starts a run with no arguments from the saved search, or says what is missing", async () => {
+    const pipeline = await import("@server/pipeline/index");
+
+    // Nothing saved: a clear error, never the built-in default sources.
+    const missing = expectToolError(
+      await callTool(baseUrl, writeToken, "start_pipeline_run", {}),
+      "INVALID_REQUEST",
+    );
+    expect(missing.message).toBe(
+      "No job sources to search. Choose sources for this run, or save a search in the run dialog first.",
+    );
+    expect(pipeline.runPipeline).not.toHaveBeenCalled();
+
+    expectToolOk(
+      await callTool(baseUrl, writeToken, "save_search_preset", {
+        name: "UK backend",
+        config: SEARCH_CONFIG,
+      }),
+    );
+    const started = expectToolOk(
+      await callTool(baseUrl, writeToken, "start_pipeline_run", {}),
+    );
+    expect(started).toMatchObject({ started: true });
+    expect(pipeline.runPipeline).toHaveBeenCalledTimes(1);
+    const [runConfig, runOptions] = vi.mocked(pipeline.runPipeline).mock
+      .calls[0];
+    expect(runConfig).toMatchObject({
+      sources: ["linkedin"],
+      topN: 10,
+      minSuitabilityScore: 55,
+      // Saved budgets are raised to the minimum (300).
+      runBudget: 300,
+      locationIntent: expect.objectContaining({
+        selectedCountry: "united kingdom",
+        cityLocations: ["London"],
+      }),
+    });
+    // No undefined field may reach runPipeline and hide a default.
+    for (const [key, value] of Object.entries(runConfig ?? {})) {
+      expect(value, key).not.toBeUndefined();
+    }
+    expect(runOptions).toMatchObject({ trigger: "agent" });
+    const settings = expectToolOk(
+      await callTool(baseUrl, writeToken, "get_settings", {
+        keys: ["searchTerms"],
+      }),
+    );
+    expect(settings.settings.searchTerms.value).toEqual(["backend engineer"]);
+
+    // Explicit fields go on top of the saved search.
+    expectToolOk(
+      await callTool(baseUrl, writeToken, "start_pipeline_run", { topN: 3 }),
+    );
+    expect(vi.mocked(pipeline.runPipeline).mock.calls[1]?.[0]).toMatchObject({
+      sources: ["linkedin"],
+      topN: 3,
+      minSuitabilityScore: 55,
+    });
+  });
+
   it("starts a run, refuses a second one and invalid sources, then cancels", async () => {
     const pipeline = await import("@server/pipeline/index");
 
@@ -654,6 +714,8 @@ describe.sequential("MCP pipeline, settings and inbox tools", () => {
     });
     seeds.set("ukvisajobsEmail", "ukvj.login@example.com");
     seeds.set("adzunaAppId", "ADZAPPID123");
+    // Says where the digest goes: hidden like a credential.
+    seeds.set("telegramChatId", "-100777888999");
     const leaks = [
       ...markers.values(),
       "WHPATHSECRET",
@@ -670,6 +732,7 @@ describe.sequential("MCP pipeline, settings and inbox tools", () => {
       "POQUERY",
       "ukvj.login",
       "ADZAPPID123",
+      "777888999",
     ];
 
     await runAsUser("admin", async () => {
@@ -695,7 +758,12 @@ describe.sequential("MCP pipeline, settings and inbox tools", () => {
     for (const leak of leaks) expect(text, leak).not.toContain(leak);
 
     const view = expectToolOk(result);
-    for (const key of [...markers.keys(), "ukvisajobsEmail", "adzunaAppId"]) {
+    for (const key of [
+      ...markers.keys(),
+      "ukvisajobsEmail",
+      "adzunaAppId",
+      "telegramChatId",
+    ]) {
       expect(view.hidden[key]?.set, key).toBe(true);
       expect(view.settings, key).not.toHaveProperty(key);
       expect(view.webOnly, key).toContain(key);
