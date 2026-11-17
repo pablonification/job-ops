@@ -35,6 +35,7 @@ const sidebars: SidebarsConfig = {
         "features/settings",
         "features/reactive-resume",
         "features/role-cvs",
+        "features/target-companies",
         "features/in-progress-board",
         "features/ghostwriter",
         "features/post-application-tracking",

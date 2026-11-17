@@ -168,13 +168,14 @@ Defaults and constraints:
 - Each editor starts from the current effective template, not a blank override
 - Supported placeholders are shown inline for each template
 - Job scoring always appends minified normalized source-job JSON, including `null` values, plus the required output contract
+- The job scoring template has `{{targetCompaniesSection}}` and `{{dealbreakersSection}}` placeholders. They are empty unless you fill in Target companies or Dealbreakers in Scoring Settings. A custom scoring template without them still gets that context, appended after the template
 - The same scoring call may propose evidence-backed corrections to existing job facts. JobOps only accepts whitelisted, schema-valid values supported by an excerpt from the listing; these mandatory safety instructions remain appended even when you customize the scoring template
 - Use **Reset** to restore a single template, or **Reset all prompts** to restore all of them
 - Template editing is intentionally advanced:
   - removing key instructions can degrade output quality
   - removing placeholders can strip important runtime data from the prompt
   - resetting restores the shared default templates
-- Existing writing-style, language, and scoring-instructions settings still matter because the default templates consume those values through placeholders
+- Existing writing-style, language, scoring-instructions, target-company, and dealbreaker settings still matter because the default templates consume those values through placeholders
 
 ### Reactive Resume
 
@@ -255,10 +256,14 @@ Create, list and revoke personal access tokens for Claude Code and other MCP cli
 
 ![Scoring settings section](/img/features/settings-scoring-section.png)
 
+- Target companies: one company per line, with other names for the same company on the same line separated by `|` (for example `GoTo | Gojek | Tokopedia`). Jobs at these companies get a **Target** badge and filter in the jobs list, and scoring favours them when fit is otherwise close
+- Dealbreakers: free text listing what you will not accept. Scoring gives jobs that clearly break one a low score and names it in the reason
 - Penalize missing salary data
 - Set penalty amount
 - Optional auto-skip threshold for low-score jobs
 - Block jobs from companies that match configured keyword tokens
+
+Target companies and dealbreakers are empty by default; while both are empty, scoring prompts are unchanged. Like search terms, they can be changed by any signed-in user for their own workspace, not only by system admins. See [Target Companies and Dealbreakers](/docs/features/target-companies) for the matching rules.
 
 Per-search ranking preferences live in **Find jobs**. Add them to the search description, then review or edit them in **Configure your search** before starting.
 
