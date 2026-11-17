@@ -65,7 +65,7 @@ function status(
   };
 }
 
-function Harness() {
+function Harness({ canManage = true }: { canManage?: boolean }) {
   const methods = useForm<UpdateSettingsInput>({
     defaultValues: {
       scheduleEnabled: true,
@@ -84,6 +84,7 @@ function Harness() {
     <FormProvider {...methods}>
       <ScheduleDigestSection
         values={values}
+        canManage={canManage}
         telegramBotTokenHint="1234"
         isLoading={false}
         isSaving={false}
@@ -146,6 +147,8 @@ describe("ScheduleDigestSection", () => {
     const button = await screen.findByRole("button", {
       name: /send test message/i,
     });
+    // Enabled once the status says the feature is available.
+    await waitFor(() => expect(button).toBeEnabled());
     fireEvent.click(button);
     await waitFor(() => {
       expect(api.sendTelegramTestMessage).toHaveBeenCalledTimes(1);
@@ -165,6 +168,19 @@ describe("ScheduleDigestSection", () => {
     expect(
       await screen.findByText(/Save first: the test uses the saved token/),
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /send test message/i }),
+    ).toBeDisabled();
+  });
+
+  it("does not ask non-admins' browsers for the status", async () => {
+    renderWithQueryClient(<Harness canManage={false} />);
+    expect(
+      await screen.findByText(
+        "Only system admins can change the schedule and the digest.",
+      ),
+    ).toBeInTheDocument();
+    expect(api.getScheduleStatus).not.toHaveBeenCalled();
     expect(
       screen.getByRole("button", { name: /send test message/i }),
     ).toBeDisabled();

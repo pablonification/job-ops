@@ -6,6 +6,7 @@ import {
 } from "./location-preferences";
 import {
   DEFAULT_DIGEST_MAX_JOBS,
+  DEFAULT_DIGEST_MODE,
   DEFAULT_SCHEDULE_CATCH_UP_MINUTES,
   DEFAULT_SCHEDULE_TIME,
   DEFAULT_SCHEDULE_TIME_ZONE,
@@ -1004,7 +1005,7 @@ export const settingsRegistry = {
   digestMode: {
     kind: "typed" as const,
     schema: z.enum(DIGEST_MODE_VALUES),
-    default: (): DigestMode => "scheduled",
+    default: (): DigestMode => DEFAULT_DIGEST_MODE,
     parse: parseDigestModeOrNull,
     serialize: (value: DigestMode | null | undefined): string | null =>
       value ?? null,

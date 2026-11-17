@@ -40,7 +40,14 @@ import {
 } from "@client/pages/settings/utils";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { normalizeStringArray } from "@shared/normalize-string-array.js";
-import { SCHEDULE_WEEKDAY_VALUES } from "@shared/pipeline-schedule.js";
+import {
+  DEFAULT_DIGEST_MAX_JOBS,
+  DEFAULT_DIGEST_MODE,
+  DEFAULT_SCHEDULE_CATCH_UP_MINUTES,
+  DEFAULT_SCHEDULE_TIME,
+  DEFAULT_SCHEDULE_TIME_ZONE,
+  SCHEDULE_WEEKDAY_VALUES,
+} from "@shared/pipeline-schedule.js";
 import {
   type UpdateSettingsInput,
   updateSettingsSchema,
@@ -916,12 +923,14 @@ const getDerivedSettings = (settings: AppSettings | null) => {
         default: settings?.scheduleEnabled?.default ?? false,
       },
       scheduleTime: {
-        effective: settings?.scheduleTime?.value ?? "08:00",
-        default: settings?.scheduleTime?.default ?? "08:00",
+        effective: settings?.scheduleTime?.value ?? DEFAULT_SCHEDULE_TIME,
+        default: settings?.scheduleTime?.default ?? DEFAULT_SCHEDULE_TIME,
       },
       scheduleTimeZone: {
-        effective: settings?.scheduleTimeZone?.value ?? "UTC",
-        default: settings?.scheduleTimeZone?.default ?? "UTC",
+        effective:
+          settings?.scheduleTimeZone?.value ?? DEFAULT_SCHEDULE_TIME_ZONE,
+        default:
+          settings?.scheduleTimeZone?.default ?? DEFAULT_SCHEDULE_TIME_ZONE,
       },
       scheduleWeekdays: {
         effective: settings?.scheduleWeekdays?.value ?? [
@@ -932,20 +941,24 @@ const getDerivedSettings = (settings: AppSettings | null) => {
         ],
       },
       scheduleCatchUpMinutes: {
-        effective: settings?.scheduleCatchUpMinutes?.value ?? 15,
-        default: settings?.scheduleCatchUpMinutes?.default ?? 15,
+        effective:
+          settings?.scheduleCatchUpMinutes?.value ??
+          DEFAULT_SCHEDULE_CATCH_UP_MINUTES,
+        default:
+          settings?.scheduleCatchUpMinutes?.default ??
+          DEFAULT_SCHEDULE_CATCH_UP_MINUTES,
       },
       scheduleSearchPresetId: {
         effective: settings?.scheduleSearchPresetId?.value ?? "",
         default: settings?.scheduleSearchPresetId?.default ?? "",
       },
       digestMode: {
-        effective: settings?.digestMode?.value ?? "scheduled",
-        default: settings?.digestMode?.default ?? "scheduled",
+        effective: settings?.digestMode?.value ?? DEFAULT_DIGEST_MODE,
+        default: settings?.digestMode?.default ?? DEFAULT_DIGEST_MODE,
       },
       digestMaxJobs: {
-        effective: settings?.digestMaxJobs?.value ?? 5,
-        default: settings?.digestMaxJobs?.default ?? 5,
+        effective: settings?.digestMaxJobs?.value ?? DEFAULT_DIGEST_MAX_JOBS,
+        default: settings?.digestMaxJobs?.default ?? DEFAULT_DIGEST_MAX_JOBS,
       },
       telegramChatId: {
         effective: settings?.telegramChatId?.value ?? "",
@@ -2033,6 +2046,7 @@ export const SettingsPage: React.FC = () => {
       activeSectionContent = (
         <ScheduleDigestSection
           values={schedule}
+          canManage={currentUserQuery.data?.isSystemAdmin === true}
           telegramBotTokenHint={telegramBotTokenHint}
           isLoading={isLoading}
           isSaving={isSaving}

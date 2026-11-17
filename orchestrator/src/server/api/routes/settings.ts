@@ -23,7 +23,10 @@ import {
 import { resolveLlmApiKey } from "@server/services/llm/credentials";
 import { isHostedLocalProvider } from "@server/services/llm/hosted-policy";
 import { LlmService } from "@server/services/llm/service";
-import { getPipelineScheduleStatus } from "@server/services/pipeline-schedule";
+import {
+  getPipelineScheduleStatus,
+  getScheduleUnavailableReason,
+} from "@server/services/pipeline-schedule";
 import {
   getTelegramCredentials,
   sendTelegramMessage,
@@ -538,10 +541,20 @@ settingsRouter.get(
   }),
 );
 
-/** Scheduled runs and digest: next run, last outcome, delivery status. */
+/**
+ * Scheduled runs and digest: next run, last outcome, run-as user and digest
+ * delivery. System admins only; unavailable in hosted mode and the demo,
+ * like the rest of the feature.
+ */
 settingsRouter.get(
   "/schedule-status",
   asyncRoute(async (_req: Request, res: Response) => {
+    if (!requireSystemAdmin(res)) return;
+    const unavailable = getScheduleUnavailableReason();
+    if (unavailable) {
+      fail(res, forbidden(unavailable));
+      return;
+    }
     ok(res, await getPipelineScheduleStatus());
   }),
 );
@@ -575,6 +588,8 @@ settingsRouter.post(
       botToken: credentials.botToken,
       chatId: credentials.chatId,
       text: TELEGRAM_TEST_MESSAGE,
+      // An interactive check: report a rate limit at once, do not wait.
+      retryOnRateLimit: false,
     });
     if (!result.ok) {
       logger.warn("Telegram test message failed", {

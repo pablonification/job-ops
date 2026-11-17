@@ -34,6 +34,8 @@ import { Separator } from "@/components/ui/separator";
 
 type ScheduleDigestSectionProps = {
   values: ScheduleValues;
+  /** System admins only: status and the test message need it. */
+  canManage: boolean;
   telegramBotTokenHint: string | null;
   isLoading: boolean;
   isSaving: boolean;
@@ -143,6 +145,7 @@ function describeDigest(status: PipelineScheduleStatus): string | null {
 
 export const ScheduleDigestSection: React.FC<ScheduleDigestSectionProps> = ({
   values,
+  canManage,
   telegramBotTokenHint,
   isLoading,
   isSaving,
@@ -155,18 +158,26 @@ export const ScheduleDigestSection: React.FC<ScheduleDigestSectionProps> = ({
     formState: { errors, dirtyFields },
   } = useFormContext<UpdateSettingsInput>();
   const [isSendingTest, setIsSendingTest] = useState(false);
-  const disabled = isLoading || isSaving;
+  const disabled = isLoading || isSaving || !canManage;
 
   const statusQuery = useQuery({
     queryKey: queryKeys.settings.scheduleStatus(),
     queryFn: api.getScheduleStatus,
     refetchInterval: 60_000,
+    enabled: canManage,
+    retry: false,
   });
   const presetsQuery = useQuery({
     queryKey: queryKeys.pipeline.searchPresets(),
     queryFn: api.getPipelineSearchPresets,
   });
   const status = statusQuery.data ?? null;
+  // Hosted mode and the demo answer the status request with the reason.
+  const notice = !canManage
+    ? "Only system admins can change the schedule and the digest."
+    : statusQuery.error instanceof Error
+      ? statusQuery.error.message
+      : null;
   const presets = presetsQuery.data?.searches ?? [];
 
   const enabled =
@@ -201,9 +212,9 @@ export const ScheduleDigestSection: React.FC<ScheduleDigestSectionProps> = ({
       value="schedule"
     >
       <div className="space-y-6">
-        {status && !status.available ? (
+        {notice ? (
           <p className="rounded-md border border-border/60 bg-muted/20 p-3 text-sm text-muted-foreground">
-            {status.unavailableReason}
+            {notice}
           </p>
         ) : null}
 
@@ -533,10 +544,7 @@ export const ScheduleDigestSection: React.FC<ScheduleDigestSectionProps> = ({
               size="sm"
               onClick={() => void handleSendTest()}
               disabled={
-                disabled ||
-                isSendingTest ||
-                telegramDirty ||
-                status?.available === false
+                disabled || isSendingTest || telegramDirty || !status?.available
               }
             >
               <Send className="mr-2 h-4 w-4" />

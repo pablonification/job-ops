@@ -108,9 +108,12 @@ describe.sequential("Schedule and digest settings routes", () => {
     const { getPipelineScheduleState } = await import(
       "@server/repositories/pipeline-schedule"
     );
-    expect(await getPipelineScheduleState("tenant_default")).toMatchObject({
-      ownerUserId: "test-user",
-    });
+    const state = await getPipelineScheduleState("tenant_default");
+    expect(state).toMatchObject({ ownerUserId: "test-user" });
+    // Times before this save never fire (no surprise run on an edit).
+    expect(Date.parse(state?.settingsSavedAt ?? "")).toBeGreaterThan(
+      Date.now() - 60_000,
+    );
   });
 
   it("rejects invalid schedule and Telegram values without echoing them", async () => {
@@ -269,6 +272,15 @@ describe.sequential("Schedule and digest settings routes", () => {
       headers: { Authorization: `Bearer ${regularToken}` },
     });
     expect(test.status).toBe(403);
+    // The status names the run-as user and digest errors: admins only.
+    const status = await fetch(`${baseUrl}/api/settings/schedule-status`, {
+      headers: { Authorization: `Bearer ${regularToken}` },
+    });
+    expect(status.status).toBe(403);
+    const adminStatus = await fetch(`${baseUrl}/api/settings/schedule-status`, {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    expect(adminStatus.status).toBe(200);
 
     expect((await patch({ scheduleEnabled: true }, adminToken)).status).toBe(
       200,
@@ -292,10 +304,10 @@ describe.sequential("Schedule and digest settings routes", () => {
     expect((await patch({ scheduleEnabled: null })).status).toBe(200);
 
     const status = await fetch(`${baseUrl}/api/settings/schedule-status`);
-    expect((await status.json()).data).toMatchObject({
-      available: false,
-      nextRunAt: null,
-    });
+    expect(status.status).toBe(403);
+    expect((await status.json()).error.message).toBe(
+      "Scheduled runs are not available in hosted mode.",
+    );
     const test = await fetch(`${baseUrl}/api/settings/telegram/test`, {
       method: "POST",
     });

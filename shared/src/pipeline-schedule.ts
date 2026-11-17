@@ -32,6 +32,7 @@ export const SCHEDULE_WEEKDAY_BY_UTC_DAY: readonly ScheduleWeekday[] = [
  */
 export const DIGEST_MODE_VALUES = ["scheduled", "all", "off"] as const;
 export type DigestMode = (typeof DIGEST_MODE_VALUES)[number];
+export const DEFAULT_DIGEST_MODE: DigestMode = "scheduled";
 
 export const DEFAULT_SCHEDULE_TIME = "08:00";
 export const DEFAULT_SCHEDULE_TIME_ZONE = "UTC";
