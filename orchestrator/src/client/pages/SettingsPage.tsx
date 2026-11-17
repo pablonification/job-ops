@@ -18,6 +18,7 @@ import {
   toRxResumeValidationPayload,
   validateAndMaybePersistRxResumeMode,
 } from "@client/lib/rxresume-config";
+import { AgentAccessSection } from "@client/pages/settings/components/AgentAccessSection";
 import { BackupSettingsSection } from "@client/pages/settings/components/BackupSettingsSection";
 import { BillingSettingsSection } from "@client/pages/settings/components/BillingSettingsSection";
 import { ChatSettingsSection } from "@client/pages/settings/components/ChatSettingsSection";
@@ -138,6 +139,7 @@ type SettingsSectionId =
   | "webhooks"
   | "tracer-links"
   | "environment"
+  | "agent-access"
   | "display"
   | "backup"
   | "danger-zone";
@@ -274,6 +276,20 @@ const SETTINGS_NAV_GROUPS: SettingsNavGroup[] = [
           "password",
         ],
       },
+      {
+        id: "agent-access",
+        label: "Agent access",
+        description:
+          "Access tokens and the MCP connection for Claude Code and other agents.",
+        searchTerms: [
+          "mcp",
+          "agent",
+          "claude code",
+          "token",
+          "api",
+          "personal access token",
+        ],
+      },
     ],
   },
   {
@@ -365,6 +381,7 @@ const SECTION_FIELD_MAP: Record<
     "adzunaAppId",
     "adzunaAppKey",
   ],
+  "agent-access": [],
   display: [
     "showSponsorInfo",
     "renderMarkdownInJobDescriptions",
@@ -1748,6 +1765,9 @@ export const SettingsPage: React.FC = () => {
         />
       );
       break;
+    case "agent-access":
+      activeSectionContent = <AgentAccessSection />;
+      break;
     case "display":
       activeSectionContent = (
         <DisplaySettingsSection
@@ -1832,7 +1852,8 @@ export const SettingsPage: React.FC = () => {
                 : null
             }
             actions={
-              activeSection === "billing" ? null : (
+              activeSection === "billing" ||
+              activeSection === "agent-access" ? null : (
                 <>
                   {activeSectionIsDirty ? (
                     <Button
