@@ -1,4 +1,5 @@
 import {
+  acceptWithDetails,
   asHttpUrl,
   asNumber,
   asRecord,
@@ -7,13 +8,14 @@ import {
   buildIndonesianLocation,
   buildSalaryFields,
   collectPages,
+  createDetailCandidates,
+  createKnownJobUrls,
   formatRange,
   INDONESIA_COUNTRY_NAME,
   type JobBoardRunOptions,
   joinList,
   namesOf,
   runJobBoard,
-  TimeBudgetExceededError,
   toWorkplaceType,
   type UnknownRecord,
 } from "@shared/extractors/indonesia/index.js";
@@ -193,18 +195,7 @@ function isClosed(detail: UnknownRecord | null): boolean {
 export async function runDealls(
   options: RunDeallsOptions = {},
 ): Promise<ExtractorRunResult> {
-  let knownUrlsPromise: Promise<Set<string>> | null = null;
-  const getKnownUrls = (): Promise<Set<string>> => {
-    if (!knownUrlsPromise) {
-      knownUrlsPromise = (
-        options.getExistingJobUrls?.() ?? Promise.resolve([])
-      ).then(
-        (urls) => new Set(urls),
-        () => new Set<string>(),
-      );
-    }
-    return knownUrlsPromise;
-  };
+  const knownUrls = createKnownJobUrls(options.getExistingJobUrls);
 
   return runJobBoard({
     label: DEALLS_LABEL,
@@ -212,20 +203,11 @@ export async function runDealls(
     maxPageSize: MAX_PAGE_SIZE,
     runTerm: async (context) => {
       // 1. Collect list items for this term, up to the per-term cap.
-      const candidates: Array<{ row: UnknownRecord; job: CreateJobInput }> = [];
+      const { candidates, consume } =
+        createDetailCandidates<UnknownRecord>(context);
       await collectPages(context, {
         toJob: (item) => mapDeallsJob(item),
-        consume: (job, item) => {
-          if (
-            context.isCollected(job.jobUrl) ||
-            candidates.some((candidate) => candidate.job.jobUrl === job.jobUrl)
-          ) {
-            return "duplicate";
-          }
-          if (!context.matchesCities(job)) return "filtered";
-          candidates.push({ row: asRecord(item) ?? {}, job });
-          return "added";
-        },
+        consume: (job, item) => consume(job, asRecord(item) ?? {}),
         fetchPage: async ({ number, limit }) => {
           const payload = asRecord(
             asRecord(
@@ -251,49 +233,25 @@ export async function runDealls(
       });
 
       // 2. Fetch details for jobs that are not already imported.
-      const knownUrls = candidates.length > 0 ? await getKnownUrls() : null;
-      let detailsFetched = 0;
-      let detailsSkipped = 0;
-      let detailFailures = 0;
-      for (const { row, job } of candidates) {
-        if (context.shouldStop()) break;
-        if (knownUrls?.has(job.jobUrl)) {
-          detailsSkipped += 1;
-          context.accept(job);
-        } else {
-          try {
-            const detail = asRecord(
+      await acceptWithDetails(context, candidates, {
+        label: DEALLS_LABEL,
+        knownUrls,
+        fetchDetail: async ({ item }) => {
+          const detail = asRecord(
+            asRecord(
               asRecord(
-                asRecord(
-                  await context.client.getJson(
-                    buildDeallsDetailUrl(asString(row.slug) ?? ""),
-                  ),
-                )?.data,
-              )?.result,
-            );
-            if (!detail) {
-              throw new Error(`${DEALLS_LABEL} returned an invalid job detail`);
-            }
-            const detailed = mapDeallsJob(row, detail);
-            if (detailed && !isClosed(detail)) context.accept(detailed);
-          } catch (error) {
-            if (error instanceof TimeBudgetExceededError) throw error;
-            detailFailures += 1;
+                await context.client.getJson(
+                  buildDeallsDetailUrl(asString(item.slug) ?? ""),
+                ),
+              )?.data,
+            )?.result,
+          );
+          if (!detail) {
+            throw new Error(`${DEALLS_LABEL} returned an invalid job detail`);
           }
-          detailsFetched += 1;
-        }
-        context.reportDetails({
-          detailsTotal: candidates.length,
-          detailsFetched,
-          detailsSkipped,
-        });
-      }
-
-      if (detailFailures > 0) {
-        context.reportError(
-          `${DEALLS_LABEL}: ${detailFailures} job detail request(s) failed; those jobs were not imported and will be retried on the next run`,
-        );
-      }
+          return isClosed(detail) ? null : mapDeallsJob(item, detail);
+        },
+      });
     },
   });
 }
