@@ -1,15 +1,17 @@
 import { badRequest, toAppError, unprocessableEntity } from "@infra/errors";
 import { asyncRoute, fail, ok } from "@infra/http";
-import { listCareerBoardSources } from "@server/config/career-boards";
 import * as watchlistRepo from "@server/repositories/watchlist";
 import { getWatchlistSourceAdapter } from "@server/watchlist/adapters";
 import {
   getCurrentWatchlistResults,
   getWatchlistSelectedSourceById,
-  getWatchlistSourceTypeDescriptors,
-  hydrateWatchlistSelectedSources,
   withWatchlistSourceTimeout,
 } from "@server/watchlist/results";
+import {
+  getWatchlistSources,
+  replaceWatchlistSources,
+  updateWatchlistSelectionsSchema,
+} from "@server/watchlist/selections";
 import {
   MAX_WATCHLIST_SOURCES,
   type WatchlistResultsResponse,
@@ -35,25 +37,6 @@ const watchlistCheckSchema = z.object({
     .max(MAX_WATCHLIST_SOURCES),
 });
 
-const updateWatchlistSelectionsSchema = z.object({
-  selections: z
-    .array(
-      z.object({
-        catalogSourceId: z
-          .string()
-          .trim()
-          .min(1)
-          .max(500)
-          .nullable()
-          .optional(),
-        sourceType: z.string().trim().min(1).max(120),
-        label: z.string().trim().min(1).max(200).nullable().optional(),
-        careersUrl: z.string().trim().url().max(2000),
-      }),
-    )
-    .max(MAX_WATCHLIST_SOURCES),
-});
-
 const watchlistSourceJobSchema = z.object({
   selectedSourceId: z.string().trim().min(1).max(500),
   jobRef: z.string().trim().min(1).max(3000),
@@ -65,19 +48,6 @@ const watchlistSourceBrandingSchema = z.object({
   careersUrl: z.string().trim().url().max(2000),
 });
 
-function getWatchlistSourcesPayload(
-  catalogSources: Awaited<ReturnType<typeof listCareerBoardSources>>,
-  selectedSources: Awaited<
-    ReturnType<typeof watchlistRepo.listWatchlistSelectedSources>
-  >,
-) {
-  return {
-    catalogSources,
-    selectedSources: hydrateWatchlistSelectedSources(selectedSources),
-    availableSourceTypes: getWatchlistSourceTypeDescriptors(),
-  };
-}
-
 watchlistRouter.get(
   "/states",
   asyncRoute(async (_req: Request, res: Response) => {
@@ -88,12 +58,7 @@ watchlistRouter.get(
 watchlistRouter.get(
   "/sources",
   asyncRoute(async (_req: Request, res: Response) => {
-    const [catalogSources, selectedSources] = await Promise.all([
-      listCareerBoardSources(),
-      watchlistRepo.listWatchlistSelectedSources(),
-    ]);
-
-    ok(res, getWatchlistSourcesPayload(catalogSources, selectedSources));
+    ok(res, await getWatchlistSources());
   }),
 );
 
@@ -279,110 +244,7 @@ watchlistRouter.put(
       );
     }
 
-    const catalogSources = await listCareerBoardSources();
-    const catalogSourcesById = new Map(
-      catalogSources.map((source) => [source.id, source]),
-    );
-    const normalizedSelections = [];
-    const seenUrls = new Set<string>();
-
-    for (const selection of parsedBody.data.selections) {
-      const normalizedUrl = selection.careersUrl.trim();
-      if (seenUrls.has(normalizedUrl)) {
-        return fail(
-          res,
-          unprocessableEntity("Duplicate watchlist URLs are not allowed", {
-            careersUrl: normalizedUrl,
-          }),
-        );
-      }
-      seenUrls.add(normalizedUrl);
-
-      if (selection.catalogSourceId) {
-        const catalogSource = catalogSourcesById.get(selection.catalogSourceId);
-        if (!catalogSource) {
-          return fail(
-            res,
-            unprocessableEntity("Selected watchlist source was not found", {
-              catalogSourceId: selection.catalogSourceId,
-            }),
-          );
-        }
-
-        if (catalogSource.careersUrl !== normalizedUrl) {
-          return fail(
-            res,
-            unprocessableEntity(
-              "Selected watchlist source URL does not match the catalog",
-              {
-                catalogSourceId: selection.catalogSourceId,
-                careersUrl: normalizedUrl,
-              },
-            ),
-          );
-        }
-
-        normalizedSelections.push({
-          catalogSourceId: catalogSource.id,
-          sourceType: catalogSource.sourceType,
-          label: catalogSource.label,
-          careersUrl: catalogSource.careersUrl,
-        });
-        continue;
-      }
-
-      const adapter = getWatchlistSourceAdapter(selection.sourceType);
-      if (!adapter) {
-        return fail(
-          res,
-          unprocessableEntity("Unsupported watchlist source type", {
-            sourceType: selection.sourceType,
-          }),
-        );
-      }
-      if (!adapter.descriptor.supportsCustomSource) {
-        return fail(
-          res,
-          unprocessableEntity(
-            "Custom sources are not supported for this source type",
-            {
-              sourceType: selection.sourceType,
-            },
-          ),
-        );
-      }
-
-      try {
-        const normalized = await adapter.normalizeCustomSelection({
-          label: selection.label,
-          careersUrl: normalizedUrl,
-        });
-        normalizedSelections.push({
-          catalogSourceId: null,
-          sourceType: selection.sourceType,
-          label: normalized.label,
-          careersUrl: normalized.careersUrl,
-        });
-      } catch (error) {
-        return fail(
-          res,
-          unprocessableEntity(
-            `${adapter.descriptor.invalidUrlMessage}: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
-            { careersUrl: normalizedUrl },
-          ),
-        );
-      }
-    }
-
-    const selectedSources = await watchlistRepo.replaceWatchlistSelectedSources(
-      {
-        selections: normalizedSelections,
-      },
-    );
-
-    ok(res, getWatchlistSourcesPayload(catalogSources, selectedSources));
+    ok(res, await replaceWatchlistSources(parsedBody.data.selections));
   }),
 );
 
