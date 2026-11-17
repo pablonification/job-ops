@@ -1,6 +1,5 @@
 import { getJobOpsAppConfig } from "@server/config/app-mode";
 import { getOriginalEnvValue } from "@server/services/envSettings";
-import { mapGlmProviderAlias } from "@shared/settings-registry";
 import { LLM_PROVIDER_VALUES } from "@shared/types";
 import { strategies } from "../providers";
 import type { LlmProvider } from "../types";
@@ -62,21 +61,15 @@ function readPositiveInt(
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-/** Strict provider id parsing: unknown names are rejected, not defaulted. */
+/**
+ * Strict provider id parsing: only exact provider ids are accepted (case and
+ * `-` versus `_` do not matter). No aliases, so `claude` is not quietly read
+ * as the Anthropic API provider.
+ */
 export function parseFallbackProvider(raw: string): LlmProvider | null {
-  const normalized = mapGlmProviderAlias(
-    raw.trim().toLowerCase().replace(/[-.]/g, "_"),
-  );
-  const aliased =
-    normalized === "claude"
-      ? "anthropic"
-      : normalized === "atlas_cloud"
-        ? "atlascloud"
-        : normalized === "litellm_proxy"
-          ? "litellm"
-          : normalized;
-  return (LLM_PROVIDER_VALUES as readonly string[]).includes(aliased)
-    ? (aliased as LlmProvider)
+  const normalized = raw.trim().toLowerCase().replace(/-/g, "_");
+  return (LLM_PROVIDER_VALUES as readonly string[]).includes(normalized)
+    ? (normalized as LlmProvider)
     : null;
 }
 
@@ -137,7 +130,7 @@ export function resolveLlmFallbackConfig(
   const provider = parseFallbackProvider(rawProvider);
   if (!provider) {
     return invalid(
-      `${LLM_FALLBACK_ENV_KEYS.provider} "${rawProvider}" is not a known provider.`,
+      `${LLM_FALLBACK_ENV_KEYS.provider} "${rawProvider}" is not a known provider. Use one of: ${LLM_PROVIDER_VALUES.join(", ")}.`,
     );
   }
   if (!model) {

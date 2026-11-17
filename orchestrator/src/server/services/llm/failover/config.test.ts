@@ -73,7 +73,7 @@ describe("resolveLlmFallbackConfig", () => {
     ],
     [
       { ...MUSE, LLM_FALLBACK_PROVIDER: "muse" },
-      'LLM_FALLBACK_PROVIDER "muse" is not a known provider.',
+      'LLM_FALLBACK_PROVIDER "muse" is not a known provider. Use one of: atlascloud, litellm, openrouter, orcarouter, requesty, api_route, lmstudio, ollama, openai, anthropic, openai_compatible, glm, gemini, gemini_cli, claude_cli, claude_agent_sdk, codex.',
     ],
     [{ ...MUSE, LLM_FALLBACK_MODEL: "" }, "LLM_FALLBACK_MODEL is not set."],
     [
@@ -135,13 +135,14 @@ describe("parseFallbackProvider", () => {
   it.each([
     ["openai-compatible", "openai_compatible"],
     ["Claude_Agent_SDK", "claude_agent_sdk"],
-    ["claude", "anthropic"],
     ["openrouter", "openrouter"],
   ])("%s → %s", (raw, expected) => {
     expect(parseFallbackProvider(raw)).toBe(expected);
   });
 
-  it("rejects unknown names instead of defaulting", () => {
+  it("rejects unknown names and aliases instead of guessing", () => {
     expect(parseFallbackProvider("muse")).toBeNull();
+    expect(parseFallbackProvider("claude")).toBeNull();
+    expect(parseFallbackProvider("atlas_cloud")).toBeNull();
   });
 });

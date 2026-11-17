@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildClaudeAgentSdkErrorMessage } from "../claude-agent-sdk/errors";
 import {
   classifyLlmFailure,
+  countsTowardBreaker,
   isFailoverEligible,
   type LlmFailureKind,
 } from "./classification";
@@ -35,6 +36,16 @@ describe("classifyLlmFailure", () => {
       "LLM API error: 400 - The model `muse-x` does not exist",
       undefined,
       "configuration",
+    ],
+    [
+      "LLM API error: 400 - Invalid API key provided",
+      undefined,
+      "configuration",
+    ],
+    [
+      "LLM API error: 400 - Your input mentions an invalid api key and an unknown model",
+      undefined,
+      "bad_request",
     ],
     ["LLM API error: 413 - Request too large", undefined, "bad_request"],
     ["LLM API error: 422 - Unprocessable", undefined, "bad_request"],
@@ -138,6 +149,20 @@ describe("classifyLlmFailure", () => {
       "bad_request",
     ],
     ["Failed to parse JSON response: Unexpected token", "unparseable"],
+    [
+      buildClaudeAgentSdkErrorMessage(
+        "other",
+        "invalid_request: messages.0.content is malformed (API error 400)",
+      ),
+      "bad_request",
+    ],
+    [
+      buildClaudeAgentSdkErrorMessage(
+        "other",
+        "Request too large (API error 413)",
+      ),
+      "bad_request",
+    ],
   ])("Claude (subscription): %s → %s", (message, expected) => {
     expect(classifyLlmFailure({ provider: "claude_agent_sdk", message })).toBe(
       expected,
@@ -168,5 +193,13 @@ describe("classifyLlmFailure", () => {
     for (const kind of eligible) expect(isFailoverEligible(kind)).toBe(true);
     expect(isFailoverEligible("aborted")).toBe(false);
     expect(isFailoverEligible("bad_request")).toBe(false);
+  });
+
+  it("does not count unusable output toward the breaker", () => {
+    expect(countsTowardBreaker("unparseable")).toBe(false);
+    expect(countsTowardBreaker("bad_request")).toBe(false);
+    expect(countsTowardBreaker("aborted")).toBe(false);
+    expect(countsTowardBreaker("configuration")).toBe(true);
+    expect(countsTowardBreaker("usage_limit")).toBe(true);
   });
 });

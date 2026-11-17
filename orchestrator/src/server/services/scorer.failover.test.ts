@@ -10,6 +10,7 @@ import { ClaudeAgentSdkClient } from "./llm/claude-agent-sdk/client";
 import { ClaudeAgentSdkError } from "./llm/claude-agent-sdk/errors";
 import { LlmCircuitBreaker } from "./llm/failover/breaker";
 import type { LlmFallbackConfig } from "./llm/failover/config";
+import { PRIMARY_CONFIGURATION_FAILURE_MARKER } from "./llm/policies/configuration-error";
 import { LlmService } from "./llm/service";
 
 const {
@@ -126,19 +127,28 @@ describe("scoring when Claude (subscription) is not authenticated", () => {
     expect(fetchSpy).toHaveBeenCalledOnce();
   });
 
-  it("counts the job as failed, not paused, when the fallback has an outage", async () => {
+  it.each([
+    [503, "down"],
+    [429, "slow down"],
+  ])("still pauses when the fallback answers %i, because the primary's credentials are the problem", async (status, message) => {
     useClaudeSubscription(FALLBACK);
     fallbackAnswers(
       () =>
-        new Response(JSON.stringify({ error: { message: "down" } }), {
-          status: 503,
+        new Response(JSON.stringify({ error: { message } }), {
+          status,
           headers: { "Content-Type": "application/json" },
         }),
     );
 
-    await expect(
-      scoreJobSuitability(createJob({ id: "job-c" }), {}),
-    ).rejects.toThrow(ScoringUnavailableError);
+    const error = await scoreJobSuitability(
+      createJob({ id: "job-c" }),
+      {},
+    ).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(LlmNotConfiguredError);
+    expect(String((error as Error).message)).toContain(
+      PRIMARY_CONFIGURATION_FAILURE_MARKER,
+    );
   });
 
   it("pauses when the fallback rejects its credentials too", async () => {
@@ -154,5 +164,42 @@ describe("scoring when Claude (subscription) is not authenticated", () => {
     await expect(
       scoreJobSuitability(createJob({ id: "job-d" }), {}),
     ).rejects.toThrow(LlmNotConfiguredError);
+  });
+});
+
+describe("scoring when Claude (subscription) hits its usage limit", () => {
+  beforeEach(() => {
+    getSettingMock.mockResolvedValue(null);
+    getEffectiveSettingsMock.mockResolvedValue({
+      penalizeMissingSalary: { value: false, default: false, override: null },
+      missingSalaryPenalty: { value: 10, default: 10, override: null },
+      scoringInstructions: { value: "", default: "", override: null },
+      scoringPromptTemplate: { value: "", default: "", override: null },
+      rxresumeBaseResumeId: "base-resume-123",
+    });
+    resolveLlmModelMock.mockResolvedValue("sonnet");
+    vi.spyOn(ClaudeAgentSdkClient.prototype, "callJson").mockRejectedValue(
+      new ClaudeAgentSdkError("usage_limit", "resets 5pm"),
+    );
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.clearAllMocks();
+  });
+
+  it("counts the job as failed, not paused, when the fallback has an outage", async () => {
+    useClaudeSubscription(FALLBACK);
+    fallbackAnswers(
+      () =>
+        new Response(JSON.stringify({ error: { message: "down" } }), {
+          status: 503,
+          headers: { "Content-Type": "application/json" },
+        }),
+    );
+
+    await expect(
+      scoreJobSuitability(createJob({ id: "job-e" }), {}),
+    ).rejects.toThrow(ScoringUnavailableError);
   });
 });

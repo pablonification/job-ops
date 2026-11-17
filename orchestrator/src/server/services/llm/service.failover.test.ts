@@ -1,10 +1,13 @@
 import { logger } from "@infra/logger";
 import { runWithRequestContext } from "@infra/request-context";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ClaudeAgentSdkClient } from "./claude-agent-sdk/client";
+import {
+  ClaudeAgentSdkClient,
+  clearClaudeAgentSdkValidationCache,
+} from "./claude-agent-sdk/client";
 import { ClaudeAgentSdkError } from "./claude-agent-sdk/errors";
 import { ClaudeCliClient } from "./claude-cli/client";
-import { LlmCircuitBreaker } from "./failover/breaker";
+import { buildLlmBreakerKey, LlmCircuitBreaker } from "./failover/breaker";
 import type { LlmFallbackConfig } from "./failover/config";
 import { LlmService } from "./service";
 import type { JsonSchemaDefinition, LlmRequestOptions } from "./types";
@@ -513,6 +516,182 @@ describe("LlmService failover", () => {
         llm.callJson(request()),
       );
       expect(primary).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe("forced mode never contacts the primary", () => {
+    function untouchableClaudeClient() {
+      return new ClaudeAgentSdkClient({
+        queryFn: () => {
+          throw new Error("the primary must not be contacted");
+        },
+        env: { CLAUDE_CODE_OAUTH_TOKEN: "bad-token" },
+      });
+    }
+
+    it("validates the fallback's credentials instead of the primary's", async () => {
+      clearClaudeAgentSdkValidationCache();
+      const calls = mockFetch(
+        () =>
+          new Response(JSON.stringify({ data: [] }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+      );
+      const llm = new LlmService({
+        provider: "claude_agent_sdk",
+        claudeAgentSdkClient: untouchableClaudeClient(),
+        failover: { config: readyFallback({ forced: true }), breaker },
+      });
+
+      const result = await llm.validateCredentials();
+
+      expect(result).toEqual({ valid: true, message: null });
+      expect(calls).toHaveLength(1);
+      expect(calls[0].url).toBe(`${FALLBACK_URL}/models`);
+      expect(
+        (calls[0].init.headers as Record<string, string>).Authorization,
+      ).toBe("Bearer fallback-secret-key");
+    });
+
+    it("reports the fallback's rejected key, not the primary's", async () => {
+      clearClaudeAgentSdkValidationCache();
+      mockFetch(() => errorResponse(401, "bad key"));
+      const llm = new LlmService({
+        provider: "claude_agent_sdk",
+        claudeAgentSdkClient: untouchableClaudeClient(),
+        failover: { config: readyFallback({ forced: true }), breaker },
+      });
+
+      const result = await llm.validateCredentials();
+
+      expect(result.valid).toBe(false);
+      expect(result.message).toContain("Invalid LLM API key");
+    });
+
+    it("serves calls without touching the primary client", async () => {
+      mockFetch(() => completionResponse('{"value":"muse"}'));
+      const llm = new LlmService({
+        provider: "claude_agent_sdk",
+        claudeAgentSdkClient: untouchableClaudeClient(),
+        failover: { config: readyFallback({ forced: true }), breaker },
+      });
+
+      await expect(llm.callJson(request())).resolves.toEqual({
+        success: true,
+        data: { value: "muse" },
+      });
+    });
+  });
+
+  describe("outcomes", () => {
+    it("does not count a cancelled fallback call as a failover", async () => {
+      const controller = new AbortController();
+      vi.spyOn(ClaudeAgentSdkClient.prototype, "callJson").mockRejectedValue(
+        new ClaudeAgentSdkError("usage_limit"),
+      );
+      const calls = mockFetch(() => {
+        controller.abort();
+        throw new DOMException("This operation was aborted", "AbortError");
+      });
+      const warn = vi.spyOn(logger, "warn");
+
+      const result = await runWithRequestContext({ tenantId: "t-abort" }, () =>
+        claudeSdkPrimary(readyFallback(), breaker).callJson(
+          request({ signal: controller.signal }),
+        ),
+      );
+
+      expect(fallbackCalls(calls)).toHaveLength(1);
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error).not.toContain("Fallback LLM");
+      }
+      expect(
+        warn.mock.calls.filter(([message]) =>
+          String(message).includes("fallback provider failed"),
+        ),
+      ).toHaveLength(0);
+      const key = buildLlmBreakerKey({
+        tenantId: "t-abort",
+        provider: "claude_agent_sdk",
+        baseUrl: "",
+      });
+      expect(breaker.snapshot(key).lastFailover).toBeNull();
+    });
+
+    it("records whether the fallback succeeded or failed", async () => {
+      vi.spyOn(ClaudeAgentSdkClient.prototype, "callJson").mockRejectedValue(
+        new ClaudeAgentSdkError("timeout", "after 1000ms"),
+      );
+      const key = buildLlmBreakerKey({
+        tenantId: "t-outcome",
+        provider: "claude_agent_sdk",
+        baseUrl: "",
+      });
+      const llm = claudeSdkPrimary(readyFallback(), breaker);
+
+      mockFetch(() => errorResponse(503, "down"));
+      await runWithRequestContext({ tenantId: "t-outcome" }, () =>
+        llm.callJson(request()),
+      );
+      expect(breaker.snapshot(key).lastFailover).toMatchObject({
+        reason: "timeout",
+        outcome: "failed",
+      });
+
+      vi.mocked(globalThis.fetch).mockRestore();
+      mockFetch(() => completionResponse('{"value":"muse"}'));
+      await runWithRequestContext({ tenantId: "t-outcome" }, () =>
+        llm.callJson(request()),
+      );
+      expect(breaker.snapshot(key).lastFailover).toMatchObject({
+        outcome: "succeeded",
+      });
+    });
+
+    it("fails over on unusable output without counting it toward the breaker", async () => {
+      const primary = vi
+        .spyOn(ClaudeAgentSdkClient.prototype, "callJson")
+        .mockResolvedValue({ text: "not json" });
+      mockFetch(() => completionResponse('{"value":"muse"}'));
+      const llm = claudeSdkPrimary(
+        readyFallback({ breaker: { threshold: 1, cooldownMs: 60_000 } }),
+        breaker,
+      );
+
+      await llm.callJson(request());
+      await llm.callJson(request());
+
+      expect(primary).toHaveBeenCalledTimes(2);
+    });
+
+    it("keeps keys and URL credentials out of the returned and logged errors", async () => {
+      vi.spyOn(ClaudeAgentSdkClient.prototype, "callJson").mockRejectedValue(
+        new ClaudeAgentSdkError("upstream", "overloaded"),
+      );
+      const warn = vi.spyOn(logger, "warn");
+      mockFetch(() =>
+        errorResponse(
+          503,
+          `upstream https://user:hunter2@proxy.example/v1?key=AIzaSyA1234567890abcdefghij sent Bearer abcdefghijkl and fallback-secret-key ${"x".repeat(1_000)}`,
+        ),
+      );
+
+      const result = await claudeSdkPrimary(readyFallback(), breaker).callJson(
+        request(),
+      );
+
+      expect(result.success).toBe(false);
+      const returned = result.success ? "" : result.error;
+      const logged = JSON.stringify(warn.mock.calls);
+      for (const text of [returned, logged]) {
+        expect(text).not.toContain("hunter2");
+        expect(text).not.toContain("AIzaSyA1234567890abcdefghij");
+        expect(text).not.toContain("abcdefghijkl");
+        expect(text).not.toContain("fallback-secret-key");
+      }
+      expect(returned.length).toBeLessThan(500);
     });
   });
 });

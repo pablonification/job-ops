@@ -1,7 +1,8 @@
 import { logger } from "@infra/logger";
+import { redactSensitiveText } from "@infra/sanitize";
 import { getActiveTenantId } from "@server/tenancy/context";
+import { PRIMARY_CONFIGURATION_FAILURE_MARKER } from "../policies/configuration-error";
 import type { LlmProvider } from "../types";
-import { truncate } from "../utils/string";
 import {
   buildLlmBreakerKey,
   type LlmCircuitBreaker,
@@ -9,10 +10,11 @@ import {
 } from "./breaker";
 import {
   classifyLlmFailure,
+  countsTowardBreaker,
   isFailoverEligible,
   type LlmFailureKind,
 } from "./classification";
-import type { LlmFallbackConfig } from "./config";
+import type { ReadyLlmFallback } from "./eligibility";
 
 export type FailoverAttemptResult<T> =
   | { success: true; data: T }
@@ -28,28 +30,22 @@ export type FailoverAttemptResult<T> =
 /** Why the fallback served a call. */
 export type LlmFailoverReason = LlmFailureKind | "forced" | "circuit_open";
 
-type ReadyFallback = Extract<LlmFallbackConfig, { state: "ready" }>;
-
-const REDACTED = "[REDACTED]";
+/** Longest error text logged or returned by the failover layer. */
+export const LLM_FAILOVER_ERROR_MAX = 400;
 
 /**
- * Error text can echo request headers or keys back. Strip the two keys this
- * call could have used and anything shaped like a bearer token before the
- * text reaches a log line or the returned error.
+ * The single sanitiser for failover error text, logged or returned: known
+ * keys, bearer tokens, URL credentials and secret query parameters are
+ * removed, then the text is truncated.
  */
-function redactSecrets(
+export function sanitizeLlmFailureText(
   message: string,
-  secrets: Array<string | null | undefined>,
+  secrets: Array<string | null | undefined> = [],
 ): string {
-  let out = message;
-  for (const secret of secrets) {
-    if (secret && secret.length >= 6) out = out.split(secret).join(REDACTED);
-  }
-  return out.replace(/\b(Bearer)\s+[A-Za-z0-9._~+/=-]{8,}/gi, `$1 ${REDACTED}`);
-}
-
-function scrub(message: string, secrets: Array<string | null | undefined>) {
-  return truncate(redactSecrets(message, secrets), 300);
+  return redactSensitiveText(message, {
+    secrets,
+    max: LLM_FAILOVER_ERROR_MAX,
+  });
 }
 
 export function getLlmBreakerKeyForPrimary(primary: {
@@ -66,8 +62,7 @@ export function getLlmBreakerKeyForPrimary(primary: {
 /**
  * The single failover decision. Runs the primary (unless forced or the
  * breaker is open), classifies a failure, and when it is provider-side tries
- * the fallback exactly once. The fallback's own failure is returned as the
- * failure; nothing here loops.
+ * the fallback exactly once. Nothing here loops.
  */
 export async function runWithLlmFailover<T>(args: {
   primary: {
@@ -75,7 +70,7 @@ export async function runWithLlmFailover<T>(args: {
     baseUrl: string | null;
     apiKey?: string | null;
   };
-  fallback: ReadyFallback;
+  fallback: ReadyLlmFallback;
   operation: string;
   jobId?: string;
   signal?: AbortSignal;
@@ -88,6 +83,9 @@ export async function runWithLlmFailover<T>(args: {
   const policy = fallback.breaker;
   const key = getLlmBreakerKeyForPrimary(primary);
   const secrets = [primary.apiKey, fallback.target.apiKey];
+  const clean = (message: string) => sanitizeLlmFailureText(message, secrets);
+  // requestId, pipelineRunId and jobId from the request context are added
+  // by the shared logger itself.
   const context = {
     operation: args.operation,
     jobId: args.jobId ?? null,
@@ -97,6 +95,8 @@ export async function runWithLlmFailover<T>(args: {
   };
 
   let reason: LlmFailoverReason;
+  /** What the primary's failure (or the open breaker) says about it. */
+  let primaryKind: LlmFailureKind | null = null;
   let primaryError: string | null = null;
   let primaryResult: FailoverAttemptResult<T> | null = null;
 
@@ -106,16 +106,17 @@ export async function runWithLlmFailover<T>(args: {
     const gate = breaker.acquire(key, policy);
     if (gate.skipPrimary) {
       reason = "circuit_open";
+      primaryKind = breaker.openReason(key);
     } else {
       let verdict = false;
       try {
         primaryResult = await args.callPrimary();
         if (primaryResult.success) {
           verdict = true;
-          breaker.recordSuccess(key);
+          breaker.recordSuccess(key, gate);
           return primaryResult;
         }
-        const kind = args.signal?.aborted
+        const kind: LlmFailureKind = args.signal?.aborted
           ? "aborted"
           : (primaryResult.failureKind ??
             classifyLlmFailure({
@@ -123,38 +124,43 @@ export async function runWithLlmFailover<T>(args: {
               message: primaryResult.error,
               status: primaryResult.status,
             }));
-        if (!isFailoverEligible(kind)) return primaryResult;
+        if (!isFailoverEligible(kind)) {
+          return { ...primaryResult, error: clean(primaryResult.error) };
+        }
 
-        verdict = true;
         reason = kind;
-        primaryError = scrub(primaryResult.error, secrets);
-        if (breaker.recordFailure(key, policy, gate.probe)) {
-          logger.warn("LLM primary provider skipped for a cool-down", {
-            ...context,
-            reason: kind,
-            cooldownMs: policy.cooldownMs,
-            threshold: policy.threshold,
-          });
+        primaryKind = kind;
+        primaryError = clean(primaryResult.error);
+        if (countsTowardBreaker(kind)) {
+          verdict = true;
+          if (breaker.recordFailure(key, policy, gate, kind)) {
+            logger.warn("LLM primary provider skipped for a cool-down", {
+              ...context,
+              reason: kind,
+              cooldownMs: policy.cooldownMs,
+              threshold: policy.threshold,
+            });
+          }
         }
       } finally {
-        if (gate.probe && !verdict) breaker.releaseProbe(key);
+        if (gate.probe && !verdict) breaker.releaseProbe(key, gate);
       }
     }
   }
 
   if (args.signal?.aborted) {
-    return (
-      primaryResult ?? { success: false, error: "LLM request was aborted." }
-    );
+    return primaryResult && !primaryResult.success
+      ? { ...primaryResult, error: clean(primaryResult.error) }
+      : { success: false, error: "LLM request was aborted." };
   }
 
   const fallbackResult = await args.callFallback();
-  if (reason !== "forced") breaker.noteFailover(key, reason);
 
   if (fallbackResult.success) {
     if (reason === "forced") {
       logger.debug("LLM request served by forced fallback provider", context);
     } else {
+      breaker.noteFailover(key, reason, "succeeded");
       logger.warn("LLM request failed over to fallback provider", {
         ...context,
         reason,
@@ -164,16 +170,34 @@ export async function runWithLlmFailover<T>(args: {
     return fallbackResult;
   }
 
-  const fallbackError = scrub(fallbackResult.error, secrets);
+  const fallbackError = clean(fallbackResult.error);
+  if (args.signal?.aborted) {
+    // Cancelled while the fallback was working: not a failover outcome.
+    logger.debug("LLM fallback call cancelled by the caller", context);
+    return { ...fallbackResult, error: fallbackError };
+  }
+
+  if (reason !== "forced") breaker.noteFailover(key, reason, "failed");
   logger.warn(
     reason === "forced"
       ? "Forced fallback LLM provider failed"
       : "LLM fallback provider failed after failover",
     { ...context, reason, primaryError, fallbackError },
   );
+
+  const fallbackPart = `Fallback LLM (${fallback.target.provider}) failed: ${fallbackError}`;
+  // A broken primary configuration must still pause the pipeline when the
+  // fallback cannot cover for it, so carry that reason explicitly.
+  const error =
+    primaryKind === "configuration"
+      ? sanitizeLlmFailureText(
+          `${PRIMARY_CONFIGURATION_FAILURE_MARKER} (${primary.provider}): ${primaryError ?? "skipped after repeated configuration failures"}. ${fallbackPart}`,
+          secrets,
+        )
+      : clean(fallbackPart);
   return {
     success: false,
-    error: `Fallback LLM (${fallback.target.provider}) failed: ${redactSecrets(fallbackResult.error, secrets)}`,
+    error,
     ...(fallbackResult.status !== undefined
       ? { status: fallbackResult.status }
       : {}),

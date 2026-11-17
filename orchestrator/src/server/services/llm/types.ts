@@ -1,3 +1,4 @@
+import type { ClaudeAgentSdkClient } from "./claude-agent-sdk/client";
 import type { LlmCircuitBreaker } from "./failover/breaker";
 import type { LlmFallbackConfig } from "./failover/config";
 
@@ -95,6 +96,8 @@ export type LlmServiceOptions = {
    * fallback service itself is built this way).
    */
   failover?: LlmFailoverOptions | false;
+  /** Injected in tests to drive the real client with a scripted SDK query. */
+  claudeAgentSdkClient?: ClaudeAgentSdkClient;
 };
 
 export type LlmFailoverOptions = {

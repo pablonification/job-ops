@@ -44,6 +44,15 @@ export function isFailoverEligible(kind: LlmFailureKind): boolean {
   return FAILOVER_KINDS.has(kind);
 }
 
+/**
+ * Whether a failure says the primary itself is unhealthy and should count
+ * toward opening the circuit breaker. Unusable output still fails over, but
+ * a few bad parses in a row do not mean the provider is down.
+ */
+export function countsTowardBreaker(kind: LlmFailureKind): boolean {
+  return isFailoverEligible(kind) && kind !== "unparseable";
+}
+
 export type LlmProviderFamily = "http" | "cli" | "claude_agent_sdk";
 
 export function getLlmProviderFamily(provider: LlmProvider): LlmProviderFamily {
@@ -103,8 +112,22 @@ const RATE_LIMIT_PATTERNS: RegExp[] = [
   /too many requests/i,
 ];
 
-const MODEL_OR_KEY_PROBLEM =
-  /(model|deployment)\b.{0,60}\b(not found|does not exist|not exist|unknown|invalid|not supported|unsupported|not available)|unknown model|invalid model|no such model|api[_ ]?key|unauthori[sz]ed|authentication/i;
+/**
+ * A 400 that is really a configuration problem, judged only from the start
+ * of the provider's own error message (what follows `LLM API error: 400 - `)
+ * so echoed request text cannot trigger it.
+ */
+const MODEL_OR_KEY_PROBLEM_AT_START =
+  /^(?:the )?(?:model|deployment)\b[^.\n]{0,80}?\b(?:not found|does not exist|not exist|is unknown|is invalid|not supported|is unsupported|not available)|^(?:invalid|unknown|unsupported) model\b|^no such model\b|^model[_ ]not[_ ]found\b|^(?:invalid|incorrect) api[_ ]?key\b|^api[_ ]?key (?:not valid|is invalid|invalid|missing)\b|^(?:unauthori[sz]ed|authentication (?:failed|required))\b/i;
+
+/** Request-side errors as the Claude Agent SDK reports them. */
+const CLAUDE_REQUEST_SIDE_PATTERN =
+  /\binvalid_request(?:_error)?\b|\bAPI error:? (?:400|413|422)\b/i;
+
+function providerErrorDetail(message: string): string {
+  const match = /LLM API error: \d{3} - ([\s\S]*)$/.exec(message);
+  return (match ? match[1] : message).trim();
+}
 
 const HTTP_STATUS_IN_MESSAGE = /LLM API error: (\d{3})\b/;
 
@@ -157,7 +180,13 @@ function classifyClaudeAgentSdkFailure(message: string): LlmFailureKind {
     case "aborted":
       return "aborted";
     default:
-      if (matchesAny(BAD_REQUEST_PATTERNS, message)) return "bad_request";
+      // A malformed request would be just as malformed for the fallback.
+      if (
+        CLAUDE_REQUEST_SIDE_PATTERN.test(message) ||
+        matchesAny(BAD_REQUEST_PATTERNS, message)
+      ) {
+        return "bad_request";
+      }
       if (matchesAny(UNPARSEABLE_PATTERNS, message)) return "unparseable";
       return "subprocess";
   }
@@ -218,7 +247,9 @@ function classifyHttpStatus(status: number, message: string): LlmFailureKind {
     // fix. Some providers also answer 400 for an unknown model or a bad key;
     // those are configuration problems on the primary.
     if (matchesAny(BAD_REQUEST_PATTERNS, message)) return "bad_request";
-    return MODEL_OR_KEY_PROBLEM.test(message) ? "configuration" : "bad_request";
+    return MODEL_OR_KEY_PROBLEM_AT_START.test(providerErrorDetail(message))
+      ? "configuration"
+      : "bad_request";
   }
   // 404 (model or endpoint not found), 405, 410, 415 and the like: the
   // primary is pointed at something that does not serve this request.
