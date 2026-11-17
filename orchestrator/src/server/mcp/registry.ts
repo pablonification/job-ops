@@ -64,26 +64,42 @@ export const MCP_TOOL_GROUPS: readonly McpToolGroup[] = [
   roleCvsToolGroup,
 ];
 
-const TOOL_NAME_PATTERN = /^[a-z][a-z0-9_]{0,63}$/;
+/** Names of tools and prompts: snake_case, at most 64 characters. */
+export const MCP_NAME_PATTERN = /^[a-z][a-z0-9_]{0,63}$/;
+
+/**
+ * Indexes named items (tools or prompts) by name, refusing names that are
+ * not snake_case or appear twice.
+ */
+function indexByName<Item extends { name: string }>(
+  items: Iterable<{ item: Item; where: string }>,
+  kind: "tool" | "prompt",
+): Map<string, Item> {
+  const byName = new Map<string, Item>();
+  for (const { item, where } of items) {
+    if (!MCP_NAME_PATTERN.test(item.name)) {
+      throw new Error(`MCP ${kind} name must be snake_case: ${item.name}`);
+    }
+    if (byName.has(item.name)) {
+      throw new Error(`Duplicate MCP ${kind} name "${item.name}"${where}`);
+    }
+    byName.set(item.name, item);
+  }
+  return byName;
+}
 
 export function collectTools(
   groups: readonly McpToolGroup[],
 ): ReadonlyMap<string, McpToolDefinition> {
-  const tools = new Map<string, McpToolDefinition>();
-  for (const group of groups) {
-    for (const tool of group.tools) {
-      if (!TOOL_NAME_PATTERN.test(tool.name)) {
-        throw new Error(`MCP tool name must be snake_case: ${tool.name}`);
-      }
-      if (tools.has(tool.name)) {
-        throw new Error(
-          `Duplicate MCP tool name "${tool.name}" in group "${group.id}"`,
-        );
-      }
-      if (tool.scope === "read" && tool.destructive) {
-        throw new Error(`Read tool "${tool.name}" cannot be destructive`);
-      }
-      tools.set(tool.name, tool);
+  const tools = indexByName(
+    groups.flatMap((group) =>
+      group.tools.map((item) => ({ item, where: ` in group "${group.id}"` })),
+    ),
+    "tool",
+  );
+  for (const tool of tools.values()) {
+    if (tool.scope === "read" && tool.destructive) {
+      throw new Error(`Read tool "${tool.name}" cannot be destructive`);
     }
   }
   return tools;
@@ -99,17 +115,10 @@ export function getRegisteredTools(): ReadonlyMap<string, McpToolDefinition> {
 export function collectPrompts(
   prompts: readonly McpPromptDefinition[],
 ): ReadonlyMap<string, McpPromptDefinition> {
-  const byName = new Map<string, McpPromptDefinition>();
-  for (const prompt of prompts) {
-    if (!TOOL_NAME_PATTERN.test(prompt.name)) {
-      throw new Error(`MCP prompt name must be snake_case: ${prompt.name}`);
-    }
-    if (byName.has(prompt.name)) {
-      throw new Error(`Duplicate MCP prompt name "${prompt.name}"`);
-    }
-    byName.set(prompt.name, prompt);
-  }
-  return byName;
+  return indexByName(
+    prompts.map((item) => ({ item, where: "" })),
+    "prompt",
+  );
 }
 
 let registeredPrompts: ReadonlyMap<string, McpPromptDefinition> | null = null;

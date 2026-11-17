@@ -9,6 +9,8 @@ import {
   loadCompactJobState,
   loadTargetCompanyMatcher,
   MCP_ROUTE,
+  parseJsonArray,
+  splitIdList,
   toCompactJobState,
   truncateToolMessage,
 } from "@server/mcp/kit";
@@ -43,23 +45,6 @@ import type { Job, JobAction } from "@shared/types";
 import { z } from "zod";
 
 const BULK_ACTION_MAX_JOBS = 100;
-
-function parseJsonArray(value: string | null): unknown[] | null {
-  if (!value) return null;
-  try {
-    const parsed: unknown = JSON.parse(value);
-    return Array.isArray(parsed) ? parsed : null;
-  } catch {
-    return null;
-  }
-}
-
-function splitProjectIds(value: string | null): string[] {
-  return (value ?? "")
-    .split(",")
-    .map((id) => id.trim())
-    .filter(Boolean);
-}
 
 async function runSingleJobAction(
   action: JobAction,
@@ -134,7 +119,7 @@ const tailorJobTool = defineTool({
         headline: job.tailoredHeadline,
         summary: job.tailoredSummary,
         skills: parseJsonArray(job.tailoredSkills),
-        selectedProjectIds: splitProjectIds(job.selectedProjectIds),
+        selectedProjectIds: splitIdList(job.selectedProjectIds),
       },
     };
   },

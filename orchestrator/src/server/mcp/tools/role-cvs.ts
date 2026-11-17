@@ -7,6 +7,8 @@ import {
   loadCompactJobState,
   paginateArray,
   paginationShape,
+  parseJsonArray,
+  splitIdList,
 } from "@server/mcp/kit";
 import * as roleCvsRepo from "@server/repositories/role-cvs";
 import { requireJob } from "@server/services/jobs/common";
@@ -38,20 +40,7 @@ const roleCvIdInput = z
   .describe("Role CV id from list_role_cvs.");
 
 function parseSkills(raw: string | null): unknown[] {
-  if (!raw?.trim()) return [];
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
-function splitIds(raw: string | null): string[] {
-  return (raw ?? "")
-    .split(",")
-    .map((id) => id.trim())
-    .filter(Boolean);
+  return parseJsonArray(raw) ?? [];
 }
 
 function hasContent(roleCv: RoleCv): boolean {
@@ -94,7 +83,7 @@ function toRoleCvDetail(roleCv: RoleCv, requestOrigin: string | null) {
     headline: roleCv.tailoredHeadline,
     summary: roleCv.tailoredSummary,
     skills: parseSkills(roleCv.tailoredSkills),
-    selectedProjectIds: splitIds(roleCv.selectedProjectIds),
+    selectedProjectIds: splitIdList(roleCv.selectedProjectIds),
     hasContent: hasContent(roleCv),
     isStale: roleCv.isStale,
     generatedAt: roleCv.generatedAt,
@@ -374,7 +363,7 @@ const applyRoleCvToJobTool = defineTool({
         headline: job.tailoredHeadline,
         summary: job.tailoredSummary,
         skills: parseSkills(job.tailoredSkills),
-        selectedProjectIds: splitIds(job.selectedProjectIds),
+        selectedProjectIds: splitIdList(job.selectedProjectIds),
       },
     };
   },

@@ -6,6 +6,7 @@ export {
   formatZodIssues,
   invalidToolInput,
   MAX_TOOL_MESSAGE_CHARS,
+  toSafeErrorPayload,
   toToolErrorResult,
   truncateToolMessage,
 } from "./errors";
@@ -44,6 +45,7 @@ export {
 } from "./prompt";
 export { toolErrorResult, toolResult } from "./result";
 export { assertToolScope, hasScope } from "./scope";
+export { parseJsonArray, splitIdList } from "./stored-lists";
 export { loadTargetCompanyMatcher } from "./target-companies";
 export {
   defineTool,
