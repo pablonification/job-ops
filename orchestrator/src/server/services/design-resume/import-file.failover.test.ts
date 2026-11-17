@@ -38,6 +38,7 @@ vi.mock("@server/services/llm/claude-agent-sdk/client", () => ({
 }));
 
 import { llmCircuitBreaker } from "../llm/failover/breaker";
+import { PRIMARY_CONFIGURATION_FAILURE_MARKER } from "../llm/policies/configuration-error";
 import { importDesignResumeFromFile } from "./import-file";
 
 const FALLBACK_URL = "https://fallback.example/v1";
@@ -132,23 +133,37 @@ describe("importDesignResumeFromFile failover", () => {
     ).toHaveBeenCalledOnce();
   });
 
-  it("throws the fallback's own error when the fallback also fails", async () => {
+  it("throws a sanitised error naming both failures when the fallback also fails", async () => {
     setFallbackEnv();
     callJsonMock.mockRejectedValue(
       new Error("Claude (subscription) is not authenticated."),
     );
     mockFallbackFetch(
       () =>
-        new Response(JSON.stringify({ error: { message: "fallback down" } }), {
-          status: 503,
-          headers: { "Content-Type": "application/json" },
-        }),
+        new Response(
+          JSON.stringify({
+            error: {
+              message: `fallback down at https://proxy.example/v1?api_key=leaky-secret-value ${"x".repeat(2_000)}`,
+            },
+          }),
+          {
+            status: 503,
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
     );
 
-    await expect(importDesignResumeFromFile(PDF_INPUT)).rejects.toMatchObject({
-      status: 502,
-      message: "fallback down",
-    });
+    const error = (await importDesignResumeFromFile(PDF_INPUT).catch(
+      (e: unknown) => e,
+    )) as { status: number; message: string };
+
+    expect(error.status).toBe(502);
+    expect(error.message).toContain(PRIMARY_CONFIGURATION_FAILURE_MARKER);
+    expect(error.message).toContain(
+      "Fallback LLM (openai_compatible) failed: fallback down",
+    );
+    expect(error.message).not.toContain("leaky-secret-value");
+    expect(error.message.length).toBeLessThan(500);
   });
 
   it("keeps today's behaviour with no fallback configured", async () => {

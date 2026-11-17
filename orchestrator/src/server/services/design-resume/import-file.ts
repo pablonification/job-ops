@@ -17,19 +17,15 @@ import { ClaudeAgentSdkClient } from "@server/services/llm/claude-agent-sdk/clie
 import { ClaudeCliClient } from "@server/services/llm/claude-cli/client";
 import { CodexClient } from "@server/services/llm/codex/client";
 import {
-  type LlmFallbackConfig,
-  resolveLlmFallbackConfig,
-} from "@server/services/llm/failover/config";
-import { isSameLlmEndpoint } from "@server/services/llm/failover/endpoint";
+  type ReadyLlmFallback,
+  resolveLlmFallbackEligibility,
+} from "@server/services/llm/failover/eligibility";
 import {
   type FailoverAttemptResult,
   runWithLlmFailover,
 } from "@server/services/llm/failover/runner";
 import { GeminiCliClient } from "@server/services/llm/gemini-cli/client";
-import {
-  createFallbackLlmService,
-  LlmService,
-} from "@server/services/llm/service";
+import { resolveLlmEndpoint } from "@server/services/llm/provider-endpoint";
 import type { JsonSchemaDefinition } from "@server/services/llm/types";
 import { resolveLlmRuntimeSettings } from "@server/services/modelSelection";
 import { normalizeReactiveResumeV5Document } from "@server/services/rxresume/document";
@@ -2052,37 +2048,20 @@ type ImportTarget = {
 function resolveImportFallback(primary: {
   provider: SupportedRuntimeProvider;
   baseUrl: string | null;
-  apiKey: string | null;
 }): {
-  config: Extract<LlmFallbackConfig, { state: "ready" }>;
+  config: ReadyLlmFallback;
   target: ImportTarget;
   primaryBaseUrl: string;
 } | null {
-  const config = resolveLlmFallbackConfig();
-  if (config.state !== "ready") return null;
-  // Normalise both ends the way LlmService does so the breaker key and the
-  // same-endpoint check agree with the rest of the app.
-  const primaryService = new LlmService({
+  // Same endpoint normalisation and eligibility rule as LlmService, so the
+  // breaker key and the same-endpoint check agree with the rest of the app.
+  const endpoint = resolveLlmEndpoint({
     provider: primary.provider,
     baseUrl: primary.baseUrl,
-    apiKey: primary.apiKey,
-    failover: false,
   });
-  const fallbackService = createFallbackLlmService(config.target);
-  if (
-    isSameLlmEndpoint(
-      {
-        provider: primaryService.getProvider(),
-        baseUrl: primaryService.getBaseUrl(),
-      },
-      {
-        provider: fallbackService.getProvider(),
-        baseUrl: fallbackService.getBaseUrl(),
-      },
-    )
-  ) {
-    return null;
-  }
+  const eligibility = resolveLlmFallbackEligibility(endpoint);
+  if (eligibility.state !== "active") return null;
+  const { config } = eligibility;
   const provider = normalizeRuntimeProvider(config.target.provider);
   if (!provider) {
     logger.info("Fallback LLM provider does not support resume import", {
@@ -2092,7 +2071,7 @@ function resolveImportFallback(primary: {
   }
   return {
     config,
-    primaryBaseUrl: primaryService.getBaseUrl(),
+    primaryBaseUrl: endpoint.baseUrl,
     target: {
       provider,
       apiKey: config.target.apiKey ?? "",
@@ -2100,6 +2079,23 @@ function resolveImportFallback(primary: {
       model: config.target.model,
     },
   };
+}
+
+/**
+ * The error to throw when import failed with a fallback configured: the
+ * failover layer's sanitised, truncated message, keeping the original
+ * error's status and details.
+ */
+function toImportFailoverError(error: unknown, message: string): AppError {
+  if (error instanceof AppError) {
+    return new AppError({
+      status: error.status,
+      code: error.code,
+      message,
+      details: error.details,
+    });
+  }
+  return upstreamError(message);
 }
 
 /** Map an import failure into the shared failover vocabulary. */
@@ -2344,7 +2340,6 @@ export async function importDesignResumeFromFile(
     const fallback = resolveImportFallback({
       provider,
       baseUrl: runtime.baseUrl,
-      apiKey: runtime.apiKey,
     });
     let rawText: string;
     if (!fallback) {
@@ -2384,7 +2379,7 @@ export async function importDesignResumeFromFile(
             return extractWithTarget(target, targetDocumentText);
           }),
       });
-      if (!result.success) throw lastError ?? upstreamError(result.error);
+      if (!result.success) throw toImportFailoverError(lastError, result.error);
       rawText = result.data;
     }
     const parseStartedAt = Date.now();
