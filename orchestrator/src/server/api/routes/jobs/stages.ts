@@ -12,10 +12,10 @@ import {
   setJobOutcome,
   transitionJobStage,
 } from "@server/services/jobs/application";
+import { hydrateJobPdfFreshness } from "@server/services/jobs/common";
 import { type Request, type Response, Router } from "express";
 import { z } from "zod";
 import {
-  hydrateJobPdfFreshness,
   transitionStageSchema,
   updateOutcomeSchema,
   updateStageEventSchema,

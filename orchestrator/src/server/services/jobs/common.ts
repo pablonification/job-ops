@@ -42,11 +42,6 @@ export function hydrateJobPdfFreshnessWithContext<T extends Job>(
   return applyJobPdfFreshness(job, context);
 }
 
-export function isJobUrlConflictError(error: unknown): boolean {
-  if (!(error instanceof Error)) return false;
-  return /UNIQUE constraint failed: .*jobs\.job_url/i.test(error.message);
-}
-
 export function queueTailoringAutoPdfRegenerationIfNeeded(
   previousJob: Job,
   nextJob: Job,

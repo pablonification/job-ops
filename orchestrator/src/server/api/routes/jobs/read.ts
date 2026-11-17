@@ -3,6 +3,10 @@ import { fail, ok } from "@infra/http";
 import { logger } from "@infra/logger";
 import * as jobsRepo from "@server/repositories/jobs";
 import { attachAppliedDuplicateMatches } from "@server/services/applied-duplicate-matching";
+import {
+  hydrateJobPdfFreshness,
+  requireJob,
+} from "@server/services/jobs/common";
 import { getPdfPath, pdfExists } from "@server/services/pdf";
 import {
   applyJobsPdfFreshness,
@@ -16,12 +20,10 @@ import {
 import { type Request, type Response, Router } from "express";
 import { z } from "zod";
 import {
-  hydrateJobPdfFreshness,
   JOBS_BENCHMARK_ENABLED,
   jobsRevisionQuerySchema,
   listJobsQuerySchema,
   parseStatusFilter,
-  requireJob,
   toJobListItem,
   toJobsRouteError,
 } from "./shared";

@@ -531,7 +531,11 @@ async function insertJob(input: CreateJobInput): Promise<Job> {
   return job;
 }
 
-function isJobUrlUniqueViolation(error: unknown): boolean {
+/**
+ * True for SQLite's unique-violation error on a job URL, whichever unique
+ * index raised it (column index or the tenant/user expression index).
+ */
+export function isJobUrlUniqueViolation(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
   return /UNIQUE constraint failed: (jobs\.job_url|jobs\.tenant_id, jobs\.job_url|jobs\.tenant_id, jobs\.user_id, jobs\.job_url|index ['"]idx_jobs_tenant_user_job_url_unique['"])/i.test(
     error.message,

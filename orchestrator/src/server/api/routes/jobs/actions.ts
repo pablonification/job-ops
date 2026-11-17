@@ -10,16 +10,16 @@ import {
   mapJobActionFailure,
   runJobActionBatch,
 } from "@server/services/jobs/actions";
+import {
+  hydrateJobPdfFreshness,
+  hydrateJobPdfFreshnessWithContext,
+} from "@server/services/jobs/common";
 import { resolvePdfFingerprintContext } from "@server/services/pdf-fingerprint";
 import { asyncPool } from "@server/utils/async-pool";
 import type { JobActionResult, JobActionStreamEvent } from "@shared/types";
 import { type Request, type Response, Router } from "express";
 import { z } from "zod";
-import {
-  hydrateJobPdfFreshness,
-  hydrateJobPdfFreshnessWithContext,
-  jobActionRequestSchema,
-} from "./shared";
+import { jobActionRequestSchema } from "./shared";
 
 export const jobsActionsRouter = Router();
 

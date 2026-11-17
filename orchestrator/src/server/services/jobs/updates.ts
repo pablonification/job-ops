@@ -11,10 +11,7 @@ import { removeStoredJobPdf } from "@server/services/pdf-storage";
 import { getTracerReadiness } from "@server/services/tracer-links";
 import type { Job, UpdateJobInput } from "@shared/types";
 import { trackApplicationAcceptedIfNeeded } from "./analytics";
-import {
-  isJobUrlConflictError,
-  queueTailoringAutoPdfRegenerationIfNeeded,
-} from "./common";
+import { queueTailoringAutoPdfRegenerationIfNeeded } from "./common";
 
 /**
  * Applies a validated job update. Turning tracer links on requires a passing
@@ -61,7 +58,7 @@ export async function updateJobWithSideEffects(
   try {
     job = await jobsRepo.updateJob(jobId, input);
   } catch (error) {
-    if (isJobUrlConflictError(error)) {
+    if (jobsRepo.isJobUrlUniqueViolation(error)) {
       throw conflict("Another job already uses that job URL");
     }
     throw error;

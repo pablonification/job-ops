@@ -1117,6 +1117,7 @@ export async function processJob(
 ): Promise<{
   success: boolean;
   error?: string;
+  errorCode?: AppErrorCode;
 }> {
   try {
     // Step 1: Summarize & Select Projects

@@ -185,9 +185,17 @@ export async function executeJobActionForJob(
           analyticsOrigin: options?.analyticsOrigin ?? "move_to_ready",
         });
         if (!processed.success) {
+          // A failed tailoring or render step (model not configured, renderer
+          // down, PDF already rendering) is reported with its own code so the
+          // caller sees the real reason, as the manual import does.
+          const code: AppErrorCode =
+            processed.errorCode ??
+            (processed.error === "Job not found"
+              ? "NOT_FOUND"
+              : "UPSTREAM_ERROR");
           throw new AppError({
-            status: 500,
-            code: "INTERNAL_ERROR",
+            status: STATUS_BY_APP_ERROR_CODE[code],
+            code,
             message: processed.error || "Failed to process job",
           });
         }

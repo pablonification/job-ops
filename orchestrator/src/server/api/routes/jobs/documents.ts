@@ -17,6 +17,10 @@ import {
 } from "@server/services/job-document-storage";
 import { uploadJobPdf } from "@server/services/job-pdf-upload";
 import {
+  hydrateJobPdfFreshness,
+  requireJob,
+} from "@server/services/jobs/common";
+import {
   generateJobPdf,
   TAILORING_GENERATE_FIELDS,
   type TailoringGenerateField,
@@ -25,8 +29,6 @@ import {
 import { getSafeInlineJobDocumentMediaType } from "@shared/job-document-classification.js";
 import { type Request, type Response, Router } from "express";
 import {
-  hydrateJobPdfFreshness,
-  requireJob,
   toJobsRouteError,
   uploadJobDocumentSchema,
   uploadJobPdfSchema,

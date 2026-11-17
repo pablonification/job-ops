@@ -6,8 +6,9 @@ import {
   checkJobSponsor,
   markJobApplied,
 } from "@server/services/jobs/application";
+import { hydrateJobPdfFreshness } from "@server/services/jobs/common";
 import { type Request, type Response, Router } from "express";
-import { hydrateJobPdfFreshness, toJobsRouteError } from "./shared";
+import { toJobsRouteError } from "./shared";
 
 export const jobsApplicationRouter = Router();
 

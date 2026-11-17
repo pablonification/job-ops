@@ -2,17 +2,14 @@ import { fail, ok } from "@infra/http";
 import { logger } from "@infra/logger";
 import { isDemoMode, sendDemoBlocked } from "@server/config/demo";
 import { resolveRequestOrigin } from "@server/infra/request-origin";
+import { isJobUrlUniqueViolation } from "@server/repositories/jobs";
+import { hydrateJobPdfFreshness } from "@server/services/jobs/common";
 import {
   deleteJobWithFiles,
   updateJobWithSideEffects,
 } from "@server/services/jobs/updates";
 import { type Request, type Response, Router } from "express";
-import {
-  hydrateJobPdfFreshness,
-  isJobUrlConflictError,
-  toJobsRouteError,
-  updateJobSchema,
-} from "./shared";
+import { toJobsRouteError, updateJobSchema } from "./shared";
 
 export const jobsMutationsRouter = Router();
 
@@ -59,7 +56,7 @@ jobsMutationsRouter.patch("/:id", async (req: Request, res: Response) => {
   } catch (error) {
     const err = toJobsRouteError(error, {
       invalidRequestFallbackMessage: "Invalid job update request",
-      conflictWhen: isJobUrlConflictError,
+      conflictWhen: isJobUrlUniqueViolation,
       conflictMessage: "Another job already uses that job URL",
     });
 
