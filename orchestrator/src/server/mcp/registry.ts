@@ -37,6 +37,7 @@ import { jobActionsToolGroup } from "./tools/job-actions";
 import { jobNotesToolGroup } from "./tools/job-notes";
 import { jobsReadToolGroup } from "./tools/jobs-read";
 import { pipelineToolGroup } from "./tools/pipeline";
+import { roleCvsToolGroup } from "./tools/role-cvs";
 import { settingsToolGroup } from "./tools/settings";
 import { visaSponsorsToolGroup } from "./tools/visa-sponsors";
 
@@ -51,6 +52,7 @@ export const MCP_TOOL_GROUPS: readonly McpToolGroup[] = [
   jobActionsToolGroup,
   jobNotesToolGroup,
   applicationsToolGroup,
+  roleCvsToolGroup,
 ];
 
 const TOOL_NAME_PATTERN = /^[a-z][a-z0-9_]{0,63}$/;
