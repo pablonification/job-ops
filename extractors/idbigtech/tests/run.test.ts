@@ -1,6 +1,7 @@
 import type { JobBoardProgressEvent } from "@shared/extractors/indonesia/index.js";
 import { describe, expect, it } from "vitest";
 import { runIdBigTech } from "../src/run";
+import blibliSearch from "./fixtures/blibli_search.json";
 import gotoLever from "./fixtures/goto_lever.json";
 import xenditBoard from "./fixtures/xendit_greenhouse.json";
 import { jsonResponse, routedFetch, testOptions } from "./helpers";
@@ -9,6 +10,7 @@ const GOTO = "api.lever.co/v0/postings/GoToGroup";
 const XENDIT = "boards-api.greenhouse.io/v1/boards/xendit/jobs";
 const GRAB = "api.smartrecruiters.com/v1/companies/grab/postings";
 const TIKTOK = "api.lifeattiktok.com/api/v1/public/supplier/search/job/posts";
+const BLIBLI = "careers.blibli.com/ext/api/job/search";
 
 describe("Indonesia Big Tech run", () => {
   it("scans only the enabled companies", async () => {
@@ -102,9 +104,10 @@ describe("Indonesia Big Tech run", () => {
       searchTerms: ["customer success manager", "product manager"],
     });
 
+    // One request plus one retry for the 500, then never again this run.
     expect(
       requests.filter((request) => request.url.host === "api.lever.co"),
-    ).toHaveLength(1);
+    ).toHaveLength(2);
     expect(result.success).toBe(true);
     expect(result.sourceErrors).toEqual([
       "GoTo request failed with status 500; skipped for the rest of this run (term: customer success manager)",
@@ -128,11 +131,12 @@ describe("Indonesia Big Tech run", () => {
       },
     });
 
+    // One request plus one retry for the 503, then never again this run.
     expect(
       requests.filter((request) =>
         request.url.host.includes("smartrecruiters"),
       ),
-    ).toHaveLength(1);
+    ).toHaveLength(2);
     expect(result.sourceErrors).toEqual([
       "Grab request failed with status 503; skipped for the rest of this run (term: data scientist)",
     ]);
@@ -145,6 +149,68 @@ describe("Indonesia Big Tech run", () => {
       "data scientist | Grab: failed",
       "associate | Grab: skipped after an earlier failure",
       "intern | Grab: skipped after an earlier failure",
+    ]);
+  });
+
+  it("retries a transient failure once and carries on", async () => {
+    let calls = 0;
+    const { fetchImpl, requests } = routedFetch({
+      [GOTO]: () => {
+        calls += 1;
+        return calls === 1 ? jsonResponse({}, 429) : jsonResponse(gotoLever);
+      },
+    });
+    const result = await runIdBigTech({
+      ...testOptions(fetchImpl),
+      companies: ["goto"],
+      searchTerms: ["data scientist", "intern"],
+    });
+
+    expect(requests).toHaveLength(2);
+    expect(result).toEqual({
+      success: true,
+      jobs: [expect.objectContaining({ title: "Data Scientist Intern" })],
+    });
+  });
+
+  it("marks a company down at once on a permanent failure", async () => {
+    const { fetchImpl, requests } = routedFetch({
+      [GRAB]: () => jsonResponse({}, 404),
+      [GOTO]: () => jsonResponse(gotoLever),
+    });
+    await runIdBigTech({
+      ...testOptions(fetchImpl),
+      companies: ["grab", "goto"],
+      searchTerms: ["data scientist", "intern"],
+    });
+    expect(
+      requests.filter((request) =>
+        request.url.host.includes("smartrecruiters"),
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("keeps a board's earlier pages when a later page fails", async () => {
+    const { fetchImpl, requests } = routedFetch({
+      [BLIBLI]: (request) =>
+        (request.body as { paginationToken?: string }).paginationToken
+          ? jsonResponse({}, 502)
+          : jsonResponse(blibliSearch),
+    });
+    const result = await runIdBigTech({
+      ...testOptions(fetchImpl),
+      companies: ["blibli"],
+      searchTerms: ["engineer", "it support"],
+    });
+
+    // Page 1, then page 2 and its retry; nothing more for the second term.
+    expect(requests).toHaveLength(3);
+    expect(result.success).toBe(true);
+    expect(result.jobs.map((job) => job.title)).toContain(
+      "Junior IT Support Staff",
+    );
+    expect(result.sourceErrors).toEqual([
+      "Blibli request failed with status 502; kept the 5 jobs from the first 1 page(s) (term: engineer)",
     ]);
   });
 

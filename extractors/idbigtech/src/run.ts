@@ -3,6 +3,7 @@ import {
   ID_BIG_TECH_COMPANY_IDS,
   type IdBigTechCompanyId,
   isRelevantJobTitle,
+  isTransientRequestError,
   type JobBoardRunOptions,
   type PoliteJsonClient,
   runJobBoard,
@@ -15,6 +16,7 @@ import { COMPANY_FETCHERS } from "./companies";
 import {
   type CompanyClient,
   type CompanyFetcher,
+  type CompanyListPage,
   type CompanyPosting,
   type CompanyRequestContext,
   ID_BIG_TECH_LABEL,
@@ -29,12 +31,25 @@ export interface RunIdBigTechOptions extends JobBoardRunOptions {
   getExistingJobUrls?: () => Promise<string[]>;
 }
 
+/** Runs a request, retrying it once (after the client's pause) if it failed transiently. */
+async function withOneRetry<T>(request: () => Promise<T>): Promise<T> {
+  try {
+    return await request();
+  } catch (error) {
+    if (!isTransientRequestError(error)) throw error;
+    return request();
+  }
+}
+
+/** The run's client with the company's name in errors and one retry per request. */
 function companyClient(client: PoliteJsonClient, label: string): CompanyClient {
   return {
-    getJson: (url, options) => client.getJson(url, { label, ...options }),
+    getJson: (url, options) =>
+      withOneRetry(() => client.getJson(url, { label, ...options })),
     postJson: (url, body, options) =>
-      client.postJson(url, body, { label, ...options }),
-    getText: (url, options) => client.getText(url, { label, ...options }),
+      withOneRetry(() => client.postJson(url, body, { label, ...options })),
+    getText: (url, options) =>
+      withOneRetry(() => client.getText(url, { label, ...options })),
   };
 }
 
@@ -75,8 +90,10 @@ class TermCandidates {
  * the term and that are in Indonesia and the requested cities, then fetches
  * details for postings that are not already in job-ops.
  *
- * A company whose listing fails is reported once as a source error and
- * skipped for the remaining terms; the others carry on. The source fails only
+ * Every request that fails transiently (timeout, network error, 429, 5xx)
+ * is retried once. A company whose listing still fails is reported once as
+ * a source error and skipped for the remaining terms; the others carry on.
+ * A board whose later page fails keeps the pages already read. The source fails only
  * when no enabled company could be listed.
  */
 export async function runIdBigTech(
@@ -119,13 +136,27 @@ export async function runIdBigTech(
     let cursor: string | undefined;
     for (let number = 1; number <= fetcher.maxPages; number += 1) {
       if (term.shouldStop()) break;
-      const page = await fetcher.fetchPage(context, {
-        searchTerm: "",
-        number,
-        offset,
-        limit: fetcher.pageSize,
-        cursor,
-      });
+      let page: CompanyListPage;
+      try {
+        page = await fetcher.fetchPage(context, {
+          searchTerm: "",
+          number,
+          offset,
+          limit: fetcher.pageSize,
+          cursor,
+        });
+      } catch (error) {
+        // Without a first page the company is down; a later page failing
+        // keeps what was read. The board is listed once, so this is reported
+        // once and not retried for every term.
+        if (number === 1 || error instanceof TimeBudgetExceededError) {
+          throw error;
+        }
+        term.reportError(
+          `${errorMessage(fetcher.label, error)}; kept the ${postings.length} jobs from the first ${number - 1} page(s)`,
+        );
+        break;
+      }
       cursor = page.cursor;
       for (const item of page.items) {
         const posting = fetcher.toPosting(item, context);

@@ -14,6 +14,33 @@ export class TimeBudgetExceededError extends Error {
   }
 }
 
+/**
+ * A request that failed before a usable response arrived. The message stays
+ * a fixed, sanitised string; `kind` and `status` say what happened.
+ */
+export class PoliteRequestError extends Error {
+  constructor(
+    message: string,
+    readonly kind: "timeout" | "network" | "status",
+    readonly status?: number,
+  ) {
+    super(message);
+    this.name = "PoliteRequestError";
+  }
+}
+
+/**
+ * True for failures worth one retry: a timeout, a network error, HTTP 429 or
+ * a 5xx. Other statuses and unreadable or unexpected responses are treated as
+ * permanent.
+ */
+export function isTransientRequestError(error: unknown): boolean {
+  if (!(error instanceof PoliteRequestError)) return false;
+  if (error.kind !== "status") return true;
+  const status = error.status ?? 0;
+  return status === 429 || status >= 500;
+}
+
 export interface PoliteJsonClientOptions {
   /** Human-readable source name used in sanitised error messages. */
   label: string;
@@ -104,13 +131,18 @@ export function createPoliteJsonClient(
       const timedOut =
         error instanceof Error &&
         (error.name === "TimeoutError" || error.name === "AbortError");
-      throw new Error(
+      throw new PoliteRequestError(
         `${label} request ${timedOut ? "timed out" : "failed (network error)"}`,
+        timedOut ? "timeout" : "network",
       );
     }
 
     if (!response.ok) {
-      throw new Error(`${label} request failed with status ${response.status}`);
+      throw new PoliteRequestError(
+        `${label} request failed with status ${response.status}`,
+        "status",
+        response.status,
+      );
     }
     return response;
   }

@@ -14,6 +14,7 @@ import {
   formatRange,
   ID_BIG_TECH_COMPANY_IDS,
   indonesianSearchCity,
+  isTransientRequestError,
   jobMatchesIndonesianCities,
   matchesIndonesianPlace,
   namesOf,
@@ -359,6 +360,28 @@ describe("polite JSON client", () => {
     await expect(offline.getJson("https://example.com")).rejects.toThrow(
       "Board request failed (network error)",
     );
+
+    const transient = async (status: number) =>
+      createPoliteJsonClient({
+        label: "Board",
+        delayMs: 0,
+        fetchImpl: vi.fn().mockResolvedValue({ ok: false, status } as Response),
+      })
+        .getJson("https://example.com")
+        .catch((error: unknown) => isTransientRequestError(error));
+    expect(await transient(429)).toBe(true);
+    expect(await transient(503)).toBe(true);
+    expect(await transient(404)).toBe(false);
+    expect(
+      await offline
+        .getJson("https://example.com")
+        .catch((error: unknown) => isTransientRequestError(error)),
+    ).toBe(true);
+    expect(
+      isTransientRequestError(
+        new Error("Board returned an invalid JSON response"),
+      ),
+    ).toBe(false);
   });
 });
 
