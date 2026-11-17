@@ -50,20 +50,77 @@ function resolveEffectiveSecretValue(
   return normalizeEnvInput(override ?? getOriginalEnvValue(envKey));
 }
 
-function hasSecretContent(value: unknown): boolean {
+export function hasSettingContent(value: unknown): boolean {
   if (typeof value === "string") return value.trim().length > 0;
+  if (typeof value === "number" || typeof value === "boolean") return true;
   if (value && typeof value === "object") {
-    return Object.values(value).some(hasSecretContent);
+    return Object.values(value).some(hasSettingContent);
   }
   return false;
 }
 
-export type SecretSettingStatus = {
+export type SettingPresence = {
   /** Whether a value is configured (stored or from the environment). */
   set: boolean;
-  /** For object-valued secrets: which parts are set. */
+  /** For object-valued settings: which parts are set. */
   parts?: Record<string, boolean>;
 };
+
+function toPresence(value: unknown): SettingPresence {
+  const presence: SettingPresence = { set: hasSettingContent(value) };
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    presence.parts = Object.fromEntries(
+      Object.entries(value).map(([part, partValue]) => [
+        part,
+        hasSettingContent(partValue),
+      ]),
+    );
+  }
+  return presence;
+}
+
+/**
+ * Set / not-set status of the given settings, never their values. Uses each
+ * registry entry's own storage rules: the stored override, else the
+ * environment variable for env-backed settings (and the provider-specific
+ * fallbacks for the LLM key). Unknown keys are left out.
+ */
+export async function getSettingsPresence(
+  keys: readonly string[],
+  overrides?: SettingsOverrides,
+  options?: { allowLlmEnvironmentCredentials?: boolean },
+): Promise<Record<string, SettingPresence>> {
+  const activeOverrides = overrides || (await settingsRepo.getAllSettings());
+  const statuses: Record<string, SettingPresence> = {};
+
+  for (const key of keys) {
+    if (!Object.hasOwn(settingsRegistry, key)) continue;
+    const def = settingsRegistry[key as keyof typeof settingsRegistry];
+    const override = activeOverrides[key as SettingKey];
+    if ("envKey" in def && def.envKey) {
+      statuses[key] = {
+        set: Boolean(
+          def.kind === "secret"
+            ? resolveEffectiveSecretValue(
+                key,
+                def.envKey,
+                activeOverrides,
+                options,
+              )
+            : normalizeEnvInput(override ?? getOriginalEnvValue(def.envKey)),
+        ),
+      };
+      continue;
+    }
+    statuses[key] = toPresence(
+      "parse" in def && typeof def.parse === "function"
+        ? (def.parse as (raw: string | undefined) => unknown)(override)
+        : (override ?? null),
+    );
+  }
+
+  return statuses;
+}
 
 /**
  * Set / not-set status for every secret-kind setting in the registry, without
@@ -72,43 +129,11 @@ export type SecretSettingStatus = {
 export async function getSecretSettingsStatus(
   overrides?: SettingsOverrides,
   options?: { allowLlmEnvironmentCredentials?: boolean },
-): Promise<Record<string, SecretSettingStatus>> {
-  const activeOverrides = overrides || (await settingsRepo.getAllSettings());
-  const statuses: Record<string, SecretSettingStatus> = {};
-
-  for (const [key, def] of Object.entries(settingsRegistry)) {
-    if (def.kind !== "secret") continue;
-    if ("envKey" in def && def.envKey) {
-      statuses[key] = {
-        set: Boolean(
-          resolveEffectiveSecretValue(
-            key,
-            def.envKey,
-            activeOverrides,
-            options,
-          ),
-        ),
-      };
-      continue;
-    }
-
-    const parsed: unknown =
-      "parse" in def && typeof def.parse === "function"
-        ? def.parse(activeOverrides[key as SettingKey])
-        : (activeOverrides[key as SettingKey] ?? null);
-    const status: SecretSettingStatus = { set: hasSecretContent(parsed) };
-    if (parsed && typeof parsed === "object") {
-      status.parts = Object.fromEntries(
-        Object.entries(parsed).map(([part, value]) => [
-          part,
-          hasSecretContent(value),
-        ]),
-      );
-    }
-    statuses[key] = status;
-  }
-
-  return statuses;
+): Promise<Record<string, SettingPresence>> {
+  const secretKeys = Object.entries(settingsRegistry)
+    .filter(([, def]) => def.kind === "secret")
+    .map(([key]) => key);
+  return getSettingsPresence(secretKeys, overrides, options);
 }
 
 export async function getEnvSettingsData(

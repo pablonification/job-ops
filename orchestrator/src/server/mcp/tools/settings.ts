@@ -1,12 +1,12 @@
-import { badRequest } from "@infra/errors";
+import { AppError, badRequest } from "@infra/errors";
 import { defineTool, defineToolGroup } from "@server/mcp/kit";
-import { updateSettingsForCaller } from "@server/services/settings-edit";
 import {
-  getRedactedSettings,
-  isSecretDerivedSettingField,
-  redactSettings,
-  SECRET_SETTING_KEYS,
-} from "@server/services/settings-redaction";
+  type AgentSettingsView,
+  getAgentSettingPolicy,
+  getAgentSettingsView,
+  toAgentSettingsView,
+} from "@server/services/settings-agent-access";
+import { updateSettingsForCaller } from "@server/services/settings-edit";
 import {
   getWatchlistSources,
   replaceWatchlistSources,
@@ -16,8 +16,6 @@ import { settingsRegistry } from "@shared/settings-registry";
 import { updateSettingsSchema } from "@shared/settings-schema";
 import { z } from "zod";
 
-const SETTING_KEYS = Object.keys(settingsRegistry);
-
 function pick<T>(source: Record<string, T>, keys: readonly string[]) {
   return Object.fromEntries(
     keys
@@ -26,11 +24,20 @@ function pick<T>(source: Record<string, T>, keys: readonly string[]) {
   );
 }
 
+function pickView(view: AgentSettingsView, keys: readonly string[]) {
+  return {
+    settings: pick(view.settings, keys),
+    reduced: view.reduced.filter((key) => keys.includes(key)),
+    hidden: pick(view.hidden, keys),
+    webOnly: view.webOnly.filter((key) => keys.includes(key)),
+  };
+}
+
 const getSettingsTool = defineTool({
   name: "get_settings",
   title: "Get settings",
   description:
-    "The user's JobOps settings: search terms and locations, per-source limits, scoring and tailoring options, LLM provider and models, and more. Most entries are { value, default, override }. Secret values (API keys, passwords, tokens) are never returned; the secrets field says only whether each one is set.",
+    "The user's JobOps settings: search terms and locations, per-source limits, scoring and tailoring options, prompt templates, models and more; most entries are { value, default, override }. Credentials are never returned: secrets and logins appear in hidden as set / not set, URLs lose user info and query strings, webhook URLs show only their host. webOnly lists settings only the web app can change.",
   scope: "read",
   maxResultSizeChars: 200_000,
   input: z
@@ -40,14 +47,13 @@ const getSettingsTool = defineTool({
         .max(200)
         .optional()
         .describe(
-          "Only these setting keys, e.g. ['searchTerms', 'llmProvider']. Default: all.",
+          "Only these setting keys, e.g. ['searchTerms', 'scoringInstructions']. Default: all.",
         ),
     })
     .strict(),
   handler: async ({ keys }) => {
-    const { settings, secrets } = await getRedactedSettings();
-    if (!keys) return { settings, secrets };
-    return { settings: pick(settings, keys), secrets: pick(secrets, keys) };
+    const view = await getAgentSettingsView();
+    return keys ? pickView(view, keys) : view;
   },
 });
 
@@ -55,7 +61,7 @@ const updateSettingsTool = defineTool({
   name: "update_settings",
   title: "Update settings",
   description:
-    "Change settings, e.g. { updates: { searchTerms: ['backend engineer'], searchCities: 'Jakarta' } }. Same validation and permissions as the Settings page: users who are not system admins may change only search settings. Set a key to null to reset it to the default. Secret values can be written but are never returned.",
+    "Change settings, e.g. { updates: { searchTerms: ['backend engineer'], searchCities: 'Jakarta' } }. Agents may change search, scoring, tailoring, prompt, model and display settings; credentials, the LLM provider and endpoints, webhooks, Reactive Resume connection and backups (get_settings webOnly) are refused with FORBIDDEN and must be changed in the web app. Users who are not system admins may change only search settings. null resets a setting to its default.",
   scope: "write",
   idempotent: true,
   input: z
@@ -71,31 +77,36 @@ const updateSettingsTool = defineTool({
     })
     .strict(),
   handler: async ({ updates }) => {
-    const unknownKeys = Object.keys(updates).filter(
-      (key) => !SETTING_KEYS.includes(key),
+    const requestedKeys = Object.keys(updates);
+    const unknownKeys = requestedKeys.filter(
+      (key) => !Object.hasOwn(settingsRegistry, key),
     );
     if (unknownKeys.length > 0) {
       throw badRequest(`Unknown setting keys: ${unknownKeys.join(", ")}`, {
         unknownKeys,
       });
     }
+    const webOnlyKeys = requestedKeys.filter(
+      (key) => !getAgentSettingPolicy(key).agentEditable,
+    );
+    if (webOnlyKeys.length > 0) {
+      throw new AppError({
+        status: 403,
+        code: "FORBIDDEN",
+        message: `${webOnlyKeys.join(", ")} can only be changed in the JobOps web app (Settings page), not by an agent. Agents cannot change credentials, the LLM provider or endpoints, webhooks, the Reactive Resume connection or backups.`,
+        details: { settings: webOnlyKeys },
+      });
+    }
+
     const input = updateSettingsSchema.parse(updates);
     const { settings, updatedSettingKeys } = await updateSettingsForCaller(
       input,
       { route: "MCP update_settings" },
     );
-    const redacted = await redactSettings(settings);
-    const requestedKeys = Object.keys(updates);
+    const view = await toAgentSettingsView(settings);
     return {
       updatedSettingKeys,
-      settings: pick(
-        redacted.settings,
-        requestedKeys.filter((key) => !isSecretDerivedSettingField(key)),
-      ),
-      secrets: pick(
-        redacted.secrets,
-        requestedKeys.filter((key) => SECRET_SETTING_KEYS.includes(key)),
-      ),
+      settings: pick(view.settings, requestedKeys),
     };
   },
 });
