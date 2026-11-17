@@ -222,6 +222,16 @@ export const createAppSettings = (
     default: "",
     override: null,
   },
+  targetCompanies: {
+    value: [],
+    default: [],
+    override: null,
+  },
+  dealbreakers: {
+    value: "",
+    default: "",
+    override: null,
+  },
   ghostwriterSystemPromptTemplate: {
     value: getDefaultPromptTemplate("ghostwriterSystemPromptTemplate"),
     default: getDefaultPromptTemplate("ghostwriterSystemPromptTemplate"),
