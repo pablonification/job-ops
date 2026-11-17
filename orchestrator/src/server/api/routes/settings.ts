@@ -93,6 +93,8 @@ const NON_ADMIN_SEARCH_SETTING_KEYS = new Set<keyof UpdateSettingsInput>([
   "jobspyCountryIndeed",
   "searchCities",
   "jobspyLocation",
+  "targetCompanies",
+  "dealbreakers",
 ]);
 
 function requireSystemAdmin(res: Response): boolean {
