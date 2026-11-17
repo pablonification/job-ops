@@ -5,7 +5,6 @@ import { logger } from "@infra/logger";
 import { trackServerProductEvent } from "@infra/product-analytics";
 import { isDemoMode } from "@server/config/demo";
 import { resolveRequestOrigin } from "@server/infra/request-origin";
-import { generateFinalPdf, summarizeJob } from "@server/pipeline/index";
 import * as jobDocumentsRepo from "@server/repositories/job-documents";
 import * as jobsRepo from "@server/repositories/jobs";
 import {
@@ -17,12 +16,16 @@ import {
   storeJobDocument,
 } from "@server/services/job-document-storage";
 import { uploadJobPdf } from "@server/services/job-pdf-upload";
+import {
+  generateJobPdf,
+  TAILORING_GENERATE_FIELDS,
+  type TailoringGenerateField,
+  tailorJob,
+} from "@server/services/jobs/tailoring";
 import { getSafeInlineJobDocumentMediaType } from "@shared/job-document-classification.js";
 import { type Request, type Response, Router } from "express";
 import {
-  appErrorFromPipelineFailure,
   hydrateJobPdfFreshness,
-  queueTailoringAutoPdfRegenerationIfNeeded,
   requireJob,
   toJobsRouteError,
   uploadJobDocumentSchema,
@@ -30,14 +33,6 @@ import {
 } from "./shared";
 
 export const jobsDocumentsRouter = Router();
-
-const tailoringGenerateFields = [
-  "summary",
-  "headline",
-  "skills",
-  "projects",
-] as const;
-type TailoringGenerateField = (typeof tailoringGenerateFields)[number];
 
 function encodeContentDispositionFileName(value: string): string {
   return encodeURIComponent(value).replace(
@@ -98,13 +93,13 @@ const parseTailoringGenerateFields = (
     .filter(Boolean);
   const invalidFields = fields.filter(
     (field): field is string =>
-      !tailoringGenerateFields.includes(field as TailoringGenerateField),
+      !TAILORING_GENERATE_FIELDS.includes(field as TailoringGenerateField),
   );
   if (invalidFields.length > 0) {
     throw badRequest("Invalid tailoring generation field", {
       fields,
       invalidFields,
-      allowedFields: [...tailoringGenerateFields],
+      allowedFields: [...TAILORING_GENERATE_FIELDS],
     });
   }
   return [...new Set(fields)] as TailoringGenerateField[];
@@ -440,24 +435,12 @@ jobsDocumentsRouter.post(
         });
       }
 
-      const previousJob = await requireJob(req.params.id);
-      const result = await summarizeJob(req.params.id, { force, fields });
-
-      if (!result.success) {
-        return fail(
-          res,
-          badRequest(result.error ?? "Failed to summarize the job"),
-        );
-      }
-
-      const job = await requireJob(req.params.id);
+      const job = await tailorJob(req.params.id, {
+        force,
+        fields,
+        route: "POST /api/jobs/:id/summarize",
+      });
       ok(res, await hydrateJobPdfFreshness(job));
-
-      queueTailoringAutoPdfRegenerationIfNeeded(
-        previousJob,
-        job,
-        "POST /api/jobs/:id/summarize",
-      );
     } catch (error) {
       fail(res, toJobsRouteError(error));
     }
@@ -482,22 +465,9 @@ jobsDocumentsRouter.post(
         });
       }
 
-      const result = await generateFinalPdf(req.params.id, {
+      const job = await generateJobPdf(req.params.id, {
         requestOrigin: resolveRequestOrigin(req),
-        analyticsOrigin: "generate_pdf",
       });
-
-      if (!result.success) {
-        return fail(
-          res,
-          appErrorFromPipelineFailure(
-            result,
-            "Failed to generate a resume PDF",
-          ),
-        );
-      }
-
-      const job = await requireJob(req.params.id);
       ok(res, await hydrateJobPdfFreshness(job));
     } catch (error) {
       fail(res, toJobsRouteError(error));
