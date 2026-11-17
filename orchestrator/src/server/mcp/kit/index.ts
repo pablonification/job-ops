@@ -4,6 +4,13 @@
  */
 export { invalidToolInput, toToolErrorResult } from "./errors";
 export {
+  assertJobIdle,
+  type CompactJobState,
+  jobIdInput,
+  loadCompactJobState,
+  toCompactJobState,
+} from "./job-state";
+export {
   type CompactJobSummary,
   type CompactJobSummarySource,
   JOB_STATUS_VALUES,
