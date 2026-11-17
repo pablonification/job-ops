@@ -30,7 +30,6 @@ const READ_TOOLS = [
   "get_pipeline_progress",
   "list_pipeline_runs",
   "get_pipeline_run",
-  "plan_search",
   "list_sources",
   "list_search_presets",
   "get_settings",
@@ -44,6 +43,7 @@ const WRITE_TOOLS = [
   "start_pipeline_run",
   "cancel_pipeline_run",
   "resume_pipeline_scoring",
+  "check_source_health",
   "save_search_preset",
   "delete_search_preset",
   "update_settings",
@@ -53,6 +53,9 @@ const WRITE_TOOLS = [
 ];
 
 const DESTRUCTIVE_TOOLS = ["delete_search_preset", "set_watchlist_sources"];
+
+/** Read scope, but not annotated read-only because they spend model usage. */
+const READ_SCOPE_COSTLY_TOOLS = ["plan_search"];
 
 /** Tools that must never exist: admin, backups, billing, login flows. */
 const FORBIDDEN_TOOL_PATTERN =
@@ -123,6 +126,13 @@ describe.sequential("MCP pipeline, settings and inbox tools", () => {
     for (const name of READ_TOOLS) {
       expect(byName.get(name)?.annotations.readOnlyHint, name).toBe(true);
     }
+    for (const name of READ_SCOPE_COSTLY_TOOLS) {
+      expect(byName.get(name)?.annotations).toMatchObject({
+        readOnlyHint: false,
+        destructiveHint: false,
+        openWorldHint: true,
+      });
+    }
     for (const name of WRITE_TOOLS) {
       const annotations = byName.get(name)?.annotations;
       expect(annotations?.readOnlyHint, name).toBe(false);
@@ -139,7 +149,11 @@ describe.sequential("MCP pipeline, settings and inbox tools", () => {
     const { secret } = await createAccessToken(baseUrl, adminSession, "read");
     const tools = await listTools(baseUrl, secret);
     const writeTools = tools
-      .filter((tool) => tool.annotations.readOnlyHint === false)
+      .filter(
+        (tool) =>
+          tool.annotations.readOnlyHint === false &&
+          !READ_SCOPE_COSTLY_TOOLS.includes(tool.name),
+      )
       .map((tool) => tool.name);
     expect(writeTools).toEqual(expect.arrayContaining(WRITE_TOOLS));
 
@@ -152,6 +166,12 @@ describe.sequential("MCP pipeline, settings and inbox tools", () => {
     }
     const { runPipeline } = await import("@server/pipeline/index");
     expect(runPipeline).not.toHaveBeenCalled();
+
+    // plan_search needs no write scope: it fails on input, not on scope.
+    expectToolError(
+      await callTool(baseUrl, secret, "plan_search", {}),
+      "INVALID_REQUEST",
+    );
   });
 
   it("starts a run, refuses a second one and invalid sources, then cancels", async () => {
@@ -471,7 +491,7 @@ describe.sequential("MCP pipeline, settings and inbox tools", () => {
     );
   });
 
-  it("lists sources with countries, credential needs and health", async () => {
+  it("lists sources with countries and credential needs, and checks health", async () => {
     const result = expectToolOk(
       await callTool(baseUrl, writeToken, "list_sources"),
     );
@@ -491,18 +511,47 @@ describe.sequential("MCP pipeline, settings and inbox tools", () => {
         configured: false,
       },
     });
+    expect(byId.get("linkedin")).toMatchObject({
+      credentials: { required: false, settings: [], configured: true },
+    });
     expect(byId.get("linkedin")).not.toHaveProperty("health");
 
-    const probed = expectToolOk(
+    // Every source that needs credentials names the settings it needs, so a
+    // new credentialed source cannot report configured by accident.
+    const { EXTRACTOR_SOURCE_METADATA, PIPELINE_EXTRACTOR_SOURCE_IDS } =
+      await import("@shared/extractors");
+    for (const source of PIPELINE_EXTRACTOR_SOURCE_IDS) {
+      if (!EXTRACTOR_SOURCE_METADATA[source].requiresCredentials) continue;
+      const entry = byId.get(source) as {
+        credentials: { settings: string[] };
+      };
+      expect(entry.credentials.settings.length, source).toBeGreaterThan(0);
+    }
+
+    // Credentials count from stored settings (and the environment).
+    const settingsRepo = await import("@server/repositories/settings");
+    await runAsUser("admin", async () => {
+      await settingsRepo.setSetting("adzunaAppId", "app-id");
+      await settingsRepo.setSetting("adzunaAppKey", "app-key");
+    });
+    const configured = expectToolOk(
       await callTool(baseUrl, writeToken, "list_sources", {
+        sources: ["adzuna"],
+      }),
+    );
+    expect(configured.sources[0].credentials.configured).toBe(true);
+    expect(JSON.stringify(configured)).not.toContain("app-key");
+
+    const probed = expectToolOk(
+      await callTool(baseUrl, writeToken, "check_source_health", {
         sources: ["linkedin"],
-        probeHealth: true,
       }),
     );
     expect(probed.sources).toHaveLength(1);
-    expect(probed.sources[0].health).toMatchObject({
-      healthy: expect.any(Boolean),
-      status: expect.any(String),
+    expect(probed.sources[0]).toMatchObject({
+      id: "linkedin",
+      availableAtRuntime: true,
+      health: { healthy: expect.any(Boolean), status: expect.any(String) },
     });
 
     expectToolError(
@@ -511,93 +560,261 @@ describe.sequential("MCP pipeline, settings and inbox tools", () => {
       }),
       "INVALID_REQUEST",
     );
+    expectToolError(
+      await callTool(baseUrl, writeToken, "list_sources", {
+        probeHealth: true,
+      }),
+      "INVALID_REQUEST",
+    );
   });
 
-  it("never returns secret values from settings tools", async () => {
+  it("classifies every registry setting for agents and hides new ones", async () => {
+    const { settingsRegistry } = await import("@shared/settings-registry");
+    const access = await import("@server/services/settings-agent-access");
+    const unclassified = Object.keys(settingsRegistry).filter(
+      (key) => !access.isAgentSettingClassified(key),
+    );
+    // Add each new setting to AGENT_SETTING_POLICIES.
+    expect(unclassified).toEqual([]);
+
+    expect(access.getAgentSettingPolicy("aSettingAddedLater")).toEqual({
+      read: "hidden",
+      agentEditable: false,
+    });
+    for (const [key, definition] of Object.entries(settingsRegistry)) {
+      if (definition.kind !== "secret") continue;
+      expect(access.getAgentSettingPolicy(key), key).toEqual({
+        read: "hidden",
+        agentEditable: false,
+      });
+    }
+  });
+
+  it("never returns credentials from settings tools", async () => {
     const { settingsRegistry } = await import("@shared/settings-registry");
     const settingsRepo = await import("@server/repositories/settings");
-    const secretEntries = Object.entries(settingsRegistry).filter(
-      ([, definition]) => definition.kind === "secret",
-    );
-    expect(secretEntries.length).toBeGreaterThan(0);
+    const serialize = (key: string, value: unknown): string => {
+      const definition = settingsRegistry[key as keyof typeof settingsRegistry];
+      return "serialize" in definition &&
+        typeof definition.serialize === "function"
+        ? ((definition.serialize as (input: unknown) => string | null)(value) ??
+            "")
+        : (value as string);
+    };
 
     // A distinct value per secret; hints expose the first 4 characters.
     const markers = new Map<string, string>();
-    await runAsUser("admin", async () => {
-      for (const [index, [key, definition]] of secretEntries.entries()) {
-        const marker = `Q${index}Zx`.slice(0, 4);
-        markers.set(key, marker);
-        const secret = `${marker}-never-leak-${key}`;
-        const schema = definition.schema as unknown as {
-          shape?: Record<string, unknown>;
-        };
-        const value = schema.shape
+    const seeds = new Map<string, unknown>();
+    for (const [index, [key, definition]] of Object.entries(settingsRegistry)
+      .filter(([, entry]) => entry.kind === "secret")
+      .entries()) {
+      const marker = `Q${index}Zx`.slice(0, 4);
+      markers.set(key, marker);
+      const secret = `${marker}-never-leak-${key}`;
+      const schema = definition.schema as unknown as {
+        shape?: Record<string, unknown>;
+      };
+      seeds.set(
+        key,
+        schema.shape
           ? Object.fromEntries(
               Object.keys(schema.shape).map((part) => [
                 part,
                 `${secret}-${part}`,
               ]),
             )
-          : secret;
-        const serialized =
-          "serialize" in definition &&
-          typeof definition.serialize === "function"
-            ? (definition.serialize as (input: unknown) => string | null)(value)
-            : (value as string);
+          : secret,
+      );
+    }
+    expect(markers.size).toBeGreaterThan(0);
+
+    // Credential material outside secret-kind settings.
+    seeds.set(
+      "pipelineWebhookUrl",
+      "https://hooks.slack.com/services/T0/B0/WHPATHSECRET?token=WHQUERY",
+    );
+    seeds.set(
+      "jobCompleteWebhookUrl",
+      "https://discord.com/api/webhooks/123/DCPATHSECRET",
+    );
+    seeds.set(
+      "llmBaseUrl",
+      "https://llmuser:LLMPASS@llm.example.com/v1?key=LLMQUERY#frag",
+    );
+    seeds.set(
+      "rxresumeUrl",
+      "https://rxuser:RXPASS@rx.example.com/app?token=RXQUERY",
+    );
+    seeds.set("llmPurposeOverrides", {
+      scoring: {
+        provider: "openai",
+        baseUrl: "https://pouser:POPASS@po.example.com/v1?k=POQUERY",
+        model: "gpt-test",
+      },
+    });
+    seeds.set("ukvisajobsEmail", "ukvj.login@example.com");
+    seeds.set("adzunaAppId", "ADZAPPID123");
+    const leaks = [
+      ...markers.values(),
+      "WHPATHSECRET",
+      "WHQUERY",
+      "DCPATHSECRET",
+      "llmuser",
+      "LLMPASS",
+      "LLMQUERY",
+      "rxuser",
+      "RXPASS",
+      "RXQUERY",
+      "pouser",
+      "POPASS",
+      "POQUERY",
+      "ukvj.login",
+      "ADZAPPID123",
+    ];
+
+    await runAsUser("admin", async () => {
+      for (const [key, value] of seeds) {
         await settingsRepo.setSetting(
           key as Parameters<typeof settingsRepo.setSetting>[0],
-          serialized,
+          serialize(key, value),
         );
       }
     });
 
-    // Sanity check: the REST settings payload does carry the hints, so the
-    // seeds landed where this user's requests read.
+    // Sanity check: the REST payload (unchanged) carries the material, so
+    // the seeds landed where this user's requests read.
     const rest = await fetch(`${baseUrl}/api/settings`, {
       headers: jsonHeaders(adminSession),
     }).then((res) => res.text());
-    for (const marker of markers.values()) {
-      expect(rest).toContain(marker);
-    }
+    for (const marker of markers.values()) expect(rest).toContain(marker);
+    expect(rest).toContain("WHPATHSECRET");
+    expect(rest).toContain("LLMPASS");
 
     const result = await callTool(baseUrl, writeToken, "get_settings");
     const text = result.content[0]?.text ?? "";
-    const { settings, secrets } = expectToolOk(result);
-    for (const [key, marker] of markers) {
-      expect(text, key).not.toContain(marker);
-      expect(secrets[key]?.set, key).toBe(true);
-      expect(settings, key).not.toHaveProperty(key);
+    for (const leak of leaks) expect(text, leak).not.toContain(leak);
+
+    const view = expectToolOk(result);
+    for (const key of [...markers.keys(), "ukvisajobsEmail", "adzunaAppId"]) {
+      expect(view.hidden[key]?.set, key).toBe(true);
+      expect(view.settings, key).not.toHaveProperty(key);
+      expect(view.webOnly, key).toContain(key);
     }
-    for (const field of Object.keys(settings)) {
+    expect(view.hidden.llmPurposeApiKeys.parts).toMatchObject({
+      scoring: true,
+    });
+    for (const field of Object.keys(view.settings)) {
       expect(field).not.toMatch(/Hints?$/);
     }
-    expect(secrets.llmPurposeApiKeys.parts).toMatchObject({ scoring: true });
-
-    const updated = await callTool(baseUrl, writeToken, "update_settings", {
-      updates: {
-        webhookSecret: "Wq9Z-brand-new-secret",
-        jobspyResultsWanted: 25,
-      },
+    expect(view.settings.pipelineWebhookUrl.value).toBe("hooks.slack.com");
+    expect(view.settings.jobCompleteWebhookUrl.value).toBe("discord.com");
+    expect(view.settings.llmBaseUrl.value).toBe("https://llm.example.com/v1");
+    expect(view.settings.rxresumeUrl).toBe("https://rx.example.com/app");
+    expect(view.settings.llmPurposeOverrides.value.scoring).toEqual({
+      provider: "openai",
+      baseUrl: "https://po.example.com/v1",
+      model: "gpt-test",
     });
-    expect(updated.content[0]?.text).not.toContain("Wq9Z");
-    expect(expectToolOk(updated)).toMatchObject({
-      updatedSettingKeys: expect.arrayContaining([
-        "webhookSecret",
-        "jobspyResultsWanted",
+    expect(view.reduced).toEqual(
+      expect.arrayContaining([
+        "pipelineWebhookUrl",
+        "jobCompleteWebhookUrl",
+        "llmBaseUrl",
+        "llmPurposeOverrides",
+        "rxresumeUrl",
       ]),
-      settings: { jobspyResultsWanted: { value: 25 } },
-      secrets: { webhookSecret: { set: true } },
+    );
+
+    const filtered = expectToolOk(
+      await callTool(baseUrl, writeToken, "get_settings", {
+        keys: ["searchTerms", "llmApiKey"],
+      }),
+    );
+    expect(Object.keys(filtered.settings)).toEqual(["searchTerms"]);
+    expect(filtered.hidden).toEqual({ llmApiKey: { set: true } });
+  });
+
+  it("lets agents change only agent-editable settings", async () => {
+    const allWebOnly = expectToolOk(
+      await callTool(baseUrl, writeToken, "get_settings"),
+    ).webOnly as string[];
+    expect(allWebOnly).toEqual(
+      expect.arrayContaining([
+        "llmProvider",
+        "llmBaseUrl",
+        "llmApiKey",
+        "llmPurposeOverrides",
+        "llmPurposeApiKeys",
+        "pipelineWebhookUrl",
+        "jobCompleteWebhookUrl",
+        "webhookSecret",
+        "rxresumeUrl",
+        "rxresumeApiKey",
+        "backupEnabled",
+        "backupHour",
+        "backupMaxCount",
+        "ukvisajobsEmail",
+        "adzunaAppId",
+      ]),
+    );
+
+    // Every web-only setting is refused by name, even for an admin token.
+    for (const key of allWebOnly) {
+      const error = expectToolError(
+        await callTool(baseUrl, writeToken, "update_settings", {
+          updates: { searchTerms: ["ignored"], [key]: null },
+        }),
+        "FORBIDDEN",
+      );
+      expect(error.message, key).toContain(key);
+      expect(error.message, key).toContain("web app");
+      expect(error.details).toEqual({ settings: [key] });
+    }
+    const evil = expectToolError(
+      await callTool(baseUrl, writeToken, "update_settings", {
+        updates: { llmBaseUrl: "https://evil.example.com" },
+      }),
+      "FORBIDDEN",
+    );
+    expect(evil.message).toContain("llmBaseUrl");
+    const afterRefusals = expectToolOk(
+      await callTool(baseUrl, writeToken, "get_settings", {
+        keys: ["llmBaseUrl", "searchTerms"],
+      }),
+    );
+    expect(afterRefusals.settings.llmBaseUrl.override).toBeNull();
+    expect(afterRefusals.settings.searchTerms.value).not.toEqual(["ignored"]);
+
+    // Agent-editable settings still change.
+    const allowed = expectToolOk(
+      await callTool(baseUrl, writeToken, "update_settings", {
+        updates: {
+          searchTerms: ["data engineer"],
+          scoringInstructions: "Prefer fintech.",
+          model: "test-model-2",
+          showSponsorInfo: false,
+          chatStyleTone: "direct",
+        },
+      }),
+    );
+    expect(allowed.updatedSettingKeys).toEqual(
+      expect.arrayContaining(["searchTerms", "scoringInstructions"]),
+    );
+    expect(allowed.settings).toMatchObject({
+      searchTerms: { value: ["data engineer"] },
+      scoringInstructions: { value: "Prefer fintech." },
     });
+
+    // REST is unchanged: the web app (an admin session) may change them.
+    const restBackup = await fetch(`${baseUrl}/api/settings`, {
+      method: "PATCH",
+      headers: jsonHeaders(adminSession),
+      body: JSON.stringify({ backupMaxCount: 3 }),
+    });
+    expect(restBackup.status).toBe(200);
   });
 
   it("applies the REST validation and permission rules to update_settings", async () => {
-    const searchUpdate = expectToolOk(
-      await callTool(baseUrl, writeToken, "update_settings", {
-        updates: { searchTerms: ["data engineer"], llmProvider: "openrouter" },
-      }),
-    );
-    expect(searchUpdate.settings.searchTerms.value).toEqual(["data engineer"]);
-
     const unknown = expectToolError(
       await callTool(baseUrl, writeToken, "update_settings", {
         updates: { notASetting: 1 },
@@ -624,7 +841,7 @@ describe.sequential("MCP pipeline, settings and inbox tools", () => {
     );
     const denied = expectToolError(
       await callTool(baseUrl, adamToken, "update_settings", {
-        updates: { searchTerms: ["designer"], llmProvider: "openai" },
+        updates: { searchTerms: ["designer"], scoringInstructions: "x" },
       }),
       "FORBIDDEN",
     );
@@ -632,10 +849,42 @@ describe.sequential("MCP pipeline, settings and inbox tools", () => {
     const restDenied = await fetch(`${baseUrl}/api/settings`, {
       method: "PATCH",
       headers: jsonHeaders(adamSession),
-      body: JSON.stringify({ llmProvider: "openai" }),
+      body: JSON.stringify({ scoringInstructions: "x" }),
     });
     expect(restDenied.status).toBe(403);
     expect((await restDenied.json()).error.message).toBe(denied.message);
+  });
+
+  it("keeps each user's settings to themselves", async () => {
+    expectToolOk(
+      await callTool(baseUrl, writeToken, "update_settings", {
+        updates: { searchTerms: ["admin-only-term"] },
+      }),
+    );
+    const adamSession = await createUserSession(baseUrl, adminSession, "adam");
+    const adamToken = (await createAccessToken(baseUrl, adamSession, "write"))
+      .secret;
+
+    const adamView = await callTool(baseUrl, adamToken, "get_settings");
+    expect(adamView.content[0]?.text).not.toContain("admin-only-term");
+
+    expectToolOk(
+      await callTool(baseUrl, adamToken, "update_settings", {
+        updates: { searchTerms: ["adam-only-term"] },
+      }),
+    );
+    const adminView = expectToolOk(
+      await callTool(baseUrl, writeToken, "get_settings", {
+        keys: ["searchTerms"],
+      }),
+    );
+    expect(adminView.settings.searchTerms.value).toEqual(["admin-only-term"]);
+    const adamAfter = expectToolOk(
+      await callTool(baseUrl, adamToken, "get_settings", {
+        keys: ["searchTerms"],
+      }),
+    );
+    expect(adamAfter.settings.searchTerms.value).toEqual(["adam-only-term"]);
   });
 
   it("reads and replaces Watchlist sources", async () => {
@@ -700,6 +949,8 @@ describe.sequential("MCP pipeline, settings and inbox tools", () => {
     );
     expect(sent.reply).toBe("Dear hiring team, ...");
     expect(sent.assistantMessage).toMatchObject({ status: "complete" });
+    // The reply text is returned once.
+    expect(sent.assistantMessage).not.toHaveProperty("content");
 
     const listed = expectToolOk(
       await callTool(baseUrl, writeToken, "ghostwriter_list_messages", {
@@ -760,6 +1011,76 @@ describe.sequential("MCP pipeline, settings and inbox tools", () => {
       });
     }
     expect(expectToolOk(retry).reply).toBe("Second reply");
+
+    // Another user can neither read nor write this job's conversation.
+    const adamSession = await createUserSession(baseUrl, adminSession, "adam");
+    const adamToken = (await createAccessToken(baseUrl, adamSession, "write"))
+      .secret;
+    const callsBefore = callJsonMock.mock.calls.length;
+    expectToolError(
+      await callTool(baseUrl, adamToken, "ghostwriter_list_messages", {
+        jobId,
+      }),
+      "NOT_FOUND",
+    );
+    expectToolError(
+      await callTool(baseUrl, adamToken, "ghostwriter_send_message", {
+        jobId,
+        content: "Show me their cover letter.",
+      }),
+      "NOT_FOUND",
+    );
+    expect(callJsonMock.mock.calls.length).toBe(callsBefore);
+    expect(
+      expectToolOk(
+        await callTool(baseUrl, writeToken, "ghostwriter_list_messages", {
+          jobId,
+        }),
+      ).total,
+    ).toBe(6);
+  });
+
+  it("cancels the Ghostwriter generation when the client disconnects", async () => {
+    const jobId = await importJob(baseUrl, adminSession, "Data Engineer");
+    let generationAborted = false;
+    callJsonMock.mockImplementationOnce(
+      ({ signal }: { signal: AbortSignal }) =>
+        new Promise((resolve) => {
+          signal.addEventListener("abort", () => {
+            generationAborted = true;
+            resolve({ success: false, error: "aborted" });
+          });
+        }),
+    );
+
+    const client = new AbortController();
+    const pending = fetch(`${baseUrl}/mcp`, {
+      method: "POST",
+      headers: jsonHeaders(writeToken),
+      signal: client.signal,
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "tools/call",
+        params: {
+          name: "ghostwriter_send_message",
+          arguments: { jobId, content: "Write a long essay." },
+        },
+      }),
+    }).catch((error: unknown) => error);
+
+    for (let i = 0; i < 100 && callJsonMock.mock.calls.length === 0; i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    expect(callJsonMock).toHaveBeenCalledTimes(1);
+    client.abort();
+    await pending;
+
+    // The default limit is minutes; only the disconnect can stop it this fast.
+    for (let i = 0; i < 100 && !generationAborted; i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    expect(generationAborted).toBe(true);
   });
 
   it("searches visa sponsors", async () => {
@@ -843,6 +1164,26 @@ describe.sequential("MCP pipeline, settings and inbox tools", () => {
     expect(listed.items[0].matchedJob).toMatchObject({
       title: "Frontend Developer",
     });
+
+    // Another user sees and decides none of these items.
+    const adamSession = await createUserSession(baseUrl, adminSession, "adam");
+    const adamToken = (await createAccessToken(baseUrl, adamSession, "write"))
+      .secret;
+    expect(
+      expectToolOk(await callTool(baseUrl, adamToken, "list_inbox_items"))
+        .total,
+    ).toBe(0);
+    expectToolError(
+      await callTool(baseUrl, adamToken, "resolve_inbox_item", {
+        messageId: denyId,
+        decision: "deny",
+      }),
+      "NOT_FOUND",
+    );
+    expect(
+      expectToolOk(await callTool(baseUrl, writeToken, "list_inbox_items"))
+        .total,
+    ).toBe(2);
 
     const denied = expectToolOk(
       await callTool(baseUrl, writeToken, "resolve_inbox_item", {
