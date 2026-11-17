@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/accordion";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { getHttpHref } from "@/lib/safe-href";
 import { cn, copyTextToClipboard } from "@/lib/utils";
 import { showErrorToast } from "../lib/error-toast";
 import { JobDescriptionHtml } from "./JobDescriptionHtml";
@@ -107,11 +108,12 @@ export const JobDescriptionPanel: React.FC<JobDescriptionPanelProps> = ({
     }
   };
 
+  const safeJobUrl = getHttpHref(jobUrl);
   const actions = !isEditing ? (
     <>
-      {jobUrl ? (
+      {safeJobUrl ? (
         <Button size="sm" variant="ghost" asChild>
-          <a href={jobUrl} target="_blank" rel="noopener noreferrer">
+          <a href={safeJobUrl} target="_blank" rel="noopener noreferrer">
             <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
             View job
           </a>

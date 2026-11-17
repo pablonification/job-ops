@@ -1,4 +1,8 @@
 import { type AppError, badRequest, conflict, toAppError } from "@infra/errors";
+import {
+  HTTP_URL_MESSAGE,
+  isHttpUrlWhenParseable,
+} from "@server/infra/http-url";
 import type * as jobsRepo from "@server/repositories/jobs";
 import { stageEventMetadataSchema } from "@server/services/applicationTracking";
 import {
@@ -58,8 +62,22 @@ export function toJobListItem(
 export const updateJobSchema = z.object({
   title: z.string().trim().min(1).max(500).optional(),
   employer: z.string().trim().min(1).max(500).optional(),
-  jobUrl: z.string().trim().min(1).max(2000).url().optional(),
-  applicationLink: z.string().trim().max(2000).url().nullable().optional(),
+  jobUrl: z
+    .string()
+    .trim()
+    .min(1)
+    .max(2000)
+    .url()
+    .refine(isHttpUrlWhenParseable, HTTP_URL_MESSAGE)
+    .optional(),
+  applicationLink: z
+    .string()
+    .trim()
+    .max(2000)
+    .url()
+    .refine(isHttpUrlWhenParseable, HTTP_URL_MESSAGE)
+    .nullable()
+    .optional(),
   location: z.string().trim().max(200).nullable().optional(),
   salary: z.string().trim().max(200).nullable().optional(),
   deadline: z.string().trim().max(100).nullable().optional(),

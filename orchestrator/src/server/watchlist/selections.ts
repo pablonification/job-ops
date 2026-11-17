@@ -4,6 +4,7 @@
  */
 import { unprocessableEntity } from "@infra/errors";
 import { listCareerBoardSources } from "@server/config/career-boards";
+import { isPublicLookingHttpUrl } from "@server/infra/http-url";
 import * as watchlistRepo from "@server/repositories/watchlist";
 import { getWatchlistSourceAdapter } from "@server/watchlist/adapters";
 import {
@@ -117,6 +118,15 @@ export async function replaceWatchlistSources(
         careersUrl: catalogSource.careersUrl,
       });
       continue;
+    }
+
+    // Custom career pages are fetched later by the scrapers, so refuse
+    // anything that is not an ordinary public web address.
+    if (!isPublicLookingHttpUrl(normalizedUrl)) {
+      throw unprocessableEntity(
+        "Watchlist URLs must be public http or https web addresses",
+        { careersUrl: normalizedUrl },
+      );
     }
 
     const adapter = getWatchlistSourceAdapter(selection.sourceType);

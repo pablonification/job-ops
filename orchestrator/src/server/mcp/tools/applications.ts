@@ -1,5 +1,9 @@
 import { conflict } from "@infra/errors";
 import {
+  HTTP_URL_MESSAGE,
+  isHttpUrlWhenParseable,
+} from "@server/infra/http-url";
+import {
   defineTool,
   defineToolGroup,
   jobIdInput,
@@ -83,7 +87,13 @@ const transitionJobStageTool = defineTool({
         .enum(["interview_log", "status_update", "note"])
         .optional()
         .describe("note with toStage no_change adds a timeline note only."),
-      externalUrl: z.string().trim().url().max(2000).optional(),
+      externalUrl: z
+        .string()
+        .trim()
+        .url()
+        .max(2000)
+        .refine(isHttpUrlWhenParseable, HTTP_URL_MESSAGE)
+        .optional(),
       outcome: z
         .enum(APPLICATION_OUTCOMES)
         .optional()

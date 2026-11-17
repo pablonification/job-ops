@@ -2,6 +2,7 @@ import type { VariantProps } from "class-variance-authority";
 import { ExternalLink } from "lucide-react";
 import type React from "react";
 import { Button, type buttonVariants } from "@/components/ui/button";
+import { getHttpHref } from "@/lib/safe-href";
 import { cn } from "@/lib/utils";
 import { KbdHint } from "./KbdHint";
 
@@ -22,7 +23,8 @@ export const OpenJobListingButton: React.FC<OpenJobListingButtonProps> = ({
   disabled = false,
   onClick,
 }) => {
-  if (disabled) {
+  const safeHref = getHttpHref(href);
+  if (disabled || !safeHref) {
     return (
       <Button
         variant="outline"
@@ -45,7 +47,7 @@ export const OpenJobListingButton: React.FC<OpenJobListingButtonProps> = ({
       className={cn("gap-1", className)}
     >
       <a
-        href={href}
+        href={safeHref}
         target="_blank"
         rel="noopener noreferrer"
         onClick={onClick}

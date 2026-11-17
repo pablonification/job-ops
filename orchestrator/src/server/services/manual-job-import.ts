@@ -5,6 +5,10 @@
  */
 import { AppError, badRequest, conflict, notFound } from "@infra/errors";
 import { logger } from "@infra/logger";
+import {
+  HTTP_URL_MESSAGE,
+  isHttpUrlWhenParseable,
+} from "@server/infra/http-url";
 import { fetchPublicUrl, type PublicHttpDeps } from "@server/infra/public-http";
 import { processJob } from "@server/pipeline/index";
 import * as jobsRepo from "@server/repositories/jobs";
@@ -38,8 +42,19 @@ export const manualJobImportSchema = z.object({
     sourceJobId: z.string().trim().max(500).optional(),
     title: z.string().trim().min(1).max(500),
     employer: z.string().trim().min(1).max(500),
-    jobUrl: z.string().trim().url().max(2000),
-    applicationLink: z.string().trim().url().max(2000).optional(),
+    jobUrl: z
+      .string()
+      .trim()
+      .url()
+      .max(2000)
+      .refine(isHttpUrlWhenParseable, HTTP_URL_MESSAGE),
+    applicationLink: z
+      .string()
+      .trim()
+      .url()
+      .max(2000)
+      .refine(isHttpUrlWhenParseable, HTTP_URL_MESSAGE)
+      .optional(),
     location: z.string().trim().max(200).optional(),
     salary: z.string().trim().max(200).optional(),
     deadline: z.string().trim().max(100).optional(),

@@ -239,8 +239,8 @@ Use a custom variable name such as `JOBOPS_MCP_TOKEN`; Claude Code reads credent
 ### Token rules
 
 - Format: `jo_pat_<12 hex characters>_<43 characters>`. The `jo_pat_<prefix>` part is shown in Settings so you can tell tokens apart.
-- A token works on `/mcp` and on the REST API (`Authorization: Bearer …`), for example to download a job PDF.
-- A token cannot create, list or revoke tokens. Manage tokens from a signed-in browser session.
+- A token works on `/mcp`. On the REST API (`Authorization: Bearer …`) it can only download the PDFs that tools link to (`/api/jobs/<id>/pdf`, `/api/role-cvs/<id>/pdf`) and read `/api/auth/me`. Every other REST request with a token is refused, so an agent cannot step around the rules the tools apply.
+- A token cannot create, list or revoke tokens, or reach account, backup or settings routes. Use a signed-in browser session for those.
 - Each user can have up to 25 active tokens.
 - **Last used** updates at most once a minute.
 - Disabling a user blocks all of their tokens. Changing a password does not revoke tokens; revoke them in Settings.
@@ -277,9 +277,9 @@ You reach JobOps through a hostname that is not on the allowlist, for example a 
 
 The URL comes from `JOBOPS_PUBLIC_BASE_URL`, or from the address your browser used when it is not set. Set `JOBOPS_PUBLIC_BASE_URL` when JobOps runs behind a reverse proxy, or edit the URL in the command before running it.
 
-### `403 This access token is read-only`
+### `403 Access tokens can only download PDFs over the REST API`
 
-A read-only token tried to change data through the REST API. Create a read and write token if the agent should make changes.
+The token was used on a REST route other than a PDF download. Use the MCP tools instead; they cover everything an agent may do. A read-only token calling a tool that changes data gets a `FORBIDDEN` tool error: create a read and write token if the agent should make changes.
 
 ### A tool returns `CONFLICT`
 

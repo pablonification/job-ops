@@ -448,7 +448,29 @@ async function runFreshHealthCheck(args: {
   }
 }
 
-export async function checkExtractorHealth(
+/**
+ * Health checks run a live search and the route is public, so parallel
+ * requests for one source share a single check instead of each starting one.
+ * Keyed by source, like the result cache above.
+ */
+const inFlightHealthChecks = new Map<
+  ExtractorSourceId,
+  Promise<ExtractorHealthCheckResult | null>
+>();
+
+export function checkExtractorHealth(
+  source: ExtractorSourceId,
+): Promise<ExtractorHealthCheckResult | null> {
+  const running = inFlightHealthChecks.get(source);
+  if (running) return running;
+  const started = runExtractorHealthCheck(source).finally(() => {
+    inFlightHealthChecks.delete(source);
+  });
+  inFlightHealthChecks.set(source, started);
+  return started;
+}
+
+async function runExtractorHealthCheck(
   source: ExtractorSourceId,
 ): Promise<ExtractorHealthCheckResult | null> {
   const now = Date.now();

@@ -25,6 +25,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { TableCell, TableRow } from "@/components/ui/table";
+import { getHttpHref } from "@/lib/safe-href";
 import { cn } from "@/lib/utils";
 import type { JobDetailsState, RankedWatchlistJob } from "./types";
 
@@ -321,7 +322,7 @@ export default function WatchlistJobRow({
                     </DropdownMenuItem>
                     <DropdownMenuItem asChild>
                       <a
-                        href={watchlistJob.jobUrl}
+                        href={getHttpHref(watchlistJob.jobUrl) ?? undefined}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="flex items-center w-full"

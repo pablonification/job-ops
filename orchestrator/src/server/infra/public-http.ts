@@ -163,6 +163,17 @@ function isPublicIpv6(groups: number[]): boolean {
     return isPublicIpv4Number(embeddedV4);
   }
   if (firstFiveZero && g5 === 0xffff) return isPublicIpv4Number(embeddedV4);
+  // ::ffff:0:0:0/96 is the IPv4-translated form of the same thing.
+  if (
+    g0 === 0 &&
+    g1 === 0 &&
+    g2 === 0 &&
+    g3 === 0 &&
+    g4 === 0xffff &&
+    g5 === 0
+  ) {
+    return isPublicIpv4Number(embeddedV4);
+  }
   // 64:ff9b::/96 NAT64 carries an IPv4 address; 64:ff9b:1::/48 is local-use.
   if (g0 === 0x64 && g1 === 0xff9b) {
     if (g2 !== 0) return false;

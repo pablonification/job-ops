@@ -124,11 +124,6 @@ describe.sequential("Access token routes", () => {
       scope: "read",
     });
 
-    const jobsRes = await fetch(`${baseUrl}/api/jobs`, {
-      headers: authHeaders(secret),
-    });
-    expect(jobsRes.status).toBe(200);
-
     const meRes = await fetch(`${baseUrl}/api/auth/me`, {
       headers: authHeaders(secret),
     });
@@ -163,27 +158,70 @@ describe.sequential("Access token routes", () => {
     }
   });
 
-  it("limits read-scope tokens to read requests on the API", async () => {
+  it("limits tokens on the REST API to PDF downloads", async () => {
     const session = await login(baseUrl, "admin", "secret");
     const { secret } = await createToken(baseUrl, session, {
-      name: "reporting",
-      scope: "read",
+      name: "agent",
+      scope: "write",
     });
 
-    const importRes = await fetch(`${baseUrl}/api/manual-jobs/import`, {
-      method: "POST",
-      headers: authHeaders(secret),
-      body: JSON.stringify({
-        job: {
-          title: "Role",
-          employer: "Acme",
-          jobUrl: "https://example.com/role",
-          jobDescription: "Role description",
+    // Everything an agent does goes through MCP tools. Over REST even a
+    // write token is refused, so it cannot step around the tools' rules.
+    for (const [method, path, body] of [
+      ["GET", "/api/jobs", undefined],
+      ["GET", "/api/settings", undefined],
+      ["PATCH", "/api/settings", { llmBaseUrl: "https://example.com/v1" }],
+      ["PATCH", "/api/settings", { telegramChatId: "12345" }],
+      [
+        "POST",
+        "/api/settings/llm-models",
+        { provider: "openai_compatible", baseUrl: "https://example.com" },
+      ],
+      ["GET", "/api/profile", undefined],
+      ["GET", "/api/onboarding/status", undefined],
+      [
+        "POST",
+        "/api/manual-jobs/import",
+        {
+          job: {
+            title: "Role",
+            employer: "Acme",
+            jobUrl: "https://example.com/role",
+            jobDescription: "Role description",
+          },
         },
-      }),
+      ],
+      ["POST", "/api/pipeline/run", {}],
+      ["POST", "/api/settings/telegram/test", {}],
+      ["DELETE", "/api/jobs/some-id", undefined],
+      ["POST", "/api/jobs/some-id/pdf", undefined],
+      ["GET", "/API/Settings", undefined],
+    ] as const) {
+      const res = await fetch(`${baseUrl}${path}`, {
+        method,
+        headers: authHeaders(secret),
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      expect(res.status, `${method} ${path}`).toBe(403);
+      const payload = await res.json();
+      expect(payload.error.code).toBe("FORBIDDEN");
+      expect(payload.error.message).toContain("only download PDFs");
+    }
+
+    // PDF downloads get past the guard (the job does not exist here).
+    for (const path of ["/api/jobs/missing/pdf", "/api/role-cvs/missing/pdf"]) {
+      const res = await fetch(`${baseUrl}${path}`, {
+        headers: authHeaders(secret),
+      });
+      expect(res.status, path).not.toBe(403);
+      expect(res.status, path).not.toBe(401);
+    }
+
+    // The same settings change is still allowed from a signed-in session.
+    const viaSession = await fetch(`${baseUrl}/api/settings`, {
+      headers: authHeaders(session),
     });
-    expect(importRes.status).toBe(403);
-    expect((await importRes.json()).error.message).toContain("read-only");
+    expect(viaSession.status).toBe(200);
   });
 
   it("keeps account and instance administration away from tokens", async () => {
@@ -316,7 +354,7 @@ describe.sequential("Access token routes", () => {
 
     expect(
       (
-        await fetch(`${baseUrl}/api/jobs`, {
+        await fetch(`${baseUrl}/api/auth/me`, {
           headers: authHeaders(adamToken.secret),
         })
       ).status,
@@ -334,7 +372,7 @@ describe.sequential("Access token routes", () => {
 
     expect(
       (
-        await fetch(`${baseUrl}/api/jobs`, {
+        await fetch(`${baseUrl}/api/auth/me`, {
           headers: authHeaders(adamToken.secret),
         })
       ).status,

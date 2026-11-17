@@ -32,6 +32,7 @@ import {
 } from "@server/services/access-tokens";
 import { proxyChallengeViewerRequest } from "@server/services/challenge-viewer";
 import { DEFAULT_TENANT_ID } from "@server/tenancy/constants";
+import { isExtractorSourceId } from "@shared/extractors";
 import type { AccessTokenScope } from "@shared/types";
 import cors from "cors";
 import express from "express";
@@ -168,14 +169,17 @@ function buildUmamiProxyHeaders(req: express.Request): Headers {
   return headers;
 }
 
-/** API areas no personal access token may reach, whatever its scope. */
-const ACCESS_TOKEN_FORBIDDEN_API_AREAS = [
-  "/api/workspaces",
-  "/api/auth/sso",
-  "/api/database",
-  "/api/backups",
-  "/api/billing",
-  "/api/settings/codex-auth",
+/**
+ * The only REST requests a personal access token may make. Agents work
+ * through `/mcp`, where every tool applies its own scope and rules; over REST
+ * a token can only download the files MCP tools hand out links to, and ask
+ * who it is. Anything else would let a token step around the MCP rules (for
+ * example changing connection settings that tools refuse to touch).
+ */
+const ACCESS_TOKEN_REST_ALLOWLIST: ReadonlyArray<RegExp> = [
+  /^\/api\/jobs\/[^/]+\/pdf$/,
+  /^\/api\/role-cvs\/[^/]+\/pdf$/,
+  /^\/api\/auth\/me$/,
 ];
 
 type AuthorizationContext = {
@@ -250,31 +254,19 @@ export function createAuthGuard() {
     if (context.authMethod !== "access_token") return null;
     // Express routing is case-insensitive, so compare lower-cased paths.
     const normalizedPath = (path.split("?")[0] || path).toLowerCase();
-    if (
-      normalizedPath === "/api/auth/tokens" ||
-      normalizedPath.startsWith("/api/auth/tokens/")
-    ) {
-      return "Access tokens cannot manage access tokens. Sign in to the web app instead.";
+    if (!normalizedPath.startsWith("/api/") && normalizedPath !== "/api") {
+      return null;
     }
-    // Account and instance administration stays with a signed-in person: a
-    // token must not be able to set a password, link a sign-in identity,
-    // manage users, wipe the database or touch backups and billing.
+    const isRead = ["GET", "HEAD"].includes(method.toUpperCase());
     if (
-      ACCESS_TOKEN_FORBIDDEN_API_AREAS.some(
-        (area) =>
-          normalizedPath === area || normalizedPath.startsWith(`${area}/`),
+      isRead &&
+      ACCESS_TOKEN_REST_ALLOWLIST.some((pattern) =>
+        pattern.test(normalizedPath),
       )
     ) {
-      return "Access tokens cannot manage accounts, sign-in, backups, billing or the database. Sign in to the web app instead.";
+      return null;
     }
-    if (
-      context.accessTokenScope === "read" &&
-      normalizedPath.startsWith("/api/") &&
-      !["GET", "HEAD", "OPTIONS"].includes(method.toUpperCase())
-    ) {
-      return "This access token is read-only.";
-    }
-    return null;
+    return "Access tokens can only download PDFs over the REST API. Use the MCP endpoint (/mcp) for everything else, or sign in to the web app.";
   }
 
   function isPublicReadOnlyRoute(method: string, path: string): boolean {
@@ -335,11 +327,12 @@ export function createAuthGuard() {
       /^\/api\/design-resume\/assets\/[^/]+\/content$/.test(normalizedPath)
     )
       return getJobOpsAppConfig().appMode !== "hosted";
-    if (
-      ["GET", "HEAD"].includes(normalizedMethod) &&
-      /^\/api\/[^/]+\/health$/.test(normalizedPath)
-    )
-      return true;
+    if (["GET", "HEAD"].includes(normalizedMethod)) {
+      // Source health checks are public, but only for real source ids, so
+      // "/api/jobs/health" is not read as public.
+      const healthSource = /^\/api\/([^/]+)\/health$/.exec(normalizedPath)?.[1];
+      if (healthSource && isExtractorSourceId(healthSource)) return true;
+    }
 
     return false;
   }
