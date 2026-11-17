@@ -27,6 +27,7 @@ const baseFilters: JobFilters = {
   dateFilter: defaultDateFilter,
   sourceFilter: "all",
   sponsorFilter: "all",
+  targetCompaniesOnly: false,
   salaryFilter: { mode: "at_least", min: null, max: null },
   scoreFilter: { mode: "any", min: null, max: null },
   postedWithinDays: null,
@@ -55,6 +56,24 @@ describe("useFilteredJobs", () => {
       "processing",
       "ready",
     ]);
+  });
+
+  it("keeps only target-company jobs when the target filter is on", () => {
+    const jobs: Job[] = [
+      { ...baseJob, id: "target", isTargetCompany: true },
+      { ...baseJob, id: "other", isTargetCompany: false },
+      { ...baseJob, id: "unflagged" },
+    ];
+
+    const { result: all } = renderHook(() =>
+      useFilteredJobs(jobs, makeFilters({})),
+    );
+    expect(all.current).toHaveLength(3);
+
+    const { result } = renderHook(() =>
+      useFilteredJobs(jobs, makeFilters({ targetCompaniesOnly: true })),
+    );
+    expect(result.current.map((job) => job.id)).toEqual(["target"]);
   });
 
   it("filters by discovered date on the discovered tab", () => {

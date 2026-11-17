@@ -209,6 +209,45 @@ describe("JobListPanel", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("shows a Target badge only on target-company jobs", () => {
+    const jobs = [
+      createJob({
+        id: "job-1",
+        title: "Backend Intern",
+        employer: "PT GoTo Gojek Tokopedia Tbk",
+        isTargetCompany: true,
+      }),
+      createJob({
+        id: "job-2",
+        title: "Retail Intern",
+        employer: "Grabango",
+        isTargetCompany: false,
+      }),
+    ];
+
+    render(
+      <JobListPanel
+        isLoading={false}
+        jobs={jobs}
+        activeJobs={jobs}
+        selectedJobId={null}
+        selectedJobIds={new Set()}
+        activeTab="ready"
+        onSelectJob={vi.fn()}
+        onToggleSelectJob={vi.fn()}
+        onToggleSelectAll={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: /Backend Intern/i }),
+    ).toHaveTextContent("Target");
+    expect(
+      screen.getByRole("button", { name: /Retail Intern/i }),
+    ).not.toHaveTextContent("Target");
+    expect(screen.getAllByText("Target")).toHaveLength(1);
+  });
+
   it("shows a yellow status dot for flagged reposts without an inline badge", () => {
     const jobs = [
       createJob({

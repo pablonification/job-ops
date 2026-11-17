@@ -8,6 +8,7 @@ import { useState } from "react";
 import { Controller, useFormContext } from "react-hook-form";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
+import { Textarea } from "@/components/ui/textarea";
 
 type ScoringSettingsSectionProps = {
   values: ScoringValues;
@@ -34,6 +35,8 @@ export const ScoringSettingsSection: React.FC<ScoringSettingsSectionProps> = ({
     missingSalaryPenalty,
     autoSkipScoreThreshold,
     blockedCompanyKeywords,
+    targetCompanies,
+    dealbreakers,
   } = values;
   const { control, watch, setValue } = useFormContext<UpdateSettingsInput>();
   const [blockedCompanyKeywordDraft, setBlockedCompanyKeywordDraft] =
@@ -47,6 +50,7 @@ export const ScoringSettingsSection: React.FC<ScoringSettingsSectionProps> = ({
   const currentAutoSkipThreshold = watch("autoSkipScoreThreshold");
   const blockedCompanyKeywordValues =
     watch("blockedCompanyKeywords") ?? blockedCompanyKeywords.default;
+  const targetCompanyLines = watch("targetCompanies") ?? [];
 
   return (
     <SettingsSectionFrame
@@ -55,6 +59,68 @@ export const ScoringSettingsSection: React.FC<ScoringSettingsSectionProps> = ({
       value="scoring"
     >
       <div className="space-y-4">
+        <div className="space-y-2">
+          <label htmlFor="targetCompanies" className="text-sm font-medium">
+            Target companies
+          </label>
+          <Textarea
+            id="targetCompanies"
+            rows={5}
+            value={targetCompanyLines.join("\n")}
+            onChange={(event) =>
+              setValue("targetCompanies", event.target.value.split("\n"), {
+                shouldDirty: true,
+                shouldValidate: true,
+              })
+            }
+            placeholder={"GoTo | Gojek | Tokopedia\nGrab\nShopee"}
+            disabled={isLoading || isSaving}
+          />
+          <p className="text-xs text-muted-foreground">
+            One company per line. Put other names for the same company on one
+            line, separated by |. Jobs at these companies get a Target badge and
+            a small lift in scoring when the fit is otherwise close.
+          </p>
+          <div className="break-words font-mono text-xs text-muted-foreground">
+            Effective:{" "}
+            {targetCompanies.effective.length > 0
+              ? targetCompanies.effective.join(", ")
+              : "None"}
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <label htmlFor="dealbreakers" className="text-sm font-medium">
+            Dealbreakers
+          </label>
+          <Controller
+            name="dealbreakers"
+            control={control}
+            render={({ field }) => (
+              <Textarea
+                id="dealbreakers"
+                rows={4}
+                value={field.value ?? ""}
+                onChange={(event) => field.onChange(event.target.value)}
+                onBlur={field.onBlur}
+                placeholder={
+                  "Unpaid roles\nOn-site outside Jakarta\nMore than 2 years of experience required"
+                }
+                disabled={isLoading || isSaving}
+              />
+            )}
+          />
+          <p className="text-xs text-muted-foreground">
+            Things you will not accept, in plain words. Jobs that clearly break
+            one get a low score, and the reason names it.
+          </p>
+          <div className="break-words font-mono text-xs text-muted-foreground">
+            Effective: {dealbreakers.effective.trim() ? "Set" : "None"}
+          </div>
+        </div>
+
+        <Separator />
+
         {/* Enable penalty toggle */}
         <div className="flex items-start space-x-3">
           <Controller
