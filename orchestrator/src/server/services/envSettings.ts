@@ -24,8 +24,95 @@ export async function applyStoredEnvOverrides(): Promise<void> {
   // leak one tenant's credentials into every other tenant in this Node process.
 }
 
+type SettingsOverrides = Partial<Record<SettingKey, string>>;
+
+/**
+ * Effective value of an env-backed secret setting: the stored override, else
+ * the environment (for the LLM key, the provider-specific fallbacks too).
+ */
+function resolveEffectiveSecretValue(
+  key: string,
+  envKey: string,
+  activeOverrides: SettingsOverrides,
+  options?: { allowLlmEnvironmentCredentials?: boolean },
+): string | null {
+  const override = activeOverrides[key as SettingKey] ?? null;
+  if (key === "llmApiKey") {
+    return resolveLlmApiKey({
+      storedApiKey: override,
+      provider:
+        normalizeEnvInput(
+          activeOverrides.llmProvider ?? getOriginalEnvValue("LLM_PROVIDER"),
+        ) ?? null,
+      allowEnvironmentCredentials: options?.allowLlmEnvironmentCredentials,
+    });
+  }
+  return normalizeEnvInput(override ?? getOriginalEnvValue(envKey));
+}
+
+function hasSecretContent(value: unknown): boolean {
+  if (typeof value === "string") return value.trim().length > 0;
+  if (value && typeof value === "object") {
+    return Object.values(value).some(hasSecretContent);
+  }
+  return false;
+}
+
+export type SecretSettingStatus = {
+  /** Whether a value is configured (stored or from the environment). */
+  set: boolean;
+  /** For object-valued secrets: which parts are set. */
+  parts?: Record<string, boolean>;
+};
+
+/**
+ * Set / not-set status for every secret-kind setting in the registry, without
+ * the values. New secret settings are covered automatically.
+ */
+export async function getSecretSettingsStatus(
+  overrides?: SettingsOverrides,
+  options?: { allowLlmEnvironmentCredentials?: boolean },
+): Promise<Record<string, SecretSettingStatus>> {
+  const activeOverrides = overrides || (await settingsRepo.getAllSettings());
+  const statuses: Record<string, SecretSettingStatus> = {};
+
+  for (const [key, def] of Object.entries(settingsRegistry)) {
+    if (def.kind !== "secret") continue;
+    if ("envKey" in def && def.envKey) {
+      statuses[key] = {
+        set: Boolean(
+          resolveEffectiveSecretValue(
+            key,
+            def.envKey,
+            activeOverrides,
+            options,
+          ),
+        ),
+      };
+      continue;
+    }
+
+    const parsed: unknown =
+      "parse" in def && typeof def.parse === "function"
+        ? def.parse(activeOverrides[key as SettingKey])
+        : (activeOverrides[key as SettingKey] ?? null);
+    const status: SecretSettingStatus = { set: hasSecretContent(parsed) };
+    if (parsed && typeof parsed === "object") {
+      status.parts = Object.fromEntries(
+        Object.entries(parsed).map(([part, value]) => [
+          part,
+          hasSecretContent(value),
+        ]),
+      );
+    }
+    statuses[key] = status;
+  }
+
+  return statuses;
+}
+
 export async function getEnvSettingsData(
-  overrides?: Partial<Record<SettingKey, string>>,
+  overrides?: SettingsOverrides,
   options?: { allowLlmEnvironmentCredentials?: boolean },
 ): Promise<Partial<AppSettings>> {
   const activeOverrides = overrides || (await settingsRepo.getAllSettings());
@@ -40,19 +127,12 @@ export async function getEnvSettingsData(
 
     if (def.kind === "secret") {
       const hintKey = `${key}Hint` as keyof AppSettings;
-      const effectiveSecret =
-        key === "llmApiKey"
-          ? resolveLlmApiKey({
-              storedApiKey: override,
-              provider:
-                normalizeEnvInput(
-                  activeOverrides.llmProvider ??
-                    getOriginalEnvValue("LLM_PROVIDER"),
-                ) ?? null,
-              allowEnvironmentCredentials:
-                options?.allowLlmEnvironmentCredentials,
-            })
-          : normalizeEnvInput(rawValue);
+      const effectiveSecret = resolveEffectiveSecretValue(
+        key,
+        def.envKey,
+        activeOverrides,
+        options,
+      );
       if (!effectiveSecret) {
         // biome-ignore lint/suspicious/noExplicitAny: explicit partial assignment
         (values as any)[hintKey] = null;
