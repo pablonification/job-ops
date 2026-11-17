@@ -900,6 +900,8 @@ function mapRowToJob(row: typeof jobs.$inferSelect): Job {
     tailoredHeadline: row.tailoredHeadline ?? null,
     tailoredSkills: row.tailoredSkills ?? null,
     selectedProjectIds: row.selectedProjectIds ?? null,
+    roleCvId: row.roleCvId ?? null,
+    roleCvMatchSource: row.roleCvMatchSource ?? null,
     pdfPath: row.pdfPath,
     pdfSource: row.pdfSource ?? null,
     pdfRegenerating: row.pdfRegenerating ?? false,

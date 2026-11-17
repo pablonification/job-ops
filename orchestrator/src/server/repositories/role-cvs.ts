@@ -6,7 +6,7 @@ import {
   privateDataScopeFilter,
 } from "../tenancy/private-scope";
 
-const { roleCvs } = schema;
+const { jobs, roleCvs } = schema;
 
 export type RoleCvRow = typeof roleCvs.$inferSelect;
 
@@ -103,11 +103,25 @@ export async function updateRoleCvRow(
   return getRoleCvRowById(id);
 }
 
+/**
+ * Deletes a Role CV and, in the same transaction, clears the reference on
+ * every job in the scope that used it. The jobs keep their tailored fields.
+ */
 export async function deleteRoleCvRow(id: string): Promise<number> {
-  const result = await db
-    .delete(roleCvs)
-    .where(and(scopeFilter(), eq(roleCvs.id, id)));
-  return result.changes;
+  const now = new Date().toISOString();
+  return db.transaction((tx) => {
+    const result = tx
+      .delete(roleCvs)
+      .where(and(scopeFilter(), eq(roleCvs.id, id)))
+      .run();
+    if (result.changes > 0) {
+      tx.update(jobs)
+        .set({ roleCvId: null, roleCvMatchSource: null, updatedAt: now })
+        .where(and(privateDataScopeFilter(jobs), eq(jobs.roleCvId, id)))
+        .run();
+    }
+    return result.changes;
+  });
 }
 
 /**

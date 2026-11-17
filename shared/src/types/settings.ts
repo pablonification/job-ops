@@ -7,6 +7,7 @@ import type {
   LocationMatchStrictness,
   LocationSearchScope,
 } from "../location-preferences";
+import type { RoleCvPipelineMode } from "./role-cvs";
 
 export { TYPST_THEME_LABELS, TYPST_THEME_VALUES };
 
@@ -280,6 +281,7 @@ export interface AppSettings {
   ghostwriterStopSlopEnabled: Resolved<boolean>;
   tailoringPromptTemplate: Resolved<string>;
   roleCvPromptTemplate: Resolved<string>;
+  roleCvPipelineMode: Resolved<RoleCvPipelineMode>;
   scoringPromptTemplate: Resolved<string>;
   searchCities: Resolved<string>;
   locationSearchMode: Resolved<LocationInputMode>;

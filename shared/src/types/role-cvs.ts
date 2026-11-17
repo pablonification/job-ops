@@ -65,3 +65,25 @@ export interface RoleCvTailoringContent {
   skills: RoleCvSkillGroup[];
   selectedProjectIds: string[];
 }
+
+/** How a job's Role CV reference was chosen. */
+export const ROLE_CV_MATCH_SOURCE_VALUES = ["auto", "manual"] as const;
+export type RoleCvMatchSource = (typeof ROLE_CV_MATCH_SOURCE_VALUES)[number];
+
+/**
+ * How auto-tailoring (pipeline, "move to ready", manual import) uses Role CVs.
+ * - `off`: ignore Role CVs.
+ * - `as_is`: copy the job's Role CV into its tailoring fields (no model call).
+ * - `refine`: tailor for the job, starting from the job's Role CV.
+ */
+export const ROLE_CV_PIPELINE_MODE_VALUES = ["off", "as_is", "refine"] as const;
+export type RoleCvPipelineMode = (typeof ROLE_CV_PIPELINE_MODE_VALUES)[number];
+
+export interface SetJobRoleCvInput {
+  roleCvId: string | null;
+}
+
+/** Optional Role CV to use instead of the job's current one. */
+export interface UseJobRoleCvInput {
+  roleCvId?: string;
+}

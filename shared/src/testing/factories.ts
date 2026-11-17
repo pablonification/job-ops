@@ -38,6 +38,8 @@ export const createJob = (overrides: Partial<Job> = {}): Job => ({
   tailoredHeadline: null,
   tailoredSkills: null,
   selectedProjectIds: null,
+  roleCvId: null,
+  roleCvMatchSource: null,
   pdfPath: null,
   pdfSource: null,
   pdfRegenerating: false,
@@ -240,6 +242,11 @@ export const createAppSettings = (
   roleCvPromptTemplate: {
     value: getDefaultPromptTemplate("roleCvPromptTemplate"),
     default: getDefaultPromptTemplate("roleCvPromptTemplate"),
+    override: null,
+  },
+  roleCvPipelineMode: {
+    value: "refine",
+    default: "refine",
     override: null,
   },
   scoringPromptTemplate: {

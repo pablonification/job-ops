@@ -6,6 +6,10 @@ import {
 } from "./location-preferences";
 import { getDefaultPromptTemplate } from "./prompt-template-definitions";
 import {
+  ROLE_CV_PIPELINE_MODE_VALUES,
+  type RoleCvPipelineMode,
+} from "./types/role-cvs";
+import {
   CHAT_STYLE_LANGUAGE_MODE_VALUES,
   CHAT_STYLE_MANUAL_LANGUAGE_VALUES,
   type ChatStyleLanguageMode,
@@ -641,6 +645,15 @@ export const settingsRegistry = {
     default: (): string => getDefaultPromptTemplate("roleCvPromptTemplate"),
     parse: parseNonEmptyStringOrNull,
     serialize: (value: string | null | undefined): string | null =>
+      value ?? null,
+  },
+  roleCvPipelineMode: {
+    kind: "typed" as const,
+    schema: z.enum(ROLE_CV_PIPELINE_MODE_VALUES),
+    // Refine only takes effect once at least one Role CV exists.
+    default: (): RoleCvPipelineMode => "refine",
+    parse: createEnumParser(ROLE_CV_PIPELINE_MODE_VALUES),
+    serialize: (value: RoleCvPipelineMode | null | undefined): string | null =>
       value ?? null,
   },
   scoringPromptTemplate: {
