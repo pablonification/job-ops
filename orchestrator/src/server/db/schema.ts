@@ -842,6 +842,42 @@ export const designResumeAssets = sqliteTable(
   }),
 );
 
+export const roleCvs = sqliteTable(
+  "role_cvs",
+  {
+    id: text("id").primaryKey(),
+    tenantId: text("tenant_id")
+      .notNull()
+      .default("tenant_default")
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    userId: text("user_id").references(() => users.id, {
+      onDelete: "cascade",
+    }),
+    name: text("name").notNull(),
+    roleDescription: text("role_description").notNull().default(""),
+    // Same encodings as the per-job tailoring columns on `jobs`.
+    tailoredHeadline: text("tailored_headline"),
+    tailoredSummary: text("tailored_summary"),
+    tailoredSkills: text("tailored_skills"),
+    selectedProjectIds: text("selected_project_ids"),
+    masterResumeRevision: text("master_resume_revision"),
+    generatedAt: text("generated_at"),
+    pdfPath: text("pdf_path"),
+    pdfFingerprint: text("pdf_fingerprint"),
+    pdfGeneratedAt: text("pdf_generated_at"),
+    pdfRegeneratingSince: text("pdf_regenerating_since"),
+    createdAt: text("created_at").notNull().default(sql`(datetime('now'))`),
+    updatedAt: text("updated_at").notNull().default(sql`(datetime('now'))`),
+  },
+  (table) => ({
+    tenantUserUpdatedIndex: index("idx_role_cvs_tenant_user_updated").on(
+      table.tenantId,
+      table.userId,
+      table.updatedAt,
+    ),
+  }),
+);
+
 export const jobDocuments = sqliteTable(
   "job_documents",
   {

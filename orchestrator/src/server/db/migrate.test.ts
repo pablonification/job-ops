@@ -518,6 +518,84 @@ describe.sequential("database migrations", () => {
     );
   });
 
+  it("creates the role_cvs table with private scoping and per-scope unique names", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "job-ops-migrate-"));
+    const script = `
+      import { join } from "node:path";
+      import { pathToFileURL } from "node:url";
+      import Database from "better-sqlite3";
+
+      const dbPath = join(process.env.DATA_DIR, "jobs.db");
+      await import(pathToFileURL(join(process.cwd(), "src/server/db/migrate.ts")).href);
+      const migratedDb = new Database(dbPath);
+
+      const columns = migratedDb.prepare("PRAGMA table_info(role_cvs)").all().map((column) => column.name);
+      for (const required of [
+        "id", "tenant_id", "user_id", "name", "role_description",
+        "tailored_headline", "tailored_summary", "tailored_skills", "selected_project_ids",
+        "master_resume_revision", "generated_at",
+        "pdf_path", "pdf_fingerprint", "pdf_generated_at", "pdf_regenerating_since",
+        "created_at", "updated_at",
+      ]) {
+        if (!columns.includes(required)) {
+          throw new Error(\`role_cvs.\${required} missing\`);
+        }
+      }
+
+      const fks = migratedDb.prepare("PRAGMA foreign_key_list(role_cvs)").all();
+      if (!fks.some((fk) => fk.from === "tenant_id" && fk.table === "tenants" && String(fk.on_delete).toUpperCase() === "CASCADE")) {
+        throw new Error("role_cvs is missing the tenant foreign key");
+      }
+
+      migratedDb.prepare("INSERT INTO tenants(id, name, slug) VALUES (?, ?, ?)").run("tenant_other", "Other", "other");
+      const insert = migratedDb.prepare("INSERT INTO role_cvs(id, tenant_id, user_id, name) VALUES (?, ?, NULL, ?)");
+      insert.run("cv-1", "tenant_default", "Backend Engineer");
+      insert.run("cv-2", "tenant_other", "Backend Engineer");
+
+      let duplicateFailed = false;
+      try {
+        insert.run("cv-3", "tenant_default", "backend engineer");
+      } catch {
+        duplicateFailed = true;
+      }
+      if (!duplicateFailed) {
+        throw new Error("role_cvs allowed a duplicate name in the same scope");
+      }
+      migratedDb.close();
+    `;
+
+    execFileSync(
+      process.execPath,
+      ["--import", "tsx", "--input-type=module", "-e", script],
+      {
+        env: {
+          ...process.env,
+          DATA_DIR: tempDir,
+        },
+        stdio: "pipe",
+      },
+    );
+
+    // Re-running migrations on an already-migrated database must succeed.
+    execFileSync(
+      process.execPath,
+      [
+        "--import",
+        "tsx",
+        "--input-type=module",
+        "-e",
+        `import { join } from "node:path"; import { pathToFileURL } from "node:url"; await import(pathToFileURL(join(process.cwd(), "src/server/db/migrate.ts")).href);`,
+      ],
+      {
+        env: {
+          ...process.env,
+          DATA_DIR: tempDir,
+        },
+        stdio: "pipe",
+      },
+    );
+  });
+
   it("enforces private unique indexes when user_id is null", async () => {
     tempDir = await mkdtemp(join(tmpdir(), "job-ops-migrate-"));
     const script = `

@@ -90,6 +90,71 @@ OUTPUT FORMAT (JSON):
 }
 `.trim(),
   },
+  roleCvPromptTemplate: {
+    label: "Role CV prompt",
+    description:
+      "Controls how summary, headline, and skills are generated for a Role CV from a target role description.",
+    placeholders: [
+      "roleName",
+      "roleDescription",
+      "profileJson",
+      "outputLanguage",
+      "tone",
+      "formality",
+      "summaryMaxWordsLine",
+      "maxKeywordsPerSkillLine",
+      "constraintsBullet",
+      "avoidTermsBullet",
+    ] as const,
+    defaultTemplate: `
+You are an expert resume writer preparing a reusable CV variant for a target role.
+It will be used for many applications to this kind of role, not for one specific job.
+You must return a JSON object with three fields: "headline", "summary", and "skills".
+
+TARGET ROLE:
+{{roleName}}
+
+ROLE DESCRIPTION:
+{{roleDescription}}
+
+MY PROFILE:
+{{profileJson}}
+
+INSTRUCTIONS:
+
+1. "headline" (String):
+   - A short, standard job title for the target role that recruiters and ATS systems search for (e.g. "Backend Engineer").
+   - Keep it consistent with my real experience level. Do NOT inflate seniority.
+   - Do NOT translate or localize the headline, even if the rest of the output is in {{outputLanguage}}.
+
+2. "summary" (String):
+   - Position me for the target role using the strengths in my profile that matter most for it.
+   - Keep it concise, warm, and confident.{{summaryMaxWordsLine}}
+   - Do NOT invent experience.
+   - Write the summary in {{outputLanguage}}.
+
+3. "skills" (Array of Objects):
+   - Review my existing skills section structure.
+   - Prioritize the skills and common keywords that matter for the target role; use standard industry terms (e.g. "ReactJS" -> "React").
+   - Keep my original skill levels and categories, just rename/reorder keywords to prioritize role-relevant terms.{{maxKeywordsPerSkillLine}}
+   - Return the full "items" array for the skills section, preserving the structure: { "name": "Frontend", "keywords": [...] }.
+   - Write user-visible skill text in {{outputLanguage}} when natural, but keep standard terms, acronyms, and technology names.
+
+WRITING STYLE PREFERENCES:
+- Tone: {{tone}}
+- Formality: {{formality}}
+- Output language for summary and skills: {{outputLanguage}}
+{{constraintsBullet}}
+{{avoidTermsBullet}}
+
+OUTPUT FORMAT (JSON):
+{
+  "headline": "...",
+  "summary": "...",
+  "skills": [ ... ]
+}
+`.trim(),
+  },
   scoringPromptTemplate: {
     label: "Job scoring prompt",
     description:

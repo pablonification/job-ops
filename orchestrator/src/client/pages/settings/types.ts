@@ -67,5 +67,6 @@ export type ScoringValues = {
 export type PromptTemplatesValues = {
   ghostwriterSystemPromptTemplate: EffectiveDefault<string>;
   tailoringPromptTemplate: EffectiveDefault<string>;
+  roleCvPromptTemplate: EffectiveDefault<string>;
   scoringPromptTemplate: EffectiveDefault<string>;
 };

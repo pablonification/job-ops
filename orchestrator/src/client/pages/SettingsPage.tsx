@@ -111,6 +111,7 @@ const DEFAULT_FORM_VALUES: UpdateSettingsInput = {
   blockedCompanyKeywords: [],
   ghostwriterSystemPromptTemplate: "",
   tailoringPromptTemplate: "",
+  roleCvPromptTemplate: "",
   scoringPromptTemplate: "",
 };
 
@@ -342,6 +343,7 @@ const SECTION_FIELD_MAP: Record<
   "prompt-templates": [
     "ghostwriterSystemPromptTemplate",
     "tailoringPromptTemplate",
+    "roleCvPromptTemplate",
     "scoringPromptTemplate",
   ],
   scoring: [
@@ -471,6 +473,7 @@ const NULL_SETTINGS_PAYLOAD: UpdateSettingsInput = {
   blockedCompanyKeywords: null,
   ghostwriterSystemPromptTemplate: null,
   tailoringPromptTemplate: null,
+  roleCvPromptTemplate: null,
   scoringPromptTemplate: null,
 };
 
@@ -541,6 +544,7 @@ const mapSettingsToForm = (data: AppSettings): UpdateSettingsInput => ({
   ghostwriterSystemPromptTemplate:
     data.ghostwriterSystemPromptTemplate.value ?? "",
   tailoringPromptTemplate: data.tailoringPromptTemplate.value ?? "",
+  roleCvPromptTemplate: data.roleCvPromptTemplate.value ?? "",
   scoringPromptTemplate: data.scoringPromptTemplate.value ?? "",
 });
 
@@ -788,6 +792,10 @@ const getDerivedSettings = (settings: AppSettings | null) => {
       tailoringPromptTemplate: {
         effective: settings?.tailoringPromptTemplate?.value ?? "",
         default: settings?.tailoringPromptTemplate?.default ?? "",
+      },
+      roleCvPromptTemplate: {
+        effective: settings?.roleCvPromptTemplate?.value ?? "",
+        default: settings?.roleCvPromptTemplate?.default ?? "",
       },
       scoringPromptTemplate: {
         effective: settings?.scoringPromptTemplate?.value ?? "",
@@ -1321,6 +1329,10 @@ export const SettingsPage: React.FC = () => {
           normalizeString(data.tailoringPromptTemplate),
           promptTemplates.tailoringPromptTemplate.default,
         ),
+        roleCvPromptTemplate: nullIfSame(
+          normalizeString(data.roleCvPromptTemplate),
+          promptTemplates.roleCvPromptTemplate.default,
+        ),
         scoringPromptTemplate: nullIfSame(
           normalizeString(data.scoringPromptTemplate),
           promptTemplates.scoringPromptTemplate.default,
@@ -1595,6 +1607,8 @@ export const SettingsPage: React.FC = () => {
           promptTemplates.ghostwriterSystemPromptTemplate.default ||
           promptTemplates.tailoringPromptTemplate.effective !==
             promptTemplates.tailoringPromptTemplate.default ||
+          promptTemplates.roleCvPromptTemplate.effective !==
+            promptTemplates.roleCvPromptTemplate.default ||
           promptTemplates.scoringPromptTemplate.effective !==
             promptTemplates.scoringPromptTemplate.default
           ? { label: "Customized", variant: "outline" as const }

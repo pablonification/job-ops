@@ -29,6 +29,19 @@ export interface TailoredData {
   skills: Array<{ name: string; keywords: string[] }>;
 }
 
+/**
+ * What the tailoring content is generated against.
+ * - `job`: a specific job description (per-job tailoring, the default).
+ * - `role`: a target role description (Role CVs), using the Role CV prompt.
+ */
+export type TailoringTarget =
+  | { kind: "job" }
+  | { kind: "role"; roleName: string };
+
+export interface GenerateTailoringOptions {
+  target?: TailoringTarget;
+}
+
 export interface TailoringResult {
   success: boolean;
   data?: TailoredData;
@@ -76,11 +89,13 @@ const TAILORING_SCHEMA: JsonSchemaDefinition = {
 };
 
 /**
- * Generate tailored resume content (summary, headline, skills) for a job.
+ * Generate tailored resume content (summary, headline, skills) for a job, or
+ * for a target role when `options.target.kind === "role"`.
  */
 export async function generateTailoring(
   jobDescription: string,
   profile: ResumeProfile,
+  options?: GenerateTailoringOptions,
 ): Promise<TailoringResult> {
   const [model, writingStyle, aiProfile] = await Promise.all([
     resolveLlmModel("tailoring"),
@@ -91,6 +106,7 @@ export async function generateTailoring(
     aiProfile,
     jobDescription,
     writingStyle,
+    options?.target ?? { kind: "job" },
   );
 
   const llm = await createConfiguredLlmService("tailoring");
@@ -150,6 +166,7 @@ async function buildTailoringPrompt(
   profile: ResumeProfile,
   jd: string,
   writingStyle: Awaited<ReturnType<typeof getWritingStyle>>,
+  target: TailoringTarget,
 ): Promise<string> {
   const jobDescription = stripHtmlTags(jd);
   const resolvedLanguage = resolveWritingOutputLanguage({
@@ -189,10 +206,15 @@ async function buildTailoringPrompt(
     })),
   };
 
-  const template = await getEffectivePromptTemplate("tailoringPromptTemplate");
+  const template = await getEffectivePromptTemplate(
+    target.kind === "role" ? "roleCvPromptTemplate" : "tailoringPromptTemplate",
+  );
 
   return renderPromptTemplate(template, {
     jobDescription,
+    ...(target.kind === "role"
+      ? { roleName: target.roleName, roleDescription: jobDescription }
+      : {}),
     profileJson: JSON.stringify(relevantProfile),
     outputLanguage,
     tone: writingStyle.tone,

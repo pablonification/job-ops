@@ -28,6 +28,7 @@ import { JobPage } from "./pages/JobPage";
 import { OfflinePage } from "./pages/OfflinePage";
 import { OnboardingPage } from "./pages/OnboardingPage";
 import { OrchestratorPage } from "./pages/OrchestratorPage";
+import { RoleCvsPage } from "./pages/RoleCvsPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { SignInPage } from "./pages/SignInPage";
 import { SsoCallbackPage } from "./pages/SsoCallbackPage";
@@ -193,6 +194,7 @@ export const App: React.FC = () => {
                   path="/design-resume/:section"
                   element={<DesignResumePage />}
                 />
+                <Route path="/role-cvs" element={<RoleCvsPage />} />
                 <Route path="/onboarding" element={<OnboardingPage />} />
                 <Route path="/offline" element={<OfflinePage />} />
                 <Route path="/sign-in" element={<SignInPage />} />

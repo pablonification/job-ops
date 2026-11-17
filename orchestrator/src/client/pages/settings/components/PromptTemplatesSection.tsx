@@ -50,7 +50,7 @@ export const PromptTemplatesSection: React.FC<PromptTemplatesSectionProps> = ({
       <div className="space-y-4">
         <p className="text-sm text-muted-foreground">
           Edit the base AI instructions used by Ghostwriter, resume tailoring,
-          and scoring.
+          Role CVs, and scoring.
         </p>
 
         <Alert variant="warning">
