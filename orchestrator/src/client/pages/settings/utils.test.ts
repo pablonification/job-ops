@@ -72,6 +72,17 @@ describe("settings utils", () => {
     expect(config.showBaseUrl).toBe(false);
   });
 
+  it("treats claude_agent_sdk as a subscription provider without API key and base URL inputs", () => {
+    const config = getLlmProviderConfig("claude-agent-sdk");
+    expect(config.normalizedProvider).toBe("claude_agent_sdk");
+    expect(config.label).toBe("Claude (subscription)");
+    expect(config.showApiKey).toBe(false);
+    expect(config.requiresApiKey).toBe(false);
+    expect(config.showBaseUrl).toBe(false);
+    expect(config.keyHelperHref).toBeNull();
+    expect(config.providerHint).toContain("CLAUDE_CODE_OAUTH_TOKEN");
+  });
+
   it("treats Ollama as a local provider with an optional API key", () => {
     const config = getLlmProviderConfig("ollama");
 
@@ -148,6 +159,7 @@ describe("settings utils", () => {
     expect(supportsLlmModelSuggestions("gemini")).toBe(true);
     expect(supportsLlmModelSuggestions("gemini_cli")).toBe(true);
     expect(supportsLlmModelSuggestions("claude_cli")).toBe(true);
+    expect(supportsLlmModelSuggestions("claude_agent_sdk")).toBe(true);
     expect(supportsLlmModelSuggestions("ollama")).toBe(true);
     expect(supportsLlmModelSuggestions("requesty")).toBe(true);
     expect(supportsLlmModelSuggestions("orcarouter")).toBe(true);

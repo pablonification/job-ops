@@ -68,7 +68,12 @@ const LLM_SETTING_KEYS: Array<keyof UpdateSettingsInput> = [
   "llmPurposeOverrides",
   "llmPurposeApiKeys",
 ];
-const CLI_PROVIDERS = new Set(["codex", "gemini_cli", "claude_cli"]);
+const CLI_PROVIDERS = new Set([
+  "codex",
+  "gemini_cli",
+  "claude_cli",
+  "claude_agent_sdk",
+]);
 
 // These settings describe an individual search run. They are persisted in the
 // settings repository for extractor compatibility, but are not server-level

@@ -106,6 +106,7 @@ function getDefaultBaseUrlForProvider(
   if (
     normalized === "gemini_cli" ||
     normalized === "claude_cli" ||
+    normalized === "claude_agent_sdk" ||
     normalized === "codex"
   )
     return null;
@@ -133,7 +134,9 @@ function readPurposeApiKeys(raw: string | null | undefined) {
 }
 
 function isCliProvider(provider: string | null | undefined): boolean {
-  return ["codex", "gemini_cli", "claude_cli"].includes(provider ?? "");
+  return ["codex", "gemini_cli", "claude_cli", "claude_agent_sdk"].includes(
+    provider ?? "",
+  );
 }
 
 async function resolveHostedLlmRuntimeSettings(

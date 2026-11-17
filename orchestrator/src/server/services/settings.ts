@@ -59,6 +59,9 @@ function resolveDefaultLlmBaseUrl(provider: string): string {
   if (normalized === "claude_cli") {
     return "";
   }
+  if (normalized === "claude_agent_sdk") {
+    return "";
+  }
   if (normalized === "codex") {
     return "";
   }
@@ -107,6 +110,15 @@ function normalizeModelForProviderCompatibility(
   if (normalizedProvider === "claude_cli") {
     const isClaudeModel =
       ["sonnet", "opus", "haiku", "fable"].includes(normalizedModel) ||
+      normalizedModel.startsWith("claude-");
+    if (!isClaudeModel) {
+      return null;
+    }
+  }
+
+  if (normalizedProvider === "claude_agent_sdk") {
+    const isClaudeModel =
+      /^(sonnet|opus|haiku|fable)(\[1m\])?$/.test(normalizedModel) ||
       normalizedModel.startsWith("claude-");
     if (!isClaudeModel) {
       return null;
