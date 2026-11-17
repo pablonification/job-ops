@@ -1,4 +1,8 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import type { AccessTokenScope } from "@shared/types";
+
+/** How the caller authenticated: a sign-in session or a personal access token. */
+export type RequestAuthMethod = "session" | "access_token";
 
 export type RequestContext = {
   requestId: string;
@@ -8,6 +12,9 @@ export type RequestContext = {
   tenantId?: string;
   username?: string;
   isSystemAdmin?: boolean;
+  authMethod?: RequestAuthMethod;
+  accessTokenId?: string;
+  accessTokenScope?: AccessTokenScope;
   analyticsSessionId?: string;
   requestUserAgent?: string;
 };
@@ -53,4 +60,12 @@ export function getUserId(): string | undefined {
 
 export function isSystemAdmin(): boolean {
   return storage.getStore()?.isSystemAdmin === true;
+}
+
+export function getAuthMethod(): RequestAuthMethod | undefined {
+  return storage.getStore()?.authMethod;
+}
+
+export function getAccessTokenScope(): AccessTokenScope | undefined {
+  return storage.getStore()?.accessTokenScope;
 }

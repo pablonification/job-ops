@@ -518,6 +518,74 @@ describe.sequential("database migrations", () => {
     );
   });
 
+  it("creates access_tokens with owner foreign keys and a unique prefix", async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "job-ops-migrate-"));
+    const script = `
+      import { join } from "node:path";
+      import { pathToFileURL } from "node:url";
+      import Database from "better-sqlite3";
+
+      const dbPath = join(process.env.DATA_DIR, "jobs.db");
+      // The database was already migrated once: a second boot must not fail.
+      await import(pathToFileURL(join(process.cwd(), "src/server/db/migrate.ts")).href);
+
+      const migratedDb = new Database(dbPath);
+      migratedDb.pragma("foreign_keys = ON");
+
+      const fks = migratedDb.prepare("PRAGMA foreign_key_list(access_tokens)").all();
+      const cascades = (from, table) => fks.some((fk) => fk.from === from && fk.table === table && String(fk.on_delete).toUpperCase() === "CASCADE");
+      if (!cascades("tenant_id", "tenants") || !cascades("user_id", "users")) {
+        throw new Error("access_tokens is missing its foreign keys");
+      }
+
+      const indexes = migratedDb.prepare("PRAGMA index_list(access_tokens)").all();
+      if (!indexes.some((index) => index.name === "idx_access_tokens_tenant_user")) {
+        throw new Error("access_tokens tenant/user index missing");
+      }
+
+      migratedDb.prepare("INSERT INTO users(id, username) VALUES (?, ?)").run("user-1", "alice");
+      const insert = migratedDb.prepare("INSERT INTO access_tokens(id, tenant_id, user_id, name, token_prefix, token_hash, scope) VALUES (?, ?, ?, ?, ?, ?, ?)");
+      insert.run("token-1", "tenant_default", "user-1", "agent", "abcdef012345", "hash-1", "read");
+
+      const expectFailure = (label, fn) => {
+        let failed = false;
+        try { fn(); } catch { failed = true; }
+        if (!failed) throw new Error(label);
+      };
+      expectFailure("duplicate prefix accepted", () =>
+        insert.run("token-2", "tenant_default", "user-1", "agent", "abcdef012345", "hash-2", "read"));
+      expectFailure("unknown scope accepted", () =>
+        insert.run("token-3", "tenant_default", "user-1", "agent", "abcdef099999", "hash-3", "admin"));
+
+      migratedDb.prepare("DELETE FROM users WHERE id = ?").run("user-1");
+      const remaining = migratedDb.prepare("SELECT count(*) AS count FROM access_tokens").get();
+      if (remaining.count !== 0) {
+        throw new Error("access tokens survived their user");
+      }
+
+      migratedDb.close();
+    `;
+    const migrateOnly = `
+      import { join } from "node:path";
+      import { pathToFileURL } from "node:url";
+      await import(pathToFileURL(join(process.cwd(), "src/server/db/migrate.ts")).href);
+    `;
+
+    for (const source of [migrateOnly, script]) {
+      execFileSync(
+        process.execPath,
+        ["--import", "tsx", "--input-type=module", "-e", source],
+        {
+          env: {
+            ...process.env,
+            DATA_DIR: tempDir,
+          },
+          stdio: "pipe",
+        },
+      );
+    }
+  });
+
   it("enforces private unique indexes when user_id is null", async () => {
     tempDir = await mkdtemp(join(tmpdir(), "job-ops-migrate-"));
     const script = `

@@ -6,6 +6,7 @@ import {
   unauthorized,
 } from "@infra/errors";
 import { asyncRoute, fail, ok } from "@infra/http";
+import { getRequestContext } from "@infra/request-context";
 import { blacklistToken, signToken, verifyToken } from "@server/auth/jwt";
 import { verifyPassword } from "@server/auth/password";
 import { getJobOpsAppConfig } from "@server/config/app-mode";
@@ -267,8 +268,14 @@ authRouter.get(
       return;
     }
     const token = authHeader.slice("Bearer ".length).trim();
-    const payload = await verifyToken(token);
-    const user = await usersRepo.getUserById(payload.userId);
+    // The auth guard already resolved personal access tokens; only session
+    // JWTs need verifying here.
+    const context = getRequestContext();
+    const userId =
+      context?.authMethod === "access_token"
+        ? context.userId
+        : (await verifyToken(token)).userId;
+    const user = userId ? await usersRepo.getUserById(userId) : null;
     if (!user || user.isDisabled) {
       fail(res, unauthorized("Authentication required"));
       return;

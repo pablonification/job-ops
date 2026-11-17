@@ -3,6 +3,7 @@
  */
 
 import { Router } from "express";
+import { accessTokensRouter } from "./routes/access-tokens";
 import { appStatusRouter } from "./routes/app-status";
 import { authRouter } from "./routes/auth";
 import { authSsoRouter } from "./routes/auth-sso";
@@ -50,6 +51,7 @@ apiRouter.use("/backups", backupRouter);
 apiRouter.use("/tracer-links", tracerLinksRouter);
 apiRouter.use("/workspaces", workspacesRouter);
 apiRouter.use("/auth/sso", authSsoRouter);
+apiRouter.use("/auth/tokens", accessTokensRouter);
 apiRouter.use("/auth", authRouter);
 apiRouter.use("/workday", workdayRouter);
 apiRouter.use("/watchlist", watchlistRouter);

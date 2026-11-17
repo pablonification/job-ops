@@ -3,6 +3,7 @@
  */
 
 import {
+  ACCESS_TOKEN_SCOPES,
   APPLICATION_OUTCOMES,
   APPLICATION_STAGES,
   APPLICATION_TASK_TYPES,
@@ -765,6 +766,34 @@ export const authSessions = sqliteTable(
   }),
 );
 
+export const accessTokens = sqliteTable(
+  "access_tokens",
+  {
+    id: text("id").primaryKey(),
+    tenantId: text("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    tokenPrefix: text("token_prefix").notNull().unique(),
+    tokenHash: text("token_hash").notNull(),
+    scope: text("scope", { enum: ACCESS_TOKEN_SCOPES }).notNull(),
+    expiresAt: text("expires_at"),
+    lastUsedAt: text("last_used_at"),
+    revokedAt: text("revoked_at"),
+    createdAt: text("created_at").notNull().default(sql`(datetime('now'))`),
+    updatedAt: text("updated_at").notNull().default(sql`(datetime('now'))`),
+  },
+  (table) => ({
+    tenantUserIndex: index("idx_access_tokens_tenant_user").on(
+      table.tenantId,
+      table.userId,
+    ),
+  }),
+);
+
 export const ssoIdentities = sqliteTable(
   "sso_identities",
   {
@@ -1108,6 +1137,7 @@ export const tracerClickEvents = sqliteTable(
 
 export type UserRow = typeof users.$inferSelect;
 export type NewUserRow = typeof users.$inferInsert;
+export type AccessTokenRow = typeof accessTokens.$inferSelect;
 export type SsoIdentityRow = typeof ssoIdentities.$inferSelect;
 export type NewSsoIdentityRow = typeof ssoIdentities.$inferInsert;
 export type TenantRow = typeof tenants.$inferSelect;
