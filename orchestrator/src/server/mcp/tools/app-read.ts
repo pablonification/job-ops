@@ -19,6 +19,7 @@ import { z } from "zod";
 const RECENT_RUNS_LIMIT = 5;
 const SUMMARY_MAX_CHARS = 2_000;
 const PROJECT_DESCRIPTION_MAX_CHARS = 300;
+const DETAIL_TEXT_MAX_CHARS = 1_500;
 
 function truncate(value: string, max: number): string {
   return value.length > max ? `${value.slice(0, max)}…` : value;
@@ -35,6 +36,109 @@ async function resolveProfileSource(): Promise<
   if (local.exists) return "design_resume";
   const { resumeId } = await getConfiguredRxResumeBaseResumeId();
   return resumeId ? "rxresume" : null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Visible items of a resume section with only the listed text fields,
+ * cleaned of HTML and cut to `DETAIL_TEXT_MAX_CHARS`. Field names differ
+ * between resume sources, so lists may name alternatives.
+ */
+function collectSectionDetails(
+  profile: ResumeProfile,
+  sectionKey: string,
+  fields: readonly string[],
+): Record<string, string>[] {
+  const section = (profile.sections as Record<string, unknown> | undefined)?.[
+    sectionKey
+  ];
+  const items =
+    isRecord(section) && Array.isArray(section.items) ? section.items : [];
+  return items
+    .filter(isRecord)
+    .filter((item) => item.visible !== false)
+    .map((item) => {
+      const picked: Record<string, string> = {};
+      for (const field of fields) {
+        const text = cleanText(item[field]);
+        if (text) picked[field] = truncate(text, DETAIL_TEXT_MAX_CHARS);
+      }
+      return picked;
+    })
+    .filter((item) => Object.keys(item).length > 0);
+}
+
+/**
+ * The longer resume content an agent needs for evidence (experience
+ * descriptions, project write-ups, education and the like). Contact details
+ * stay out.
+ */
+function profileDetails(profile: ResumeProfile) {
+  return {
+    experience: collectSectionDetails(profile, "experience", [
+      "company",
+      "position",
+      "location",
+      "date",
+      "summary",
+      "description",
+    ]),
+    projects: collectSectionDetails(profile, "projects", [
+      "id",
+      "name",
+      "date",
+      "description",
+      "summary",
+    ]),
+    education: collectSectionDetails(profile, "education", [
+      "institution",
+      "school",
+      "studyType",
+      "degree",
+      "area",
+      "score",
+      "grade",
+      "location",
+      "date",
+      "summary",
+    ]),
+    certifications: collectSectionDetails(profile, "certifications", [
+      "name",
+      "title",
+      "issuer",
+      "date",
+      "summary",
+    ]),
+    awards: collectSectionDetails(profile, "awards", [
+      "title",
+      "awarder",
+      "date",
+      "summary",
+    ]),
+    volunteer: collectSectionDetails(profile, "volunteer", [
+      "organization",
+      "position",
+      "location",
+      "date",
+      "summary",
+    ]),
+    publications: collectSectionDetails(profile, "publications", [
+      "name",
+      "title",
+      "publisher",
+      "date",
+      "summary",
+    ]),
+    languages: collectSectionDetails(profile, "languages", [
+      "name",
+      "language",
+      "description",
+      "fluency",
+    ]),
+  };
 }
 
 /**
@@ -112,10 +216,20 @@ const getProfileTool = defineTool({
   name: "get_profile",
   title: "Get master resume summary",
   description:
-    "Summary of the user's master resume: name, headline, location, summary, skills, experience and the project catalog (project ids are used by tailoring). Contact details are omitted.",
+    "Summary of the user's master resume: name, headline, location, summary, skills, experience and the project catalog (project ids are used by tailoring). includeDetails adds experience descriptions, full project write-ups, education, certifications, awards, volunteering, publications and languages, the evidence for evaluations and interview stories. Contact details are omitted.",
   scope: "read",
-  input: z.object({}).strict(),
-  handler: async () => {
+  maxResultSizeChars: 200_000,
+  input: z
+    .object({
+      includeDetails: z
+        .boolean()
+        .default(false)
+        .describe(
+          "Also return the longer resume content (experience descriptions, project write-ups, education and more). Default false.",
+        ),
+    })
+    .strict(),
+  handler: async ({ includeDetails }) => {
     const source = await resolveProfileSource();
     if (!source) {
       return {
@@ -137,7 +251,12 @@ const getProfileTool = defineTool({
         "Could not load the master resume. Check the resume settings in JobOps.",
       );
     }
-    return { configured: true, source, profile: summarizeProfile(profile) };
+    return {
+      configured: true,
+      source,
+      profile: summarizeProfile(profile),
+      ...(includeDetails ? { details: profileDetails(profile) } : {}),
+    };
   },
 });
 
