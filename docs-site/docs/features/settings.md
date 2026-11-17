@@ -102,6 +102,8 @@ Each meter includes completed usage and work currently in progress. Limits reset
 - Default: Markdown rendering is enabled
 - Toggle `Auto-tailor manually imported jobs` to control whether jobs created through Manual Import immediately run tailoring + suitability scoring + PDF generation, or land in Discovered so you can tailor them later
 - Default: Auto-tailor on import is enabled. The per-import "Tailor automatically after import" checkbox in the Manual Import review step defaults to this setting and can override it for a single import
+- `Role CVs when auto-tailoring` controls how pipeline runs, **Move to Ready** and auto-tailored imports use [Role CVs](/docs/next/features/role-cvs): **Refine for each job**, **Use as is** or **Off**
+- Default: Refine for each job. It has no effect until you create a Role CV
 
 ### Writing Style & Language
 
@@ -162,8 +164,8 @@ Defaults and constraints:
 
 - Edit the base templates for:
   - Ghostwriter system prompt
-  - Resume tailoring prompt
-  - Role CV prompt (see [Role CVs](/docs/features/role-cvs))
+  - Resume tailoring prompt (its `{{roleCvBaseline}}` placeholder holds the Role CV content when a job is refined from a Role CV)
+  - Role CV prompt (see [Role CVs](/docs/next/features/role-cvs))
   - Job scoring prompt
 - Each editor starts from the current effective template, not a blank override
 - Supported placeholders are shown inline for each template
