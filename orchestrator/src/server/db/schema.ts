@@ -439,9 +439,10 @@ export const pipelineRuns = sqliteTable("pipeline_runs", {
 
 /**
  * Scheduler bookkeeping, one row per tenant. `lastFiredOccurrence` is the
- * scheduled instant (ISO, UTC) most recently claimed; a tick only starts a
- * run after moving it forward, so the same scheduled minute never fires
- * twice, across restarts too. `ownerUserId` is the user who last saved the
+ * scheduled instant (ISO, UTC) most recently claimed, and
+ * `lastFiredLocalDate` its local date; a tick only starts a run after moving
+ * both forward, so there is at most one scheduled run per local day, across
+ * restarts too. `ownerUserId` is the user who last saved the
  * schedule; scheduled runs run as that user while they stay active.
  */
 export const pipelineScheduleState = sqliteTable("pipeline_schedule_state", {
@@ -452,6 +453,12 @@ export const pipelineScheduleState = sqliteTable("pipeline_schedule_state", {
     onDelete: "set null",
   }),
   lastFiredOccurrence: text("last_fired_occurrence"),
+  /** Local date ("YYYY-MM-DD", schedule's zone) of that occurrence. */
+  lastFiredLocalDate: text("last_fired_local_date"),
+  /** When the schedule settings were last saved; earlier times never fire. */
+  settingsSavedAt: text("settings_saved_at"),
+  /** Invalid time zone already logged, so it is logged once. */
+  reportedInvalidTimeZone: text("reported_invalid_time_zone"),
   lastAttemptAt: text("last_attempt_at"),
   lastOutcome: text("last_outcome", { enum: SCHEDULE_ATTEMPT_OUTCOMES }),
   lastOutcomeDetail: text("last_outcome_detail"),

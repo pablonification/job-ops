@@ -13,6 +13,7 @@ import { logger } from "@infra/logger";
 import { trackServerProductEvent } from "@infra/product-analytics";
 import { runWithRequestContext } from "@infra/request-context";
 import { getPrivateDataScope } from "@server/tenancy/private-scope";
+import { withoutUndefined } from "@server/utils/without-undefined";
 import { createLocationIntentFromLegacyInputs } from "@shared/location-domain.js";
 import { resolveResumeProjectSelection } from "@shared/resume-projects";
 import type {
@@ -386,10 +387,11 @@ export async function runPipeline(
   resetProgress();
   const locationIntent = await resolveLocationIntent(config);
   // An undefined field must not overwrite its default.
-  const definedConfig = Object.fromEntries(
-    Object.entries(config).filter(([, value]) => value !== undefined),
-  ) as Partial<PipelineConfig>;
-  const mergedConfig = { ...DEFAULT_CONFIG, ...definedConfig, locationIntent };
+  const mergedConfig = {
+    ...DEFAULT_CONFIG,
+    ...withoutUndefined(config),
+    locationIntent,
+  };
   const configSnapshot = {
     topN: mergedConfig.topN,
     minSuitabilityScore: mergedConfig.minSuitabilityScore,

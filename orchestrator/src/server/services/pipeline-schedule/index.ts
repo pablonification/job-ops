@@ -6,10 +6,14 @@
  * search when the schedule is due:
  *
  * - Single fire: a run starts only after `claimScheduledOccurrence` moves the
- *   tenant's last fired occurrence forward in the database, so a scheduled
- *   minute fires once even with two ticks in it or a restart inside it.
+ *   tenant's last fired occurrence and its local date forward in the
+ *   database, so there is at most one scheduled run per local calendar day,
+ *   even with two ticks in a minute, a restart, or a time edited after the
+ *   day's run.
  * - Catch-up: after downtime a missed occurrence still fires when it is at
  *   most `scheduleCatchUpMinutes` old (default 15); older ones are skipped.
+ *   Times before the schedule was last saved never fire, so turning the
+ *   schedule on or moving the time does not start a run straight away.
  * - Skip, never queue: when a run is already active the occurrence is used
  *   up and recorded as skipped.
  * - Each scheduled run runs as the user who last saved the schedule, or the
@@ -31,6 +35,8 @@ import {
   findScheduleRunAsUser,
   getPipelineScheduleState,
   listTenantsWithScheduleEnabled,
+  markInvalidTimeZoneReported,
+  type PipelineScheduleStateRow,
   recordScheduleAttempt,
 } from "@server/repositories/pipeline-schedule";
 import * as settingsRepo from "@server/repositories/settings";
@@ -53,6 +59,7 @@ import {
   type DailySchedule,
   findDueOccurrence,
   findNextOccurrence,
+  type ScheduleFiredState,
 } from "./due-time";
 
 export {
@@ -60,6 +67,8 @@ export {
   findDueOccurrence,
   findNextOccurrence,
   listOccurrences,
+  type Occurrence,
+  type ScheduleFiredState,
 } from "./due-time";
 
 const MINUTE_MS = 60_000;
@@ -98,8 +107,45 @@ export async function loadScheduleSettings(): Promise<ScheduleSettings> {
   };
 }
 
+/** What has fired and when the schedule was saved, from the tenant's row. */
+function firedStateOf(
+  state: PipelineScheduleStateRow | null,
+): ScheduleFiredState {
+  const parse = (iso: string | null | undefined): number | null => {
+    const ms = iso ? Date.parse(iso) : Number.NaN;
+    return Number.isNaN(ms) ? null : ms;
+  };
+  return {
+    lastFiredMs: parse(state?.lastFiredOccurrence),
+    lastFiredLocalDate: state?.lastFiredLocalDate ?? null,
+    notBeforeMs: parse(state?.settingsSavedAt),
+  };
+}
+
+/**
+ * When the schedule next starts a run (ISO), or null when it is off,
+ * unavailable on this server or has an unknown time zone.
+ */
+function nextRunAt(
+  schedule: ScheduleSettings,
+  state: PipelineScheduleStateRow | null,
+  now: Date,
+): string | null {
+  if (getScheduleUnavailableReason()) return null;
+  if (!schedule.enabled || !isValidTimeZone(schedule.timeZone)) return null;
+  const next = findNextOccurrence({
+    schedule,
+    nowMs: now.getTime(),
+    catchUpMs: schedule.catchUpMinutes * MINUTE_MS,
+    ...firedStateOf(state),
+  });
+  return next === null ? null : new Date(next.instantMs).toISOString();
+}
+
 export type StartScheduledRun = (args: {
+  /** Already resolved from the chosen saved search; not resolved again. */
   config: StartPipelineRunConfig;
+  configResolved: true;
   trigger: "schedule";
   requestOrigin: null;
 }) => Promise<unknown>;
@@ -119,8 +165,6 @@ export type TenantTickResult =
     }
   | { status: "error" };
 
-const reportedInvalidZones = new Set<string>();
-
 async function runTenantScheduleTick(
   tenantId: string,
   deps: ScheduleTickDeps,
@@ -133,36 +177,33 @@ async function runTenantScheduleTick(
       const schedule = await loadScheduleSettings();
       if (!schedule.enabled) return { status: "disabled" };
       if (!isValidTimeZone(schedule.timeZone)) {
-        const key = `${tenantId}\u0000${schedule.timeZone}`;
-        if (!reportedInvalidZones.has(key)) {
-          reportedInvalidZones.add(key);
+        // Logged once per zone value; the mark lives in the tenant's row.
+        const timeZone = schedule.timeZone.slice(0, 100);
+        if (
+          await markInvalidTimeZoneReported({ tenantId, timeZone, now: nowIso })
+        ) {
           logger.warn("Scheduled runs paused: unknown time zone", {
             tenantId,
-            timeZone: schedule.timeZone.slice(0, 100),
+            timeZone,
           });
         }
         return { status: "invalid_time_zone" };
       }
 
       const state = await getPipelineScheduleState(tenantId);
-      const lastFiredMs = state?.lastFiredOccurrence
-        ? Date.parse(state.lastFiredOccurrence)
-        : null;
       const due = findDueOccurrence({
         schedule,
         nowMs: now.getTime(),
         catchUpMs: schedule.catchUpMinutes * MINUTE_MS,
-        lastFiredMs:
-          lastFiredMs === null || Number.isNaN(lastFiredMs)
-            ? null
-            : lastFiredMs,
+        ...firedStateOf(state),
       });
       if (due === null) return { status: "not_due" };
 
-      const occurrence = new Date(due).toISOString();
+      const occurrence = new Date(due.instantMs).toISOString();
       const claimed = await claimScheduledOccurrence({
         tenantId,
         occurrence,
+        localDate: due.localDate,
         now: nowIso,
       });
       if (!claimed) return { status: "already_fired" };
@@ -203,14 +244,17 @@ async function runTenantScheduleTick(
         },
         async () => {
           try {
-            // The chosen saved search, else the most recently used one,
-            // else the stored search settings (see the resolver).
+            // Resolved once, here: the chosen saved search, else the most
+            // recently used one, else the stored search settings. Every
+            // field comes from that one search; startPipelineRun does not
+            // resolve it again.
             const { config } = await resolvePipelineRunConfig(
               {},
               { savedSearchId: schedule.searchPresetId || null },
             );
             await deps.startRun({
               config,
+              configResolved: true,
               trigger: "schedule",
               requestOrigin: null,
             });
@@ -362,18 +406,6 @@ export async function getPipelineScheduleStatus(
     ]);
   const unavailableReason = getScheduleUnavailableReason();
   const timeZoneValid = isValidTimeZone(schedule.timeZone);
-  const lastFiredMs = state?.lastFiredOccurrence
-    ? Date.parse(state.lastFiredOccurrence)
-    : Number.NaN;
-  const next =
-    !unavailableReason && schedule.enabled && timeZoneValid
-      ? findNextOccurrence({
-          schedule,
-          nowMs: now.getTime(),
-          catchUpMs: schedule.catchUpMinutes * MINUTE_MS,
-          lastFiredMs: Number.isNaN(lastFiredMs) ? null : lastFiredMs,
-        })
-      : null;
   const runAs = await findScheduleRunAsUser(
     tenantId,
     state?.ownerUserId ?? null,
@@ -385,7 +417,7 @@ export async function getPipelineScheduleStatus(
     enabled: schedule.enabled,
     timeZone: schedule.timeZone,
     timeZoneValid,
-    nextRunAt: next === null ? null : new Date(next).toISOString(),
+    nextRunAt: nextRunAt(schedule, state, now),
     runAsUsername: runAs?.username ?? null,
     lastAttempt:
       state?.lastFiredOccurrence && state.lastAttemptAt && state.lastOutcome
@@ -418,17 +450,9 @@ export async function getNextScheduledRunAt(
   now: Date = new Date(),
 ): Promise<string | null> {
   if (getScheduleUnavailableReason()) return null;
-  const schedule = await loadScheduleSettings();
-  if (!schedule.enabled || !isValidTimeZone(schedule.timeZone)) return null;
-  const state = await getPipelineScheduleState(getActiveTenantId());
-  const lastFiredMs = state?.lastFiredOccurrence
-    ? Date.parse(state.lastFiredOccurrence)
-    : Number.NaN;
-  const next = findNextOccurrence({
-    schedule,
-    nowMs: now.getTime(),
-    catchUpMs: schedule.catchUpMinutes * MINUTE_MS,
-    lastFiredMs: Number.isNaN(lastFiredMs) ? null : lastFiredMs,
-  });
-  return next === null ? null : new Date(next).toISOString();
+  const [schedule, state] = await Promise.all([
+    loadScheduleSettings(),
+    getPipelineScheduleState(getActiveTenantId()),
+  ]);
+  return nextRunAt(schedule, state, now);
 }

@@ -510,6 +510,9 @@ const migrations = [
     tenant_id TEXT PRIMARY KEY,
     owner_user_id TEXT,
     last_fired_occurrence TEXT,
+    last_fired_local_date TEXT,
+    settings_saved_at TEXT,
+    reported_invalid_time_zone TEXT,
     last_attempt_at TEXT,
     last_outcome TEXT CHECK (last_outcome IN ('started', 'skipped_active', 'skipped_no_user', 'failed_to_start')),
     last_outcome_detail TEXT,
@@ -1272,6 +1275,9 @@ const migrations = [
   `ALTER TABLE job_chat_threads ADD COLUMN selected_document_ids TEXT NOT NULL DEFAULT '[]'`,
   `ALTER TABLE pipeline_runs ADD COLUMN config_snapshot TEXT`,
   `ALTER TABLE pipeline_runs ADD COLUMN run_trigger TEXT`,
+  `ALTER TABLE pipeline_schedule_state ADD COLUMN last_fired_local_date TEXT`,
+  `ALTER TABLE pipeline_schedule_state ADD COLUMN settings_saved_at TEXT`,
+  `ALTER TABLE pipeline_schedule_state ADD COLUMN reported_invalid_time_zone TEXT`,
   `ALTER TABLE analytics_install_state ADD COLUMN raw_event_replay_version INTEGER NOT NULL DEFAULT 0`,
   `ALTER TABLE analytics_install_state ADD COLUMN raw_event_replay_completed_at TEXT`,
 
@@ -1369,7 +1375,10 @@ for (const migration of migrations) {
           .includes("alter table job_chat_threads add column") ||
         migration
           .toLowerCase()
-          .includes("alter table analytics_install_state add column")) &&
+          .includes("alter table analytics_install_state add column") ||
+        migration
+          .toLowerCase()
+          .includes("alter table pipeline_schedule_state add column")) &&
       message.toLowerCase().includes("duplicate column name");
 
     if (isDuplicateColumn) {

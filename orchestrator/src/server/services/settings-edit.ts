@@ -13,7 +13,7 @@ import {
 import { logger } from "@infra/logger";
 import { getRequestId, getUserId, isSystemAdmin } from "@infra/request-context";
 import { getJobOpsAppConfig } from "@server/config/app-mode";
-import { setPipelineScheduleOwner } from "@server/repositories/pipeline-schedule";
+import { recordScheduleSaved } from "@server/repositories/pipeline-schedule";
 import { getCurrentAccountEntitlements } from "@server/services/account-entitlements";
 import { enqueueAutoPdfRegenerationForSettingsChanges } from "@server/services/auto-pdf-regeneration";
 import { setBackupSettings } from "@server/services/backup/index";
@@ -310,22 +310,21 @@ export async function updateSettingsForCaller(
     clearProfileCache();
   }
 
-  // Scheduled runs run as whoever last saved the schedule.
-  const userId = getUserId();
+  // Saving the schedule: earlier times no longer fire (no surprise run on
+  // an edit), and scheduled runs run as whoever saved it.
   if (
-    userId &&
     Object.keys(input).some((key) =>
       SCHEDULE_OWNER_KEYS.has(key as keyof UpdateSettingsInput),
     )
   ) {
     // Bookkeeping only: the settings are already saved, so a failure here
     // is logged rather than failing the request.
-    await setPipelineScheduleOwner({
+    await recordScheduleSaved({
       tenantId: getActiveTenantId(),
-      userId,
+      userId: getUserId() ?? null,
       now: new Date().toISOString(),
     }).catch((error) => {
-      logger.warn("Could not record who saved the schedule", {
+      logger.warn("Could not record the schedule save", {
         route: options.route,
         error,
       });

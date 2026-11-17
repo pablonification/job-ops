@@ -753,6 +753,11 @@ describe.sequential("database migrations", () => {
         throw new Error(\`run trigger lost on reboot: \${JSON.stringify(row)}\`);
       }
 
+      const stateColumns = db.prepare("PRAGMA table_info(pipeline_schedule_state)").all().map((column) => column.name);
+      for (const required of ["last_fired_occurrence", "last_fired_local_date", "settings_saved_at", "reported_invalid_time_zone"]) {
+        if (!stateColumns.includes(required)) throw new Error(\`pipeline_schedule_state.\${required} missing\`);
+      }
+
       const fks = db.prepare("PRAGMA foreign_key_list(pipeline_schedule_state)").all();
       const hasFk = (from, table, onDelete) => fks.some((fk) => fk.from === from && fk.table === table && String(fk.on_delete).toUpperCase() === onDelete);
       if (!hasFk("tenant_id", "tenants", "CASCADE") || !hasFk("owner_user_id", "users", "SET NULL")) {

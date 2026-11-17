@@ -29,6 +29,7 @@ import { closeHiringCafeBrowser } from "@server/services/hiring-cafe-browser";
 import { reserveHostedUsage } from "@server/services/hosted-usage";
 import { ensurePipelineSearchTerms } from "@server/services/pipeline-search-terms";
 import { getPrivateDataScope } from "@server/tenancy/private-scope";
+import { withoutUndefined } from "@server/utils/without-undefined";
 import {
   createLocationIntent,
   planLocationSources,
@@ -68,12 +69,8 @@ function toSelectedSourcesValue(
     .join("|");
 }
 
-/** Drops keys whose value is undefined, so they cannot hide a default. */
-export function withoutUndefined<T extends object>(value: T): Partial<T> {
-  return Object.fromEntries(
-    Object.entries(value).filter(([, entry]) => entry !== undefined),
-  ) as Partial<T>;
-}
+const NO_SOURCES_MESSAGE =
+  "No job sources to search. Choose sources for this run, or save a search in the run dialog first.";
 
 /** Fields that only make sense together: where to search. */
 const LOCATION_PLACE_KEYS = ["country", "cityLocations", "proximity"] as const;
@@ -203,9 +200,7 @@ export async function resolvePipelineRunConfig(
   const config = { ...lower, ...explicit } as StartPipelineRunConfig;
 
   if ((options.requireSources ?? true) && !config.sources?.length) {
-    throw badRequest(
-      "No job sources to search. Choose sources for this run, or save a search in the run dialog first.",
-    );
+    throw badRequest(NO_SOURCES_MESSAGE);
   }
   return {
     config,
@@ -253,13 +248,27 @@ export async function startPipelineRun(args: {
   requestOrigin?: string | null;
   /** Saved search to fill omitted fields from; default the latest used. */
   savedSearchId?: string | null;
+  /**
+   * The config was already resolved by the caller (the scheduler, from the
+   * search it chose): use it as is, so no field comes from another search.
+   */
+  configResolved?: boolean;
 }): Promise<StartPipelineRunResult> {
   const { trigger } = args;
-  const { config } = await resolvePipelineRunConfig(args.config, {
-    savedSearchId: args.savedSearchId,
-    // The demo simulates a run and needs no real sources.
-    requireSources: !isDemoMode(),
-  });
+  // The demo simulates a run and needs no real sources.
+  const requireSources = !isDemoMode();
+  let config: StartPipelineRunConfig;
+  if (args.configResolved) {
+    config = args.config;
+    if (requireSources && !config.sources?.length) {
+      throw badRequest(NO_SOURCES_MESSAGE);
+    }
+  } else {
+    ({ config } = await resolvePipelineRunConfig(args.config, {
+      savedSearchId: args.savedSearchId,
+      requireSources,
+    }));
+  }
   const locationIntent = createLocationIntent({
     selectedCountry: config.country,
     cityLocations: config.cityLocations,

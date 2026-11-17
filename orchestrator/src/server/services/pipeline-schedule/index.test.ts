@@ -214,6 +214,7 @@ describe.sequential("pipeline scheduler", () => {
         searchScope: "selected_only",
         matchStrictness: "exact_only",
       },
+      configResolved: true,
       trigger: "schedule",
       requestOrigin: null,
     });
@@ -258,6 +259,7 @@ describe.sequential("pipeline scheduler", () => {
       repo.claimScheduledOccurrence({
         tenantId: "tenant_default",
         occurrence: "2026-11-17T01:00:00.000Z",
+        localDate: "2026-11-17",
         now: "2026-11-17T01:00:01.000Z",
       });
     const results = await Promise.all([claim(), claim(), claim()]);
@@ -267,7 +269,17 @@ describe.sequential("pipeline scheduler", () => {
       await repo.claimScheduledOccurrence({
         tenantId: "tenant_default",
         occurrence: "2026-11-16T01:00:00.000Z",
+        localDate: "2026-11-16",
         now: "2026-11-17T01:00:02.000Z",
+      }),
+    ).toBe(false);
+    // Nor a later time on the same local day.
+    expect(
+      await repo.claimScheduledOccurrence({
+        tenantId: "tenant_default",
+        occurrence: "2026-11-17T02:00:00.000Z",
+        localDate: "2026-11-17",
+        now: "2026-11-17T02:00:02.000Z",
       }),
     ).toBe(false);
   });
@@ -376,8 +388,20 @@ describe.sequential("pipeline scheduler", () => {
         "No job sources to search. Choose sources for this run, or save a search in the run dialog first.",
     });
     expect(startRun).toHaveBeenCalledTimes(1);
-    // Nothing is claimed for the invalid zone, and its status says why.
-    expect(await stateOf("tenant_a")).toBeNull();
+    // Nothing is claimed for the invalid zone; it is logged once, and its
+    // status says why.
+    expect(await stateOf("tenant_a")).toMatchObject({
+      lastFiredOccurrence: null,
+      reportedInvalidTimeZone: "Mars/Base",
+    });
+    const repo = await import("@server/repositories/pipeline-schedule");
+    expect(
+      await repo.markInvalidTimeZoneReported({
+        tenantId: "tenant_a",
+        timeZone: "Mars/Base",
+        now: "2026-11-17T01:01:10.000Z",
+      }),
+    ).toBe(false);
     const { getPipelineScheduleStatus } = await scheduler();
     const status = await inTenant("tenant_a", "alice", () =>
       getPipelineScheduleStatus(new Date("2026-11-17T01:00:10.000Z")),
@@ -429,7 +453,7 @@ describe.sequential("pipeline scheduler", () => {
       "first-admin",
     );
 
-    await repo.setPipelineScheduleOwner({
+    await repo.recordScheduleSaved({
       tenantId: "tenant_default",
       userId: "second-admin",
       now: "2026-11-17T00:00:00.000Z",
@@ -472,11 +496,15 @@ describe.sequential("pipeline scheduler", () => {
 
   it("uses the chosen saved search and ignores disabled schedules", async () => {
     await createUser("owner", "tenant_default", { admin: true });
-    await savePreset("tenant_default", "owner", "Recent");
     const chosen = await savePreset("tenant_default", "owner", "Chosen", {
       ...PRESET_CONFIG,
       searchTerms: ["backend engineer"],
       locationMode: "radius",
+    });
+    // A more recently saved search with a field the chosen one leaves out.
+    await savePreset("tenant_default", "owner", "Recent", {
+      ...PRESET_CONFIG,
+      watchlistSelectedSourceIds: ["watch-1"],
     });
     await configureSchedule("tenant_default", {
       scheduleSearchPresetId: chosen,
@@ -489,12 +517,18 @@ describe.sequential("pipeline scheduler", () => {
     });
     expect(startRun).toHaveBeenCalledWith(
       expect.objectContaining({
+        configResolved: true,
         config: expect.objectContaining({
           searchTerms: ["backend engineer"],
           proximity: { latitude: -6.2, longitude: 106.8, radiusMiles: 20 },
         }),
       }),
     );
+    // Nothing comes from the other saved search.
+    const [{ config }] = startRun.mock.calls[0] as unknown as [
+      { config: Record<string, unknown> },
+    ];
+    expect(config.watchlistSelectedSourceIds).toBeUndefined();
 
     await configureSchedule("tenant_default", { scheduleEnabled: "0" });
     expect(
@@ -504,6 +538,70 @@ describe.sequential("pipeline scheduler", () => {
       }),
     ).toEqual({});
     expect(startRun).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not run twice on one local day when the time is moved later", async () => {
+    await createUser("owner", "tenant_default", { admin: true });
+    await savePreset("tenant_default", "owner");
+    await configureSchedule("tenant_default", { scheduleTime: "06:30" });
+    const { runScheduleTick, getPipelineScheduleStatus } = await scheduler();
+    const repo = await import("@server/repositories/pipeline-schedule");
+    const startRun = vi.fn(async () => undefined);
+    const time = clock("2026-11-16T23:30:05.000Z"); // 06:30 in Jakarta
+
+    await runScheduleTick({ now: time.now, startRun });
+    expect(startRun).toHaveBeenCalledTimes(1);
+
+    // At 06:45 the owner moves the schedule to 07:00.
+    await configureSchedule("tenant_default", { scheduleTime: "07:00" });
+    await repo.recordScheduleSaved({
+      tenantId: "tenant_default",
+      userId: "owner",
+      now: "2026-11-16T23:45:00.000Z",
+    });
+    time.set("2026-11-17T00:00:05.000Z"); // 07:00
+    expect(
+      (await runScheduleTick({ now: time.now, startRun })).tenant_default,
+    ).toEqual({ status: "not_due" });
+    expect(startRun).toHaveBeenCalledTimes(1);
+    const status = await inTenant("tenant_default", "owner", () =>
+      getPipelineScheduleStatus(time.now()),
+    );
+    expect(status.nextRunAt).toBe("2026-11-18T00:00:00.000Z");
+
+    time.set("2026-11-18T00:00:05.000Z");
+    expect(
+      (await runScheduleTick({ now: time.now, startRun })).tenant_default,
+    ).toMatchObject({ status: "started" });
+    expect(startRun).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not start a run right away when the schedule is turned on late", async () => {
+    await createUser("owner", "tenant_default", { admin: true });
+    await savePreset("tenant_default", "owner");
+    await configureSchedule("tenant_default", {});
+    const repo = await import("@server/repositories/pipeline-schedule");
+    // Turned on at 08:05, inside the catch-up window after 08:00.
+    await repo.recordScheduleSaved({
+      tenantId: "tenant_default",
+      userId: "owner",
+      now: "2026-11-17T01:05:00.000Z",
+    });
+    const { runScheduleTick } = await scheduler();
+    const startRun = vi.fn(async () => undefined);
+    expect(
+      (
+        await runScheduleTick({
+          now: () => new Date("2026-11-17T01:05:30.000Z"),
+          startRun,
+        })
+      ).tenant_default,
+    ).toEqual({ status: "not_due" });
+    expect(startRun).not.toHaveBeenCalled();
+    expect(await stateOf("tenant_default")).toMatchObject({
+      ownerUserId: "owner",
+      settingsSavedAt: "2026-11-17T01:05:00.000Z",
+    });
   });
 
   it("does not start in hosted or demo mode", async () => {
@@ -516,5 +614,9 @@ describe.sequential("pipeline scheduler", () => {
     const handle = startPipelineScheduler({ now, startRun: vi.fn() });
     handle.stop();
     expect(now).not.toHaveBeenCalled();
+
+    delete process.env.JOBOPS_APP_MODE;
+    process.env.DEMO_MODE = "true";
+    expect(getScheduleUnavailableReason()).toMatch(/demo/);
   });
 });

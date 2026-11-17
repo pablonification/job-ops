@@ -11,7 +11,18 @@ import type {
   DigestDeliveryStatus,
   ScheduleAttemptOutcome,
 } from "@shared/types";
-import { and, asc, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  inArray,
+  isNull,
+  lt,
+  ne,
+  or,
+  sql,
+} from "drizzle-orm";
 import { db, schema } from "../db/index";
 
 const { pipelineScheduleState, settings, tenantMemberships, users } = schema;
@@ -48,14 +59,17 @@ export async function getPipelineScheduleState(
 }
 
 /**
- * Claims a scheduled occurrence (ISO instant) for the tenant. Returns true
- * only for the first caller to move `lastFiredOccurrence` forward to it; a
- * second tick in the same minute, a restart or a second process gets false.
- * The check and the write are one SQLite statement, so they cannot race.
+ * Claims a scheduled occurrence (ISO instant and its local date) for the
+ * tenant. Returns true only for the first caller to move both the last
+ * fired instant and the last fired local date forward; a second tick in the
+ * same minute, a restart, a second process, or another time on the same
+ * local day (after the schedule was edited) gets false. The check and the
+ * write are one SQLite statement, so they cannot race.
  */
 export async function claimScheduledOccurrence(args: {
   tenantId: string;
   occurrence: string;
+  localDate: string;
   now: string;
 }): Promise<boolean> {
   const result = await db
@@ -63,14 +77,25 @@ export async function claimScheduledOccurrence(args: {
     .values({
       tenantId: args.tenantId,
       lastFiredOccurrence: args.occurrence,
+      lastFiredLocalDate: args.localDate,
       updatedAt: args.now,
     })
     .onConflictDoUpdate({
       target: pipelineScheduleState.tenantId,
-      set: { lastFiredOccurrence: args.occurrence, updatedAt: args.now },
-      setWhere: or(
-        isNull(pipelineScheduleState.lastFiredOccurrence),
-        lt(pipelineScheduleState.lastFiredOccurrence, args.occurrence),
+      set: {
+        lastFiredOccurrence: args.occurrence,
+        lastFiredLocalDate: args.localDate,
+        updatedAt: args.now,
+      },
+      setWhere: and(
+        or(
+          isNull(pipelineScheduleState.lastFiredOccurrence),
+          lt(pipelineScheduleState.lastFiredOccurrence, args.occurrence),
+        ),
+        or(
+          isNull(pipelineScheduleState.lastFiredLocalDate),
+          lt(pipelineScheduleState.lastFiredLocalDate, args.localDate),
+        ),
       ),
     })
     .run();
@@ -123,31 +148,64 @@ export async function recordDigestDelivery(args: {
 }
 
 /**
- * Remembers who last saved the schedule; scheduled runs run as them. Does
- * nothing for an id that is not a user (for example a test bypass context).
+ * Records that the schedule settings were saved at `now` (times before it
+ * never fire) and, when `userId` is a real user, that scheduled runs run as
+ * them. An id that is not a user (for example a test bypass context) only
+ * updates the time.
  */
-export async function setPipelineScheduleOwner(args: {
+export async function recordScheduleSaved(args: {
   tenantId: string;
-  userId: string;
+  userId: string | null;
   now: string;
 }): Promise<void> {
-  const [user] = await db
-    .select({ id: users.id })
-    .from(users)
-    .where(eq(users.id, args.userId))
-    .limit(1);
-  if (!user) return;
+  const [user] = args.userId
+    ? await db
+        .select({ id: users.id })
+        .from(users)
+        .where(eq(users.id, args.userId))
+        .limit(1)
+    : [];
+  const owner = user ? { ownerUserId: user.id } : {};
   await db
     .insert(pipelineScheduleState)
     .values({
       tenantId: args.tenantId,
-      ownerUserId: args.userId,
+      ...owner,
+      settingsSavedAt: args.now,
       updatedAt: args.now,
     })
     .onConflictDoUpdate({
       target: pipelineScheduleState.tenantId,
-      set: { ownerUserId: args.userId, updatedAt: args.now },
+      set: { ...owner, settingsSavedAt: args.now, updatedAt: args.now },
     });
+}
+
+/**
+ * Marks an invalid time zone as logged for the tenant. Returns true when it
+ * was not marked before, i.e. the caller should log it now.
+ */
+export async function markInvalidTimeZoneReported(args: {
+  tenantId: string;
+  timeZone: string;
+  now: string;
+}): Promise<boolean> {
+  const result = await db
+    .insert(pipelineScheduleState)
+    .values({
+      tenantId: args.tenantId,
+      reportedInvalidTimeZone: args.timeZone,
+      updatedAt: args.now,
+    })
+    .onConflictDoUpdate({
+      target: pipelineScheduleState.tenantId,
+      set: { reportedInvalidTimeZone: args.timeZone, updatedAt: args.now },
+      setWhere: or(
+        isNull(pipelineScheduleState.reportedInvalidTimeZone),
+        ne(pipelineScheduleState.reportedInvalidTimeZone, args.timeZone),
+      ),
+    })
+    .run();
+  return result.changes === 1;
 }
 
 export type ScheduleRunAsUser = {

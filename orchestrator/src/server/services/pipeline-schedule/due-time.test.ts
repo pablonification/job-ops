@@ -9,38 +9,37 @@ import {
 
 const MINUTE = 60_000;
 const at = (iso: string) => Date.parse(iso);
-const iso = (ms: number | null) =>
-  ms === null ? null : new Date(ms).toISOString();
+const iso = (entry: { instantMs: number } | null) =>
+  entry === null ? null : new Date(entry.instantMs).toISOString();
 const everyDay = [...SCHEDULE_WEEKDAY_VALUES];
 
-function due(
-  schedule: DailySchedule,
-  now: string,
-  options: { catchUpMinutes?: number; lastFired?: string | null } = {},
-) {
-  return iso(
-    findDueOccurrence({
-      schedule,
-      nowMs: at(now),
-      catchUpMs: (options.catchUpMinutes ?? 15) * MINUTE,
-      lastFiredMs: options.lastFired ? at(options.lastFired) : null,
-    }),
-  );
+type Options = {
+  catchUpMinutes?: number;
+  /** Last claimed occurrence (ISO). */
+  lastFired?: string | null;
+  /** Its local date, "YYYY-MM-DD". */
+  lastFiredDate?: string | null;
+  /** When the schedule settings were last saved (ISO). */
+  savedAt?: string | null;
+};
+
+function args(schedule: DailySchedule, now: string, options: Options) {
+  return {
+    schedule,
+    nowMs: at(now),
+    catchUpMs: (options.catchUpMinutes ?? 15) * MINUTE,
+    lastFiredMs: options.lastFired ? at(options.lastFired) : null,
+    lastFiredLocalDate: options.lastFiredDate ?? null,
+    notBeforeMs: options.savedAt ? at(options.savedAt) : null,
+  };
 }
 
-function next(
-  schedule: DailySchedule,
-  now: string,
-  options: { catchUpMinutes?: number; lastFired?: string | null } = {},
-) {
-  return iso(
-    findNextOccurrence({
-      schedule,
-      nowMs: at(now),
-      catchUpMs: (options.catchUpMinutes ?? 15) * MINUTE,
-      lastFiredMs: options.lastFired ? at(options.lastFired) : null,
-    }),
-  );
+function due(schedule: DailySchedule, now: string, options: Options = {}) {
+  return iso(findDueOccurrence(args(schedule, now, options)));
+}
+
+function next(schedule: DailySchedule, now: string, options: Options = {}) {
+  return iso(findNextOccurrence(args(schedule, now, options)));
 }
 
 describe("schedule due times", () => {
@@ -138,7 +137,7 @@ describe("schedule due times", () => {
       skipped,
       at("2026-03-07T00:00:00.000Z"),
       at("2026-03-10T00:00:00.000Z"),
-    ).map((ms) => iso(ms));
+    ).map((ms) => new Date(ms).toISOString());
     expect(occurrences).toEqual([
       "2026-03-07T07:30:00.000Z", // 02:30 EST
       "2026-03-08T07:30:00.000Z", // 03:30 EDT, the day 02:30 does not exist
@@ -157,7 +156,7 @@ describe("schedule due times", () => {
       repeated,
       at("2026-10-31T12:00:00.000Z"),
       at("2026-11-02T12:00:00.000Z"),
-    ).map((ms) => iso(ms));
+    ).map((ms) => new Date(ms).toISOString());
     expect(occurrences).toEqual([
       "2026-11-01T05:30:00.000Z", // 01:30 EDT, the first of the two
       "2026-11-02T06:30:00.000Z",
@@ -181,6 +180,62 @@ describe("schedule due times", () => {
     expect(due(kolkata, "2026-11-17T18:45:30.000Z")).toBe(
       "2026-11-17T18:45:00.000Z",
     );
+  });
+
+  it("gives each occurrence its local date in the schedule's zone", () => {
+    // 06:30 Monday 16 Nov in Jakarta is still Sunday 15 Nov in UTC.
+    expect(
+      findDueOccurrence(
+        args(
+          { time: "06:30", timeZone: "Asia/Jakarta", weekdays: everyDay },
+          "2026-11-15T23:30:10.000Z",
+          {},
+        ),
+      ),
+    ).toEqual({
+      instantMs: at("2026-11-15T23:30:00.000Z"),
+      localDate: "2026-11-16",
+    });
+  });
+
+  it("runs at most once per local day when the time is moved later", () => {
+    // 06:30 fired; the owner then moves the schedule to 07:00 the same day.
+    const moved: DailySchedule = { ...jakarta, time: "07:00" };
+    const state = {
+      lastFired: "2026-11-16T23:30:00.000Z",
+      lastFiredDate: "2026-11-17",
+      savedAt: "2026-11-16T23:45:00.000Z",
+    };
+    expect(due(moved, "2026-11-17T00:00:10.000Z", state)).toBeNull();
+    // Next run is 07:00 tomorrow, not today.
+    expect(next(moved, "2026-11-17T00:00:10.000Z", state)).toBe(
+      "2026-11-18T00:00:00.000Z",
+    );
+    expect(due(moved, "2026-11-18T00:00:10.000Z", state)).toBe(
+      "2026-11-18T00:00:00.000Z",
+    );
+  });
+
+  it("does not catch up times from before the schedule was saved", () => {
+    // Turned on at 08:05 with a time of 08:00: no run until tomorrow.
+    const savedAt = "2026-11-17T01:05:00.000Z";
+    expect(due(jakarta, "2026-11-17T01:05:30.000Z", { savedAt })).toBeNull();
+    expect(next(jakarta, "2026-11-17T01:05:30.000Z", { savedAt })).toBe(
+      "2026-11-18T01:00:00.000Z",
+    );
+    // Saved before the time: today's run is still due, and still caught up
+    // after a restart inside the window.
+    const earlier = "2026-11-17T00:40:00.000Z";
+    expect(due(jakarta, "2026-11-17T01:10:00.000Z", { savedAt: earlier })).toBe(
+      "2026-11-17T01:00:00.000Z",
+    );
+    // Moved to a time a few minutes in the past: no surprise run either.
+    const backdated: DailySchedule = { ...jakarta, time: "07:55" };
+    expect(
+      due(backdated, "2026-11-17T01:00:30.000Z", {
+        savedAt: "2026-11-17T01:00:00.000Z",
+      }),
+    ).toBeNull();
   });
 
   it("never fires for an invalid zone, time or empty weekday list", () => {

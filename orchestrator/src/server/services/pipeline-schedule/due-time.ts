@@ -135,15 +135,27 @@ export function occurrenceOnLocalDate(
   return wallAsUtc - offsets[0];
 }
 
+/** "YYYY-MM-DD" of a local date. */
+function formatLocalDate(date: LocalDate): string {
+  return `${String(date.year).padStart(4, "0")}-${String(date.month).padStart(2, "0")}-${String(date.day).padStart(2, "0")}`;
+}
+
+/** One scheduled run: when it fires and the local date it belongs to. */
+export type Occurrence = {
+  instantMs: number;
+  /** "YYYY-MM-DD" in the schedule's time zone. */
+  localDate: string;
+};
+
 /**
- * Every occurrence in [fromMs, toMs], oldest first. Returns [] for an
- * invalid time, time zone or empty weekday list.
+ * Every occurrence in [fromMs, toMs], oldest first, with its local date.
+ * Returns [] for an invalid time, time zone or empty weekday list.
  */
-export function listOccurrences(
+export function listOccurrenceEntries(
   schedule: DailySchedule,
   fromMs: number,
   toMs: number,
-): number[] {
+): Occurrence[] {
   const time = parseScheduleTime(schedule.time);
   if (!time || !isValidTimeZone(schedule.timeZone)) return [];
   const weekdays = new Set(schedule.weekdays);
@@ -159,16 +171,18 @@ export function listOccurrences(
     return addDays({ year: end.year, month: end.month, day: end.day }, 1);
   })();
 
-  const out: number[] = [];
+  const out: Occurrence[] = [];
   for (let guard = 0; guard < 400; guard += 1) {
     if (weekdays.has(weekdayOf(date))) {
-      const instant = occurrenceOnLocalDate(
+      const instantMs = occurrenceOnLocalDate(
         date,
         time.hour,
         time.minute,
         schedule.timeZone,
       );
-      if (instant >= fromMs && instant <= toMs) out.push(instant);
+      if (instantMs >= fromMs && instantMs <= toMs) {
+        out.push({ instantMs, localDate: formatLocalDate(date) });
+      }
     }
     if (
       date.year === lastDate.year &&
@@ -179,51 +193,89 @@ export function listOccurrences(
     }
     date = addDays(date, 1);
   }
-  return out.sort((left, right) => left - right);
+  return out.sort((left, right) => left.instantMs - right.instantMs);
+}
+
+/** Instants of every occurrence in [fromMs, toMs], oldest first. */
+export function listOccurrences(
+  schedule: DailySchedule,
+  fromMs: number,
+  toMs: number,
+): number[] {
+  return listOccurrenceEntries(schedule, fromMs, toMs).map(
+    (entry) => entry.instantMs,
+  );
+}
+
+/** What has already happened, which limits what may fire next. */
+export type ScheduleFiredState = {
+  /** The last claimed occurrence. */
+  lastFiredMs: number | null;
+  /** Its local date: at most one scheduled run per local calendar day. */
+  lastFiredLocalDate: string | null;
+  /**
+   * When the schedule settings were last saved. Occurrences before this
+   * never fire: the catch-up window covers restarts, not edits.
+   */
+  notBeforeMs: number | null;
+};
+
+function isAllowed(entry: Occurrence, state: ScheduleFiredState): boolean {
+  if (state.lastFiredMs !== null && entry.instantMs <= state.lastFiredMs) {
+    return false;
+  }
+  if (
+    state.lastFiredLocalDate !== null &&
+    entry.localDate <= state.lastFiredLocalDate
+  ) {
+    return false;
+  }
+  if (state.notBeforeMs !== null && entry.instantMs < state.notBeforeMs) {
+    return false;
+  }
+  return true;
 }
 
 /**
  * The occurrence that should fire now, if any: the latest occurrence at or
- * before `nowMs`, no older than the catch-up window, and later than the last
- * one already fired. Older missed occurrences are skipped, never queued.
+ * before `nowMs` and no older than the catch-up window, provided it is
+ * allowed (see `ScheduleFiredState`). Older missed occurrences are skipped,
+ * never queued.
  */
-export function findDueOccurrence(args: {
-  schedule: DailySchedule;
-  nowMs: number;
-  catchUpMs: number;
-  lastFiredMs: number | null;
-}): number | null {
-  const occurrences = listOccurrences(
+export function findDueOccurrence(
+  args: {
+    schedule: DailySchedule;
+    nowMs: number;
+    catchUpMs: number;
+  } & ScheduleFiredState,
+): Occurrence | null {
+  const occurrences = listOccurrenceEntries(
     args.schedule,
     args.nowMs - Math.max(0, args.catchUpMs),
     args.nowMs,
   );
   const latest = occurrences.at(-1);
-  if (latest === undefined) return null;
-  if (args.lastFiredMs !== null && latest <= args.lastFiredMs) return null;
+  if (latest === undefined || !isAllowed(latest, args)) return null;
   return latest;
 }
 
 /**
  * When the schedule will next start a run: a due occurrence that has not
- * fired yet (it fires on the next tick), else the first future one.
+ * fired yet (it fires on the next tick), else the first allowed future one.
  */
-export function findNextOccurrence(args: {
-  schedule: DailySchedule;
-  nowMs: number;
-  catchUpMs: number;
-  lastFiredMs: number | null;
-}): number | null {
+export function findNextOccurrence(
+  args: {
+    schedule: DailySchedule;
+    nowMs: number;
+    catchUpMs: number;
+  } & ScheduleFiredState,
+): Occurrence | null {
   const due = findDueOccurrence(args);
   if (due !== null) return due;
-  const upcoming = listOccurrences(
+  const upcoming = listOccurrenceEntries(
     args.schedule,
     args.nowMs + 1,
     args.nowMs + SEARCH_DAYS * DAY_MS,
   );
-  return (
-    upcoming.find(
-      (instant) => args.lastFiredMs === null || instant > args.lastFiredMs,
-    ) ?? null
-  );
+  return upcoming.find((entry) => isAllowed(entry, args)) ?? null;
 }
