@@ -103,18 +103,34 @@ export async function setJobRoleCv(
  */
 export async function matchJobRoleCv(jobId: string): Promise<Job> {
   const job = await requireJob(jobId);
-  const roleCvs = await roleCvsRepo.listRoleCvRows();
-  if (roleCvs.length === 0) return job;
+  const match = await autoMatchRoleCv(job);
+  if (!match) return job;
+  return requireJob(jobId);
+}
+
+/**
+ * Picks among the Role CVs that have content and stores the result on the job
+ * as an "auto" match. Returns null, storing nothing, when no Role CV is usable
+ * yet, so the job is matched once one exists.
+ */
+async function autoMatchRoleCv(
+  job: Job,
+): Promise<{ roleCvId: string | null } | null> {
+  const roleCvs = (await roleCvsRepo.listRoleCvRows()).filter(
+    (row) => row.tailoredHeadline?.trim() && row.tailoredSummary?.trim(),
+  );
+  if (roleCvs.length === 0) return null;
   const match = await pickRoleCvForJob({ job, roleCvs });
-  logger.info("Role CV matched to job", {
-    jobId,
-    roleCvId: match.roleCvId,
-    method: match.method,
-  });
-  return requireUpdatedJob(jobId, {
+  await jobsRepo.updateJob(job.id, {
     roleCvId: match.roleCvId,
     roleCvMatchSource: "auto",
   });
+  logger.info("Role CV matched to job", {
+    jobId: job.id,
+    roleCvId: match.roleCvId,
+    method: match.method,
+  });
+  return { roleCvId: match.roleCvId };
 }
 
 /**
@@ -176,19 +192,8 @@ export async function resolveRoleCvForProcessing(
     if (!roleCvId) {
       // A stored "none" (auto or manual) is respected.
       if (job.roleCvMatchSource) return null;
-      const roleCvs = await roleCvsRepo.listRoleCvRows();
-      if (roleCvs.length === 0) return null;
-      const match = await pickRoleCvForJob({ job, roleCvs });
-      await jobsRepo.updateJob(jobId, {
-        roleCvId: match.roleCvId,
-        roleCvMatchSource: "auto",
-      });
-      logger.info("Role CV matched to job", {
-        jobId,
-        roleCvId: match.roleCvId,
-        method: match.method,
-      });
-      if (!match.roleCvId) return null;
+      const match = await autoMatchRoleCv(job);
+      if (!match?.roleCvId) return null;
       roleCvId = match.roleCvId;
     }
 

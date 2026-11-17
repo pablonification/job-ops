@@ -155,6 +155,26 @@ describe.sequential("Job Role CV routes", () => {
     });
   });
 
+  it("does not auto-match a Role CV that has no content yet", async () => {
+    const created = await api(baseUrl, "/role-cvs", {
+      method: "POST",
+      body: JSON.stringify({ name: "Draft", roleDescription: "Not written" }),
+    });
+    expect(created.res.status).toBe(201);
+    const job = await createTestJob();
+
+    state.matchedRoleCvId = created.body.data.id as string;
+    const matched = await api(baseUrl, `/jobs/${job.id}/role-cv/match`, {
+      method: "POST",
+    });
+    expect(matched.res.status).toBe(200);
+    // Still "never matched", so it is matched once a usable Role CV exists.
+    expect(matched.body.data).toMatchObject({
+      roleCvId: null,
+      roleCvMatchSource: null,
+    });
+  });
+
   it("sets the Role CV by hand and validates the choice", async () => {
     const roleCvId = await createRoleCvWithContent(baseUrl, "Backend Engineer");
     const job = await createTestJob();
