@@ -1,0 +1,63 @@
+{
+  "data": {
+    "getJobById": {
+      "city": null,
+      "company": {
+        "brandName": "AKSION DIGITAL INDONESIA",
+        "id": "aa271a70-e4ad-414c-9320-c8db2855ae6f",
+        "name": "AKSION DIGITAL INDONESIA"
+      },
+      "country": {
+        "code": "ID",
+        "name": "Indonesia"
+      },
+      "createdAt": "2026-11-16T08:39:30.38099Z",
+      "descriptionJsonString": "{\"blocks\":[{\"key\":\"cf7d1\",\"data\":{},\"text\":\"AKSION DIGITAL INDONESIA adalah perusahaan teknologi yang berkomitmen untuk memberikan solusi inovatif dalam pengembangan perangkat lunak dan layanan digital. Kami mencari individu yang bersemangat dan memiliki keahlian teknis untuk bergabung dengan tim kami.\",\"type\":\"unstyled\",\"depth\":0,\"entityRanges\":[],\"inlineStyleRanges\":[{\"length\":24,\"offset\":0,\"style\":\"BOLD\"}]},{\"key\":\"a3863\",\"data\":{},\"text\":\"\",\"type\":\"unstyled\",\"depth\":0,\"entityRanges\":[],\"inlineStyleRanges\":[]},{\"depth\":0,\"entityRanges\":[],\"inlineStyleRanges\":[{\"style\":\"BOLD\",\"length\":19,\"offset\":0}],\"key\":\"dqjh5\",\"data\":{},\"text\":\"Deskripsi Pekerjaan\",\"type\":\"unstyled\"},{\"key\":\"5qh5u\",\"data\":{},\"text\":\"Berpartisipasi aktif dalam perencanaan, pengembangan, dan pemeliharaan antarmuka aplikasi web (UI) yang responsif dan modern di bawah bimbingan tim teknis senior.\",\"type\":\"unordered-list-item\",\"depth\":0,\"entityRanges\":[],\"inlineStyleRanges\":[]},{\"text\":\"Membantu membangun serta mengintegrasikan komponen frontend dengan REST API pendukung.\",\"type\":\"unordered-list-item\",\"depth\":0,\"entityRanges\":[],\"inlineStyleRanges\":[],\"key\":\"32du9\",\"data\":{}},{\"data\":{},\"text\":\"Melakukan identifikasi bugs, pemeliharaan kode (code maintenance), serta pengujian berkala untuk memastikan kualitas tampilan dan performa sistem.\",\"type\":\"unordered-list-item\",\"depth\":0,\"entityRanges\":[],\"inlineStyleRanges\":[],\"key\":\"a14h0\"},{\"key\":\"brogk\",\"data\":{},\"text\":\"Belajar dan beradaptasi dengan workflow pengembangan perangkat lunak profesional secara remote (termasuk penggunaan Git, code review, dan manajemen tugas).\",\"type\":\"unordered-list-item\",\"depth\":0,\"entityRanges\":[],\"inlineStyleRanges\":[]},{\"text\":\"\",\"type\":\"unstyled\",\"depth\":0,\"entityRanges\":[],\"inlineStyleRanges\":[],\"key\":\"4fndq\",\"data\":{}},{\"key\":\"5v0ui\",\"data\":{},\"text\":\"Kualifikasi Utama\",\"type\":\"unstyled\",\"depth\":0,\"entityRanges\":[],\"inlineStyleRanges\":[{\"style\":\"BOLD\",\"length\":17,\"offset\":0}]},{\"key\":\"7af2l\",\"data\":{},\"text\":\"Keahlian Teknis (Hands-on): Memiliki kemampuan praktis yang kuat dalam pengembangan antarmuka aplikasi web (terbuka untuk seluruh tingkat pengalaman/senioritas berdasarkan kompetensi dan portofolio).\",\"type\":\"unordered-list-item\",\"depth\":0,\"entityRanges\":[],\"inlineStyleRanges\":[]},{\"type\":\"unordered-list-item\",\"depth\":0,\"entityRanges\":[],\"inlineStyleRanges\":[],\"key\":\"5rfbs\",\"data\":{},\"text\":\"Frontend Development: Menguasai dasar-dasar pengembangan web modern (HTML5, CSS3, JavaScript / TypeScript).\"},{\"inlineStyleRanges\":[],\"key\":\"en8k6\",\"data\":{},\"text\":\"Pemecahan Masalah: Memiliki analisis logika yang baik, attention to detail terhadap tampilan UI/UX, dan dapat menyelesaikan kendala teknis secara mandiri.\",\"type\":\"unordered-list-item\",\"depth\":0,\"entityRanges\":[]},{\"key\":\"pk5e\",\"data\":{},\"text\":\"Manajemen Kerja Remote: Memiliki integritas, kedisiplinan, serta kemampuan komunikasi profesional dalam lingkungan kerja jarak jauh.\",\"type\":\"unordered-list-item\",\"depth\":0,\"entityRanges\":[],\"inlineStyleRanges\":[]},{\"text\":\"\",\"type\":\"unstyled\",\"depth\":0,\"entityRanges\":[],\"inlineStyleRanges\":[],\"key\":\"7s3fg\",\"data\":{}},{\"key\":\"dh99j\",\"data\":{},\"text\":\"Kualifikasi Tambahan (Nilai Plus)\",\"type\":\"unstyled\",\"depth\":0,\"entityRanges\":[],\"inlineStyleRanges\":[{\"style\":\"BOLD\",\"length\":33,\"offset\":0}]},{\"depth\":0,\"entityRanges\":[],\"inlineStyleRanges\":[],\"key\":\"1j2v3\",\"data\":{},\"text\":\"Memiliki pengalaman atau menguasai framework Angular, Next.js, atau React.\",\"type\":\"unordered-list-item\"},{\"inlineStyleRanges\":[],\"key\":\"bi3q9\",\"data\":{},\"text\":\"Memiliki pemahaman atau pengalaman dasar dengan backend PHP (Framework Laravel/Symfony atau sejenisnya).\",\"type\":\"unordered-list-item\",\"depth\":0,\"entityRanges\":[]},{\"data\":{},\"text\":\"Memahami integrasi REST API dan pengelolaan basis data dasar (MySQL / PostgreSQL).\",\"type\":\"unordered-list-item\",\"depth\":0,\"entityRanges\":[],\"inlineStyleRanges\":[],\"key\":\"bekm4\"},{\"type\":\"unstyled\",\"depth\":0,\"entityRanges\":[],\"inlineStyleRanges\":[],\"key\":\"1mccg\",\"data\":{},\"text\":\"\"},{\"inlineStyleRanges\":[{\"style\":\"BOLD\",\"length\":19,\"offset\":0}],\"key\":\"8cfi4\",\"data\":{},\"text\":\"Fasilitas & Benefit\",\"type\":\"unstyled\",\"depth\":0,\"entityRanges\":[]},{\"type\":\"unordered-list-item\",\"depth\":0,\"entityRanges\":[],\"inlineStyleRanges\":[],\"key\":\"61f09\",\"data\":{},\"text\":\"Skema Kerja Remote (Full WFA): Fleksibilitas lokasi kerja yang mendukung keseimbangan kehidupan kerja (work-life balance). 08.00 - 17.00 WIB\"},{\"text\":\"Subscription AI (Claude Code/Cursor)\",\"type\":\"unordered-list-item\",\"depth\":0,\"entityRanges\":[],\"inlineStyleRanges\":[],\"key\":\"ei26d\",\"data\":{}}],\"entityMap\":{}}",
+      "id": "55a19578-f3d7-4588-a77e-28c201108fa4",
+      "location": {
+        "administrativeLevelName": "District",
+        "formattedName": "Pagedangan",
+        "level": 4,
+        "name": "Pagedangan",
+        "parents": [
+          {
+            "administrativeLevelName": "Kabupaten",
+            "formattedName": "Kab. Tangerang",
+            "level": 3,
+            "name": "Tangerang"
+          },
+          {
+            "administrativeLevelName": "Province",
+            "formattedName": "Banten",
+            "level": 2,
+            "name": "Banten"
+          },
+          {
+            "administrativeLevelName": "Country",
+            "formattedName": "Indonesia",
+            "level": 1,
+            "name": "Indonesia"
+          }
+        ]
+      },
+      "maxYearsOfExperience": 1,
+      "minYearsOfExperience": 0,
+      "salaries": [
+        {
+          "CurrencyCode": "IDR",
+          "maxAmount": 1000000,
+          "minAmount": 800000,
+          "salaryMode": "MONTH",
+          "salaryType": "BASIC"
+        }
+      ],
+      "shouldShowSalary": true,
+      "status": "OPEN",
+      "title": "Software Engineer Intern",
+      "type": "INTERNSHIP",
+      "updatedAt": "2026-11-16T08:39:30.38099Z",
+      "workArrangementOption": "REMOTE"
+    }
+  },
+  "isAuthenticated": false
+}
