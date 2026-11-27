@@ -311,6 +311,14 @@ curl -X POST "http://localhost:3001/api/jobs/<jobId>/generate-pdf"
 - Settings changes apply to new generation runs.
 - Regenerate PDFs for already-ready jobs.
 
+### LaTeX PDF generation times out
+
+The first LaTeX renders on a new server download TeX support files from Tectonic's bundle host. That host can be slow from some networks.
+
+- While Tectonic is downloading, a render may run for up to `TECTONIC_DOWNLOAD_TIMEOUT_MS` (default 600000, 10 minutes). Raise it if the error says the download timed out.
+- Files that finished downloading are cached, so retrying usually gets further. In Docker, keep the `tectonic-cache` volume so the cache survives container recreation.
+- Renders that download nothing are stopped after `TECTONIC_TIMEOUT_MS` (default 120000, 2 minutes).
+
 ### PDF generation fails because the renderer is unavailable
 
 - Ensure `tectonic` is installed on the machine running JobOps.
