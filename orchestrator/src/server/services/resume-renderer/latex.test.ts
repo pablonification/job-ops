@@ -463,6 +463,23 @@ describe("latex resume renderer", () => {
       expect((await stat(outputPath)).size).toBeGreaterThan(0);
     });
 
+    it("spots the download marker when it arrives split across chunks", async () => {
+      process.env.TECTONIC_BIN = await fakeTectonic(
+        [
+          'printf "note: down" >&2',
+          "sleep 0.3",
+          'printf "loading pdftex.map\\n" >&2',
+          "sleep 2",
+          'printf "%s" "%PDF-fake" > "$2/resume.pdf"',
+        ].join("\n"),
+      );
+      process.env.TECTONIC_TIMEOUT_MS = "1000";
+      process.env.TECTONIC_DOWNLOAD_TIMEOUT_MS = "10000";
+
+      const outputPath = await render("job-tectonic-split-marker");
+      expect((await stat(outputPath)).size).toBeGreaterThan(0);
+    });
+
     it("stops a download that runs past the download limit", async () => {
       process.env.TECTONIC_BIN = await fakeTectonic(
         ['echo "note: downloading pdftex.map" >&2', "exec sleep 10"].join("\n"),

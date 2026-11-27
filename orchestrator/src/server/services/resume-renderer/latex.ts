@@ -633,8 +633,9 @@ async function runTectonic(args: {
     };
     let timer = setTimeout(onTimeout, timeoutMs);
 
-    const noteOutput = (text: string) => {
-      if (downloading || settled || !TECTONIC_DOWNLOAD_MARKER.test(text)) {
+    // Pass the whole stream so far: a chunk can split the marker in two.
+    const noteOutput = (output: string) => {
+      if (downloading || settled || !TECTONIC_DOWNLOAD_MARKER.test(output)) {
         return;
       }
       downloading = true;
@@ -650,14 +651,12 @@ async function runTectonic(args: {
     };
 
     child.stdout.on("data", (chunk: Buffer | string) => {
-      const text = chunk.toString();
-      stdout += text;
-      noteOutput(text);
+      stdout += chunk.toString();
+      noteOutput(stdout);
     });
     child.stderr.on("data", (chunk: Buffer | string) => {
-      const text = chunk.toString();
-      stderr += text;
-      noteOutput(text);
+      stderr += chunk.toString();
+      noteOutput(stderr);
     });
 
     child.on("error", (error) => {
