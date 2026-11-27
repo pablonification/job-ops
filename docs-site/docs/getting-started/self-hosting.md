@@ -315,5 +315,6 @@ When using local renderers:
 - The Docker image installs `tectonic` and `typst` for you.
 - For non-Docker local runs, install `tectonic` yourself and optionally set `TECTONIC_BIN` if it is not on your `PATH`.
 - For non-Docker local runs with Typst, install `typst` yourself and optionally set `TYPST_BIN` if it is not on your `PATH`.
+- The first LaTeX renders download TeX support files from Tectonic's bundle host and cache them. Docker keeps that cache in the `tectonic-cache` volume. A render may take up to `TECTONIC_TIMEOUT_MS` (default 120000, 2 minutes), and while Tectonic is downloading up to `TECTONIC_DOWNLOAD_TIMEOUT_MS` (default 600000, 10 minutes). Once the cache is warm, renders take a few seconds.
 
 RxResume remains the source of truth for base resume data, project visibility, and tailoring inputs when importing from Reactive Resume. Local renderers use the structured Design Resume data at render time.

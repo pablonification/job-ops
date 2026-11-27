@@ -53,7 +53,15 @@ function resolveTemplatePath(): string {
 }
 
 const TEMPLATE_PATH = resolveTemplatePath();
-const TECTONIC_TIMEOUT_MS = 120_000;
+/** How long a render may take when Tectonic needs nothing from the network. */
+const DEFAULT_TECTONIC_TIMEOUT_MS = 120_000;
+/**
+ * How long a render may take once Tectonic starts downloading support files.
+ * A cold cache can need dozens of files from a slow bundle host; anything
+ * downloaded is cached, so later renders fall back to the shorter limit.
+ */
+const DEFAULT_TECTONIC_DOWNLOAD_TIMEOUT_MS = 600_000;
+const TECTONIC_DOWNLOAD_MARKER = /note: downloading /;
 const OUTPUT_FILENAME = "resume.pdf";
 const LATEX_PAPER_OPTIONS: Record<PdfPaperSize, string> = {
   auto: "letterpaper",
@@ -565,12 +573,39 @@ function truncateOutput(value: string): string {
   return `${trimmed.slice(0, 1200)}…(truncated ${trimmed.length - 1200} chars)`;
 }
 
+function readPositiveIntEnv(name: string, fallback: number): number {
+  const raw = process.env[name]?.trim();
+  if (!raw) return fallback;
+  const parsed = Number(raw);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+export function getTectonicTimeouts(): {
+  timeoutMs: number;
+  downloadTimeoutMs: number;
+} {
+  const timeoutMs = readPositiveIntEnv(
+    "TECTONIC_TIMEOUT_MS",
+    DEFAULT_TECTONIC_TIMEOUT_MS,
+  );
+  const downloadTimeoutMs = readPositiveIntEnv(
+    "TECTONIC_DOWNLOAD_TIMEOUT_MS",
+    DEFAULT_TECTONIC_DOWNLOAD_TIMEOUT_MS,
+  );
+  // The download allowance only ever extends the base limit.
+  return {
+    timeoutMs,
+    downloadTimeoutMs: Math.max(timeoutMs, downloadTimeoutMs),
+  };
+}
+
 async function runTectonic(args: {
   cwd: string;
   texPath: string;
   jobId: string;
 }): Promise<void> {
   const binary = process.env.TECTONIC_BIN?.trim() || "tectonic";
+  const { timeoutMs, downloadTimeoutMs } = getTectonicTimeouts();
 
   await new Promise<void>((resolve, reject) => {
     const child = spawn(binary, ["--outdir", args.cwd, args.texPath], {
@@ -578,25 +613,50 @@ async function runTectonic(args: {
       stdio: ["ignore", "pipe", "pipe"],
     });
 
+    const startedAt = Date.now();
     let stdout = "";
     let stderr = "";
     let settled = false;
-    const timer = setTimeout(() => {
+    let downloading = false;
+    const onTimeout = () => {
       if (settled) return;
       settled = true;
       child.kill("SIGKILL");
+      const limitMs = downloading ? downloadTimeoutMs : timeoutMs;
       reject(
         new Error(
-          `Tectonic timed out after ${TECTONIC_TIMEOUT_MS / 1000}s while rendering resume PDF.`,
+          downloading
+            ? `Tectonic timed out after ${limitMs / 1000}s after it started downloading LaTeX support files. Files it finished downloading are cached, so retrying usually gets further. Raise TECTONIC_DOWNLOAD_TIMEOUT_MS if the bundle host is slow from this server.`
+            : `Tectonic timed out after ${limitMs / 1000}s while rendering resume PDF.`,
         ),
       );
-    }, TECTONIC_TIMEOUT_MS);
+    };
+    let timer = setTimeout(onTimeout, timeoutMs);
+
+    // Pass the whole stream so far: a chunk can split the marker in two.
+    const noteOutput = (output: string) => {
+      if (downloading || settled || !TECTONIC_DOWNLOAD_MARKER.test(output)) {
+        return;
+      }
+      downloading = true;
+      clearTimeout(timer);
+      timer = setTimeout(
+        onTimeout,
+        Math.max(0, downloadTimeoutMs - (Date.now() - startedAt)),
+      );
+      logger.info("Tectonic is downloading LaTeX support files", {
+        jobId: args.jobId,
+        downloadTimeoutMs,
+      });
+    };
 
     child.stdout.on("data", (chunk: Buffer | string) => {
       stdout += chunk.toString();
+      noteOutput(stdout);
     });
     child.stderr.on("data", (chunk: Buffer | string) => {
       stderr += chunk.toString();
+      noteOutput(stderr);
     });
 
     child.on("error", (error) => {

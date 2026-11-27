@@ -1,12 +1,13 @@
 import { spawnSync } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
+import { chmod, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   buildLatexDocument,
   getLatexTemplatePath,
   getTectonicBinary,
+  getTectonicTimeouts,
   readLatexTemplate,
   renderLatexPdf,
 } from "./latex";
@@ -374,6 +375,122 @@ describe("latex resume renderer", () => {
     expect(latex).toContain("\\textbf{Senior} Platform Engineer");
     expect(latex).toContain("Managed \\textit{critical} systems.");
     expect(latex).toContain("Handled \\$50k budgets.");
+  });
+
+  describe("tectonic time limits", () => {
+    const envKeys = [
+      "TECTONIC_BIN",
+      "TECTONIC_TIMEOUT_MS",
+      "TECTONIC_DOWNLOAD_TIMEOUT_MS",
+    ] as const;
+    let savedEnv: Record<string, string | undefined> = {};
+
+    beforeEach(() => {
+      savedEnv = Object.fromEntries(envKeys.map((k) => [k, process.env[k]]));
+    });
+
+    afterEach(() => {
+      for (const key of envKeys) {
+        if (savedEnv[key] === undefined) delete process.env[key];
+        else process.env[key] = savedEnv[key];
+      }
+    });
+
+    // Stands in for tectonic: `--outdir DIR TEX` arrives as $1 $2 $3.
+    async function fakeTectonic(body: string): Promise<string> {
+      const dir = await createTempDir();
+      tempDirs.push(dir);
+      const script = join(dir, "fake-tectonic.sh");
+      await writeFile(script, `#!/bin/sh\n${body}\n`, "utf8");
+      await chmod(script, 0o755);
+      return script;
+    }
+
+    async function render(jobId: string): Promise<string> {
+      const dir = await createTempDir();
+      tempDirs.push(dir);
+      const outputPath = join(dir, "resume.pdf");
+      await renderLatexPdf({ document: baseDocument, outputPath, jobId });
+      return outputPath;
+    }
+
+    it("defaults to 120s, and 600s while downloading", () => {
+      delete process.env.TECTONIC_TIMEOUT_MS;
+      delete process.env.TECTONIC_DOWNLOAD_TIMEOUT_MS;
+      expect(getTectonicTimeouts()).toEqual({
+        timeoutMs: 120_000,
+        downloadTimeoutMs: 600_000,
+      });
+    });
+
+    it("reads overrides and ignores invalid values", () => {
+      process.env.TECTONIC_TIMEOUT_MS = "30000";
+      process.env.TECTONIC_DOWNLOAD_TIMEOUT_MS = "120s";
+      expect(getTectonicTimeouts()).toEqual({
+        timeoutMs: 30_000,
+        downloadTimeoutMs: 600_000,
+      });
+    });
+
+    it("never lets the download limit be shorter than the base limit", () => {
+      process.env.TECTONIC_TIMEOUT_MS = "300000";
+      process.env.TECTONIC_DOWNLOAD_TIMEOUT_MS = "1000";
+      expect(getTectonicTimeouts().downloadTimeoutMs).toBe(300_000);
+    });
+
+    it("stops a render that runs past the base limit", async () => {
+      process.env.TECTONIC_BIN = await fakeTectonic("exec sleep 5");
+      process.env.TECTONIC_TIMEOUT_MS = "300";
+      process.env.TECTONIC_DOWNLOAD_TIMEOUT_MS = "5000";
+
+      await expect(render("job-tectonic-hang")).rejects.toThrow(
+        /timed out after 0.3s while rendering/i,
+      );
+    });
+
+    it("allows the longer limit once tectonic starts downloading", async () => {
+      process.env.TECTONIC_BIN = await fakeTectonic(
+        [
+          'echo "note: downloading pdftex.map" >&2',
+          "sleep 2",
+          'printf "%s" "%PDF-fake" > "$2/resume.pdf"',
+        ].join("\n"),
+      );
+      process.env.TECTONIC_TIMEOUT_MS = "1000";
+      process.env.TECTONIC_DOWNLOAD_TIMEOUT_MS = "10000";
+
+      const outputPath = await render("job-tectonic-download");
+      expect((await stat(outputPath)).size).toBeGreaterThan(0);
+    });
+
+    it("spots the download marker when it arrives split across chunks", async () => {
+      process.env.TECTONIC_BIN = await fakeTectonic(
+        [
+          'printf "note: down" >&2',
+          "sleep 0.3",
+          'printf "loading pdftex.map\\n" >&2',
+          "sleep 2",
+          'printf "%s" "%PDF-fake" > "$2/resume.pdf"',
+        ].join("\n"),
+      );
+      process.env.TECTONIC_TIMEOUT_MS = "1000";
+      process.env.TECTONIC_DOWNLOAD_TIMEOUT_MS = "10000";
+
+      const outputPath = await render("job-tectonic-split-marker");
+      expect((await stat(outputPath)).size).toBeGreaterThan(0);
+    });
+
+    it("stops a download that runs past the download limit", async () => {
+      process.env.TECTONIC_BIN = await fakeTectonic(
+        ['echo "note: downloading pdftex.map" >&2', "exec sleep 10"].join("\n"),
+      );
+      process.env.TECTONIC_TIMEOUT_MS = "1000";
+      process.env.TECTONIC_DOWNLOAD_TIMEOUT_MS = "2500";
+
+      await expect(render("job-tectonic-slow-download")).rejects.toThrow(
+        /timed out after 2.5s after it started downloading LaTeX support files/i,
+      );
+    });
   });
 
   it("fails with a helpful error when tectonic is unavailable", async () => {
